@@ -188,13 +188,116 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (pending roadmap) | — | Pending |
+| ROST-01 | Phase 1 | Pending |
+| ROST-02 | Phase 1 | Pending |
+| ROST-03 | Phase 1 | Pending |
+| ROST-04 | Phase 1 | Pending |
+| ROST-05 | Phase 1 | Pending |
+| ROST-06 | Phase 1 | Pending |
+| ROST-07 | Phase 1 | Pending |
+| ROST-08 | Phase 1 | Pending |
+| ROST-09 | Phase 1 | Pending |
+| ROST-10 | Phase 1 | Pending |
+| ROST-11 | Phase 1 | Pending |
+| ROST-12 | Phase 1 | Pending |
+| SHEL-01 | Phase 1 | Pending |
+| SHEL-02 | Phase 1 | Pending |
+| SHEL-03 | Phase 1 | Pending |
+| SHEL-04 | Phase 1 | Pending |
+| SHEL-05 | Phase 1 | Pending |
+| SHEL-06 | Phase 1 | Pending |
+| SHEL-07 | Phase 1 | Pending |
+| PERS-01 | Phase 1 | Pending |
+| PERS-02 | Phase 1 | Pending |
+| PERS-03 | Phase 1 | Pending |
+| PERS-04 | Phase 1 | Pending |
+| PERS-05 | Phase 1 | Pending |
+| PERS-06 | Phase 1 | Pending |
+| PERS-07 | Phase 1 | Pending |
+| PERS-08 | Phase 5 | Pending |
+| PERS-09 | Phase 5 | Pending |
+| DRFT-01 | Phase 2 | Pending |
+| DRFT-02 | Phase 2 | Pending |
+| DRFT-03 | Phase 2 | Pending |
+| DRFT-04 | Phase 3 | Pending |
+| DRFT-05 | Phase 2 | Pending |
+| DRFT-06 | Phase 2 | Pending |
+| DRFT-07 | Phase 2 | Pending |
+| DRFT-08 | Phase 2 | Pending |
+| DRFT-09 | Phase 2 | Pending |
+| DRFT-10 | Phase 2 | Pending |
+| DRFT-11 | Phase 2 | Pending |
+| DRFT-12 | Phase 2 | Pending |
+| DRFT-13 | Phase 2 | Pending |
+| DRFT-14 | Phase 2 | Pending |
+| DRFT-15 | Phase 2 | Pending |
+| DRFT-16 | Phase 2 | Pending |
+| CARD-01 | Phase 3 | Pending |
+| CARD-02 | Phase 3 | Pending |
+| CARD-03 | Phase 3 | Pending |
+| CARD-04 | Phase 3 | Pending |
+| CARD-05 | Phase 3 | Pending |
+| CARD-06 | Phase 3 | Pending |
+| CARD-07 | Phase 3 | Pending |
+| CARD-08 | Phase 3 | Pending |
+| RULE-01 | Phase 3 | Pending |
+| RULE-02 | Phase 3 | Pending |
+| RULE-03 | Phase 3 | Pending |
+| RULE-04 | Phase 3 | Pending |
+| RULE-05 | Phase 3 | Pending |
+| RULE-06 | Phase 3 | Pending |
+| RULE-07 | Phase 2 | Pending |
+| RULE-08 | Phase 4 | Pending |
+| RULE-09 | Phase 3 | Pending |
+| BAN-01 | Phase 2 | Pending |
+| BAN-02 | Phase 2 | Pending |
+| BAN-03 | Phase 4 | Pending |
+| BAN-04 | Phase 4 | Pending |
+| BAN-05 | Phase 4 | Pending |
+| BAN-06 | Phase 4 | Pending |
+| BAN-07 | Phase 4 | Pending |
+| BAN-08 | Phase 2 | Pending |
+| SWAP-01 | Phase 3 | Pending |
+| SWAP-02 | Phase 3 | Pending |
+| SWAP-03 | Phase 3 | Pending |
+| SWAP-04 | Phase 3 | Pending |
+| SWAP-05 | Phase 3 | Pending |
+| SWAP-06 | Phase 3 | Pending |
+| SWAP-07 | Phase 3 | Pending |
+| TOUR-01 | Phase 5 | Pending |
+| TOUR-02 | Phase 5 | Pending |
+| TOUR-03 | Phase 5 | Pending |
+| TOUR-04 | Phase 5 | Pending |
+| TOUR-05 | Phase 5 | Pending |
+| TOUR-06 | Phase 5 | Pending |
+| TOUR-07 | Phase 5 | Pending |
+| TOUR-08 | Phase 5 | Pending |
+| TOUR-09 | Phase 5 | Pending |
+| EXPO-01 | Phase 1 | Pending |
+| EXPO-02 | Phase 1 | Pending |
+| EXPO-03 | Phase 1 | Pending |
+| EXPO-04 | Phase 1 | Pending |
+| EXPO-05 | Phase 1 | Pending |
+| EXPO-06 | Phase 1 | Pending |
+| REFR-01 | Phase 5 | Pending |
+| REFR-02 | Phase 5 | Pending |
+| REFR-03 | Phase 5 | Pending |
 
 **Coverage:**
-- v1 requirements: 91 total
-- Mapped to phases: 0
-- Unmapped: 91 ⚠️
+- v1 requirements: 94 total
+- Mapped to phases: 94 ✓
+- Unmapped: 0
+
+**Per phase:**
+
+| Phase | Name | Requirements |
+|-------|------|--------------|
+| 1 | Draft Skeleton on a Real URL | 32 |
+| 2 | Host-Configured Draft Night | 19 |
+| 3 | Compiled Rules, Priority Cards, Swaps | 23 |
+| 4 | Blind and Snake Bans | 6 |
+| 5 | Full Tournament — Brackets, Standings, Archive | 14 |
 
 ---
 *Requirements defined: 2026-08-03*
-*Last updated: 2026-08-03 after initial definition*
+*Last updated: 2026-08-03 after roadmap creation (traceability populated)*
