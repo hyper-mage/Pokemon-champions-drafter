@@ -17,6 +17,7 @@ The project's success criterion: *"You and your friends run a real draft plus br
 ## Phases
 
 **Phase Numbering:**
+
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
@@ -31,89 +32,130 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Phase Details
 
 ### Phase 1: Draft Skeleton on a Real URL
+
 **Goal**: A group can open a public URL with no install and no account, run a two-player six-round draft against the real Champions roster, undo a misclick, close the browser and come back to it, and paste both teams straight into Showdown and pokebase
 **Mode:** mvp
 **Depends on**: Nothing (first phase)
 **Requirements**: ROST-01, ROST-02, ROST-03, ROST-04, ROST-05, ROST-06, ROST-07, ROST-08, ROST-09, ROST-10, ROST-11, ROST-12, SHEL-01, SHEL-02, SHEL-03, SHEL-04, SHEL-05, SHEL-06, SHEL-07, PERS-01, PERS-02, PERS-03, PERS-04, PERS-05, PERS-06, PERS-07, EXPO-01, EXPO-02, EXPO-03, EXPO-04, EXPO-05, EXPO-06
 **Success Criteria** (what must be TRUE):
+
   1. Anyone opens the GitHub Pages URL on a machine with no install, account, or payment, and after first load the draft keeps working with the network off.
   2. Two players alternate picks for six rounds against the committed, regulation-stamped Champions snapshot: Meganium is never offered as Mega-capable, cosmetic Vivillon patterns and battle-only formes do not appear, Rotom appliances and Tauros-Paldea do, Charizard carries both Mega options, every entry shows a sprite or a visible fallback, and a picked species leaves the pool immediately.
   3. The host undoes the last pick at any point and the board returns exactly to its prior state.
   4. A refresh, a closed browser, or a second open tab never loses or silently overwrites a draft; the host is warned up front when browser storage is unavailable or restricted, is offered a JSON checkpoint at milestones, and can download the tournament as JSON and re-import it on another machine.
   5. Each finished team copies out as a blank-line-separated species-only paste that imports into both play.pokemonshowdown.com and pokebase.app, with a Mega slot exported as `Species @ StoneItemName` and passing Showdown's team validator.
+
 **Plans**: 11 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 01-01-PLAN.md — Scaffold Vite + TypeScript + Preact with exactly two runtime dependencies, and build the CI purity gate (SHEL-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 01-02-PLAN.md — Live GitHub Pages URL deployed by a workflow that gates on purity and tests (SHEL-01, SHEL-02)
 - [ ] 01-03-PLAN.md — Committed regulation-stamped Champions roster snapshot, fail-loud regeneration script, hostile-species fixture test, and the 207-vs-208 re-diff (ROST-01, 03–10, 12)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 01-04-PLAN.md — Committed PokeAPI sprite set with measured native dimensions, placeholder, spriteMissing flags, and the PokeAPI LICENCE.txt resolution (ROST-11)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 01-05-PLAN.md — Token system from the UI Design Contract, app shell, and the pool grid rendering the real roster with art (ROST-02, ROST-11)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 01-06-PLAN.md — Append-only log, pure reducer, selectors, seeded RNG, click-to-pick, turn banner, and the draft board (SHEL-04, SHEL-05, SHEL-07)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 01-07-PLAN.md — Unlimited undo, localStorage autosave with a pagehide flush, and the blocking storage canary (SHEL-06, PERS-01, PERS-02)
 - [ ] 01-08-PLAN.md — toShowdownPaste with the blank-line separator and Mega stone form, plus the hand-verified export spike against both targets (EXPO-01…05)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 01-09-PLAN.md — BroadcastChannel write-ownership lock with heartbeat, stale recovery, and the read-only tab surface (PERS-03)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
 - [ ] 01-10-PLAN.md — JSON download and import with a prototype-pollution-safe guard, the replace-draft confirmation, the completion checkpoint, and per-player export panels (PERS-04…07, EXPO-06)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
 - [ ] 01-11-PLAN.md — Cache-first service worker precaching the whole inventory, plus the offline, `file://`, and phase close-out verification (SHEL-03, ROST-02)
 
 **UI hint**: yes
 **Notes**: Research need LOW — the roster pipeline mechanics are already empirically verified; remaining work is execution against the fixture set. Two verification chores belong here and must not be skipped: (a) an export spike hand-verifying both targets with a Mega-containing team, since pokebase.app's acceptance of an `@ item` line specifically was inferred rather than tested; (b) a numeric re-diff resolving the 207-vs-208 base-species discrepancy and re-verifying the canonical 73 Mega-capable count against the fixture set. Also decide and test the module-vs-classic-script question by literally double-clicking `index.html`, and read PokeAPI's `LICENCE.txt` before shipping sprites. SHEL-04 (pure core) is verified by a CI check and SHEL-07 (seeded randomness) by reproducibility after reload rather than by a user-visible behavior — they are enabling constraints for everything downstream. The two hardcoded players are scaffolding, replaced in Phase 2. **Plan count revised from 3 to 11 at planning time**: 32 requirements plus greenfield scaffolding plus six mandated verification chores cannot fit three plans at the 2–3-task, ~50%-context ceiling. The plan chain 01-01 through 01-06 is the walking skeleton proper (see `SKELETON.md`); 01-07 through 01-11 layer the remaining acceptance requirements onto it.
 
 ### Phase 2: Host-Configured Draft Night
+
 **Goal**: A host sets up a real tournament for their group — names, format, pool size, banlist — and 4–8 friends draft through it on one shared screen with everything they need visible at once
 **Mode:** mvp
 **Depends on**: Phase 1
 **Requirements**: DRFT-01, DRFT-02, DRFT-03, DRFT-05, DRFT-06, DRFT-07, DRFT-08, DRFT-09, DRFT-10, DRFT-11, DRFT-12, DRFT-13, DRFT-14, DRFT-15, DRFT-16, BAN-01, BAN-02, BAN-08, RULE-07
 **Success Criteria** (what must be TRUE):
+
   1. The host enters player names, a format label, and a tournament depth, sets X / Y / Either for each dual-Mega species, randomizes the starting order, and starts a draft; the pool auto-sizes from player count with surplus left for swaps, and the host can override that size.
   2. The host excludes Pokémon via a host banlist and those Pokémon never appear in the pool at all.
   3. Start is disabled with a stated reason whenever player count, pool size, bans, and roster cannot all be satisfied — the group never discovers a dead draft mid-session.
   4. Anyone at the table finds a Pokémon by name or narrows the pool by type and Mega-capability, and reads its sprite, typing, and base stats from across the room at any of the three density settings.
   5. At every moment the shared screen shows whose turn it is, the full players × rounds board as pick history, and each player's team as it fills; every destructive action confirms before committing.
+
 **Plans**: 3 plans
 **UI hint**: yes
 **Notes**: This is the first phase that satisfies a draft-only night end to end. Research need MEDIUM-LOW, concentrated in the general feasibility arithmetic: pool-dry, worst-case ban starvation, and the ~34-player absolute ceiling (`players × 6 ≤ 207`). Mega-specific feasibility deliberately does NOT belong here — it needs the compiled schedule from Phase 3 to know how many Mega rounds exist. Pick order in this phase is a plain randomized rotating order; Phase 3 replaces it with priority cards. DRFT-09's "composing with the round's own restriction" is trivially satisfied here (no round restrictions exist yet) and becomes load-bearing in Phase 3. The legibility requirement (DRFT-14) is an acceptance criterion for the whole shared screen, not a polish item.
 
 ### Phase 3: Compiled Rules, Priority Cards, Swaps
+
 **Goal**: The draft becomes the one the spec describes — composition requirements compile into a round schedule that types the team slots, players bid priority cards for turn order over that visible schedule, and swaps can only take something the target slot allows
 **Mode:** mvp
 **Depends on**: Phase 2
 **Requirements**: DRFT-04, RULE-01, RULE-02, RULE-03, RULE-04, RULE-05, RULE-06, RULE-09, CARD-01, CARD-02, CARD-03, CARD-04, CARD-05, CARD-06, CARD-07, CARD-08, SWAP-01, SWAP-02, SWAP-03, SWAP-04, SWAP-05, SWAP-06, SWAP-07
 **Success Criteria** (what must be TRUE):
+
   1. The host states composition requirements at config time and the tool compiles them into a round schedule before the draft starts — a requirement of N Megas produces N Mega-only rounds whose pool is filtered to Mega-capable species minus the host's Mega-ban list — with no post-pick validation anywhere in the system, and the draft runs the compiled number of rounds until every player has six.
   2. The host reorders the derived schedule, and the full schedule with Mega rounds marked is on screen before any priority card is played.
   3. Start is blocked with the arithmetic shown whenever `players × megaRounds` exceeds Mega-capable species minus Mega bans.
   4. Each player holds cards `1..R` matching the compiled round count, plays them face-up one per round in a rotating order while seeing what has already been played and what everyone has left, and the resolved pick order is displayed before picking begins; when players outnumber rounds, ties break by a visible deterministic rule that never depends on player-entry order.
   5. A player spends a swap mid-draft, or passes or swaps in a dedicated post-draft swap round that has its own stated pick-order source, and the leftover pool they are shown is filtered by the target slot's own predicate — a Mega slot cannot be swapped into a non-Mega Pokémon.
+
 **Plans**: 3 plans
 **UI hint**: yes
 **Notes**: Research need HIGH on the rules compiler — the compilable-vs-non-compilable rule-class taxonomy is reasoned analysis with no prior art found in any surveyed draft tooling; validate the class boundaries against real host configuration attempts and keep the "pick guard" escape hatch as a named, unbuilt extension point rather than building it speculatively. Research need MEDIUM on the priority-card redesign — an El Grande-style open-sequential mechanic retrofitted mid-spec; the tiebreak rule and the play flow should be playtested with the target 4–8 friend group, not just implemented from the write-up. Ordering inside this phase is not negotiable: the compiler establishes typed slots, and swaps built before typed slots exist can silently violate composition rules with nothing left to catch them, because the compiler deliberately removes runtime validation.
 
 ### Phase 4: Blind and Snake Bans
+
 **Goal**: Groups run the ban ritual their own way on one shared screen, and nobody sees what they should not have seen
 **Mode:** mvp
 **Depends on**: Phase 3
 **Requirements**: BAN-03, BAN-04, BAN-05, BAN-06, BAN-07, RULE-08
 **Success Criteria** (what must be TRUE):
+
   1. In snake mode, players ban in turn order with all previous bans visible on the shared screen.
   2. In blind mode, each player enters their bans behind a real full-screen pass-the-device interstitial — not an input mask — and no other player's ban is visible on screen before the reveal.
   3. Pressing the back button or restoring the tab from cache cannot resurrect a player's private ban screen.
   4. All blind bans reveal together, the host-chosen duplicate policy — both apply with one wasted, or a collision grants a re-ban — is applied and displayed, and feasibility is re-checked against the post-ban pool before the draft is allowed to start.
+
 **Plans**: 1 plan
 **UI hint**: yes
 **Notes**: Research need MEDIUM and it is a UX problem, not a technical one — the nearest precedents are party apps (Werewolf, Mafia, Spy) and tabletop games, not draft tools; no surveyed Pokémon draft tool attempts bans at all. This needs an actual playtest with the target group. The back-button leak (BAN-06) is a bfcache / `pageshow` guard and is easy to get silently wrong. Host banlist mode already shipped in Phase 2 and already unblocked the compiler's Mega-ban list, which is why this phase can sit this late without holding anything up.
 
 ### Phase 5: Full Tournament — Brackets, Standings, Archive
+
 **Goal**: The night runs past the draft — round robin, a seeded cut, a single-elimination bracket, results recorded and correctable — and the finished tournament stays readable and re-runnable after the Champions roster rotates
 **Mode:** mvp
 **Depends on**: Phase 3 (needs completed teams; independent of Phase 4 and buildable before it if blind bans are not wanted first)
 **Requirements**: TOUR-01, TOUR-02, TOUR-03, TOUR-04, TOUR-05, TOUR-06, TOUR-07, TOUR-08, TOUR-09, PERS-08, PERS-09, REFR-01, REFR-02, REFR-03
 **Success Criteria** (what must be TRUE):
+
   1. The host's depth choice is honoured: draft-only skips every bracket screen entirely, while the deeper modes generate a round robin and/or a single-elimination bracket with correct byes at non-power-of-two counts (verified at 5, 6, and 7 players).
   2. The host records a winner and one numeric result per match with a best-of-three shown as a label plus a 2-of-3 counter; standings and brackets advance automatically, and a mis-entered result can be edited afterwards without corrupting the bracket.
   3. Standings break ties by record, then differential, then head-to-head, ending in an explicit host override rather than a silent computation, and a seeded top-N cut carries the round robin into the elimination bracket.
   4. A completed tournament stays viewable after the draft ends, including a draft recap rendered directly from the action log.
   5. The host refreshes the roster to a new regulation from inside the app, or imports a roster JSON with no network at all, and a staleness banner warns when the current snapshot's `validUntil` has passed — also with no network.
+
 **Plans**: 2 plans
 **UI hint**: yes
 **Notes**: This phase first satisfies the full success criterion (a real draft plus bracket, end to end, nothing tracked elsewhere). Research need LOW on brackets and standings — well-trodden tournament-software territory; the real discipline is refusing scope, since double elimination, Swiss, and consolation brackets are explicitly out of scope and are where bracket rendering code goes to die. Research need MEDIUM on roster refresh — re-confirm `raw.githubusercontent.com` CORS and caching behavior at implementation time, and note this is Tier A only: the app fetches the project's own pre-built snapshot, never live upstream data. Brackets and standings are fully additive — they consume only completed teams — which is why they come last among feature work.
