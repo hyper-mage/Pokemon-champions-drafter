@@ -50,7 +50,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Scaffold Vite + TypeScript + Preact with exactly two runtime dependencies, and build the CI purity gate (SHEL-04)
+- [x] 01-01-PLAN.md — Scaffold Vite + TypeScript + Preact with exactly two runtime dependencies, and build the CI purity gate (SHEL-04)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 0/11 | Planned | - |
+| 1. Draft Skeleton on a Real URL | 1/11 | In Progress|  |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |

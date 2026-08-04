@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 1 UI-SPEC approved
-last_updated: "2026-08-04T13:25:44.050Z"
-last_activity: 2026-08-04 -- Phase 01 planning complete
+last_updated: "2026-08-04T13:31:23.812Z"
+last_activity: 2026-08-04 -- Phase 01 execution started
 progress:
   total_phases: 5
   completed_phases: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** A group of friends can run an entire draft tournament — rules, bans, picks, swaps, brackets, results — start to finish inside the tool, without anyone reaching for a spreadsheet or a Discord message to track state.
-**Current focus:** Phase 1 — Draft Skeleton on a Real URL
+**Current focus:** Phase 01 — draft-skeleton-on-a-real-url
 
 ## Current Position
 
-Phase: 1 of 5 (Draft Skeleton on a Real URL)
-Plan: 0 of 3 in current phase
-Status: Ready to execute
-Last activity: 2026-08-04 -- Phase 01 planning complete
+Phase: 01 (draft-skeleton-on-a-real-url) — EXECUTING
+Plan: 1 of 11
+Status: Executing Phase 01
+Last activity: 2026-08-04 -- Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
