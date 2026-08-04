@@ -1,0 +1,86 @@
+name: Deploy to GitHub Pages
+
+# SHEL-02: every push to the default branch redeploys the site, but only after
+# the pure-core gate and the test suite pass. The deploy job cannot run unless
+# verify succeeded (`needs: verify`), so a purity violation or a red test can
+# never reach the live URL.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only one Pages deployment at a time. cancel-in-progress is deliberately false:
+# cancelling a half-finished deploy can leave the Pages CDN serving a partial
+# artifact, and a queued run is cheap.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+# T-01-13: least privilege. `contents: read` only — this token must never be able
+# to write to the repository. `pages: write` publishes, `id-token: write` is what
+# actions/deploy-pages uses to mint its OIDC token.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  verify:
+    name: Verify and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # Full install, NOT `--omit=dev`. vite.config.ts imports defineConfig from
+      # `vitest/config` so that its `test` block typechecks, and vitest is a
+      # devDependency. Omitting dev dependencies breaks `vite build` outright.
+      - name: Install dependencies
+        run: npm ci
+
+      # T-01-15: prove the SHEL-04 gate still works before trusting its verdict.
+      # A gate that has silently stopped detecting anything is worse than no gate.
+      - name: Self-test the pure-core gate
+        run: npm run check:pure:selftest
+
+      - name: Enforce the pure-core boundary (SHEL-04)
+        run: npm run check:pure
+
+      - name: Run tests
+        run: npm run test
+
+      # `build` runs `typecheck` first (both tsconfig.json and tsconfig.node.json),
+      # so there is no separate lint/typecheck job to keep in sync.
+      - name: Build
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # enablement: true switches the repository's Pages source to "GitHub Actions"
+      # via the API, so nobody has to click through Settings > Pages by hand.
+      # CLAUDE.md forbids the docs/ folder and the gh-pages branch approaches.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
