@@ -30,6 +30,7 @@ const ROOT = resolve(HERE, '..');
 const SOURCE_FILE = join(ROOT, 'scripts', 'roster-source.json');
 const OUTPUT_DIRECTORY = join(ROOT, 'public', 'data');
 const TRANSFORM_MODULE = join(ROOT, 'src', 'core', 'roster', 'transform.ts');
+const SPRITE_META_FILE = join(OUTPUT_DIRECTORY, 'sprite-meta.json');
 const SCHEMA_VERSION = 1;
 
 /** Counts that must match `expectedCounts` or the run fails. */
@@ -181,6 +182,26 @@ if (rawSpecies.length === 0) {
 
 const { transform, toRosterId } = await import(pathToFileURL(TRANSFORM_MODULE).href);
 
+/**
+ * ROST-11 — sprite ids known to have no committed art.
+ *
+ * `scripts/build-sprites.mjs` measures this against the real sprite set and
+ * records it in `public/data/sprite-meta.json`. Reading it here is what makes
+ * `spriteMissing` reproducible: regenerating a snapshot on its own re-derives
+ * the same flags instead of silently clearing them. A repository with no sprite
+ * inventory yet simply gets an empty list, which is the pre-01-04 behaviour.
+ */
+function readMissingSpriteIds() {
+  if (!existsSync(SPRITE_META_FILE)) return [];
+  try {
+    const meta = readJson(SPRITE_META_FILE);
+    return Array.isArray(meta.missingSpriteIds) ? meta.missingSpriteIds : [];
+  } catch {
+    return [];
+  }
+}
+
+const missingSpriteIds = readMissingSpriteIds();
 const generatedAt = new Date().toISOString();
 const upstreamRef =
   source.upstreamCommit === null || source.upstreamCommit === undefined
@@ -194,6 +215,7 @@ const draft = transform(rawSpecies, {
   validUntil: regulation.validUntil,
   upstreamRef,
   generatedAt,
+  missingSpriteIds,
 });
 
 if (draft.entries.length === 0) {
@@ -438,6 +460,14 @@ report.push(
   speciesOnlyViaForme.length === 0
     ? '  species draftable only through an alternate forme: none'
     : `  species draftable only through an alternate forme: ${speciesOnlyViaForme.length}\n    ${speciesOnlyViaForme.join('\n    ')}`,
+);
+
+const artlessEntries = snapshot.entries.filter((entry) => entry.spriteMissing);
+report.push('');
+report.push(
+  artlessEntries.length === 0
+    ? `  entries with no committed sprite: none (${missingSpriteIds.length} id(s) in sprite-meta.json)`
+    : `  entries with no committed sprite: ${artlessEntries.map((entry) => entry.id).join(', ')}`,
 );
 
 const multiMega = snapshot.entries
