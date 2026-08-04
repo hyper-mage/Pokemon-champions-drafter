@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "default": "mb",
+  "generator": "scripts/build-roster.mjs",
+  "upstreamRef": "npm:pokemon-showdown@0.11.11 (sha512-FdW7gt3TkG4AdXmpMTPYX2kx42VEfY8tQApjW9wEHOGzwH6Kn97wD0o5uIzAc4xpO1W+Tim70Ti9+FNkMNCA2w==)",
+  "regulations": [
+    {
+      "id": "mb",
+      "label": "M-B",
+      "regulation": "M-B",
+      "validFrom": "2026-06-17",
+      "validUntil": "2026-09-02",
+      "json": "roster.mb.json",
+      "script": "roster.mb.js",
+      "checksum": "sha256-952dc741977d3db0236743f146f78f76ca34c215acfa0308e074a8f8ff9f7230",
+      "generatedAt": "2026-08-04T19:11:54.426Z",
+      "counts": {
+        "legalEntries": 311,
+        "baseSpecies": 207,
+        "alternateFormes": 104,
+        "megaFormes": 76,
+        "megaCapableSpecies": 74,
+        "draftable": 235,
+        "excludedNonstandard": 1160,
+        "excludedIllegalTier": 10,
+        "excludedBattleOnly": 7,
+        "excludedCosmetic": 29,
+        "distinctBaseSpecies": 208,
+        "megaCapableBaseSpecies": 73,
+        "orphanedMegaFormes": 0
+      }
+    },
+    {
+      "id": "ma",
+      "label": "M-A",
+      "regulation": "M-A",
+      "validFrom": "2026-04-08",
+      "validUntil": "2026-06-17",
+      "json": "roster.ma.json",
+      "script": "roster.ma.js",
+      "checksum": "sha256-cd177d8cabf2b048a9b177d716218366d4ad1feb11c189f24f861a6dfaed2165",
+      "generatedAt": "2026-08-04T19:12:04.898Z",
+      "counts": {
+        "legalEntries": 273,
+        "baseSpecies": 185,
+        "alternateFormes": 88,
+        "megaFormes": 60,
+        "megaCapableSpecies": 59,
+        "draftable": 213,
+        "excludedNonstandard": 1198,
+        "excludedIllegalTier": 10,
+        "excludedBattleOnly": 7,
+        "excludedCosmetic": 29,
+        "distinctBaseSpecies": 186,
+        "megaCapableBaseSpecies": 58,
+        "orphanedMegaFormes": 0
+      }
+    }
+  ]
+}
