@@ -57,8 +57,8 @@ These are separate from the spacing scale but are still multiples of 4. They exi
 
 | Token | Value | Notes |
 |-------|-------|-------|
-| `--sprite-lg` | 96px | Pool cell sprite. PokeAPI `sprites/pokemon/{id}.png` is natively 96×96, so this renders 1:1 — no scaling blur. Do not change without re-checking the source dimensions. |
-| `--sprite-sm` | 48px | Board / team-strip chip sprite. Exact 2:1 integer downscale of the 96px source, so it stays crisp. |
+| `--sprite-lg` | 96px | Pool cell sprite. **The 96px figure is an unconfirmed working assumption, not a sourced fact** — no upstream artifact states a pixel dimension for PokeAPI `sprites/pokemon/{id}.png`. CONTEXT.md D-02 and `CLAUDE.md` §Sprites record file size only (`~1–2.5 KB each`). The sprite build task must read the actual dimensions off the downloaded PNGs and correct this row if they differ; set `--sprite-lg` to the true native size so the cell renders 1:1 with no scaling blur. Do not treat 96 as settled until that verification runs. |
+| `--sprite-sm` | 48px | Board / team-strip chip sprite. Exact 2:1 integer downscale of the assumed 96px source, so it stays crisp. Re-derive alongside `--sprite-lg` if the verification above lands on a different native size. |
 | `--cell-min` | 112px | Pool grid `minmax()` floor |
 | `--cell-h` | 144px | Pool cell height |
 | `--target-min` | 44px | Minimum interactive target, width and height. Exceeds WCAG 2.2 SC 2.5.8 (24px) and meets SC 2.5.5 (44px). |
@@ -81,9 +81,11 @@ These are separate from the spacing scale but are still multiples of 4. They exi
 
 Exactly 4 sizes, exactly 2 weights (400 regular, 600 semibold). No 500, no 700, no italics.
 
+These four are the complete set. **No surface may introduce a fifth size** — including the monospace export block, which renders at `--text-body`. Every size in the Surface Contracts below cites one of these four tokens by name; a raw `px` font-size anywhere in the CSS is a contract violation.
+
 | Token | Applies to |
 |-------|-----------|
-| `--text-body` (18/400/1.5) | Paragraph copy, warning bodies, banner text, button labels |
+| `--text-body` (18/400/1.5) | Paragraph copy, warning bodies, banner text, button labels, the export paste `<pre>` block |
 | `--text-label` (14/600/1.4) | Pool cell species names, board chip names, round headers, helper text, muted meta |
 | `--text-heading` (24/600/1.25) | Panel and player headings, dialog headings |
 | `--text-display` (36/600/1.15) | The on-the-clock turn banner, the one `<h1>` per screen |
@@ -99,7 +101,7 @@ Body is 18px rather than the usual 16px on purpose: this is a shared screen read
              "Liberation Mono", monospace;
 ```
 
-`--font-mono` is a **single scoped role**, not a second display font: the export paste block only (`<pre>`). It is required there because EXPO-03's blank-line separation is the single most likely export bug (`CLAUDE.md`: newline-separated species silently imports only the first Pokémon), and monospace makes the exact emitted text verifiable by eye. Mono is used nowhere else.
+`--font-mono` is a **family token only — it carries no size, weight, or line-height of its own** and does not add a row to the scale above. It has a **single scoped role**: the export paste block (`<pre>`), which sets `font-family: var(--font-mono)` and takes its size from `--text-body` like any other body-copy surface. Mono is required there because EXPO-03's blank-line separation is the single most likely export bug (`CLAUDE.md`: newline-separated species silently imports only the first Pokémon), and monospace makes the exact emitted text verifiable by eye. Mono is used nowhere else.
 
 ---
 
@@ -250,8 +252,8 @@ gap: var(--space-2);
 
 - Each cell is a real `<button type="button">`, `--cell-h` tall, `--color-surface` fill, `--hairline-w solid var(--color-border-strong)` border, `--radius` corners. Whole cell is the target; far above `--target-min`.
 - Cell content, top to bottom: `<img>` at `--sprite-lg`, `--space-1` gap, species name at `--text-label`, centred, `text-overflow: ellipsis` on one line with the full name in `title`.
-- `<img>` **must** carry `width="96" height="96"` attributes and `alt=""` (decorative — the adjacent name is the accessible label). The explicit dimensions prevent 234 simultaneous layout shifts. `loading="lazy"` is **not** used: D-16 precaches every sprite, so lazy loading buys nothing and costs pop-in.
-- Missing sprite (ROST-11 / D-04 / D-05): render the single committed placeholder at the same 96×96, chosen by the `spriteMissing: true` flag on the roster entry. **Never** fire a request the build already knows 404s. The species name renders unchanged.
+- `<img>` **must** carry explicit `width`/`height` attributes and `alt=""` (decorative — the adjacent name is the accessible label). The explicit dimensions prevent 234 simultaneous layout shifts. Write the sprite's true native size into those attributes — `96`/`96` under the current working assumption, corrected together with `--sprite-lg` once the sprite build task verifies the real dimensions (see the Size tokens table). `loading="lazy"` is **not** used: D-16 precaches every sprite, so lazy loading buys nothing and costs pop-in.
+- Missing sprite (ROST-11 / D-04 / D-05): render the single committed placeholder authored at exactly the same pixel dimensions as the real sprites, chosen by the `spriteMissing: true` flag on the roster entry. **Never** fire a request the build already knows 404s. The species name renders unchanged.
 - Hover: fill → `--color-surface-raised`, 120ms ease. Focus: the accent ring. Active: no separate style needed.
 - **A picked species is removed from the DOM immediately** — not greyed, not disabled. This is the success criterion's literal wording.
 - Above the grid: `Pool` at `--text-heading` and `{n} available` at `--text-label` in `--color-text-muted`.
@@ -320,9 +322,9 @@ One panel per player. **Never** a combined block, even at two players.
 
 - Heading `{playerName}` at `--text-heading`.
 - `Copy team paste` accent-fill button, placed **above** the text.
-- `<pre>` block: `--font-mono` at 16px / 1.6, `--color-surface`, `--hairline-w solid var(--color-border-strong)`, `--radius`, `--space-3` padding, `white-space: pre`, `tabindex="0"`, `aria-label="{playerName} team paste"` so keyboard users can reach and select it.
+- `<pre>` block: `font-family: var(--font-mono)` at **`--text-body`** (18/400/1.5). The paste block takes the body token, not `--text-label`: this is reading copy the host proof-reads by eye before pasting, and 14px semibold would make the blank-line separator harder to spot rather than easier. The mono family is scoped here and nowhere else; it adds no size of its own. Also `--color-surface`, `--hairline-w solid var(--color-border-strong)`, `--radius`, `--space-3` padding, `white-space: pre`, `tabindex="0"`, `aria-label="{playerName} team paste"` so keyboard users can reach and select it.
 - **The paste text is visible and selectable, always.** A blocked or failing Clipboard API must never be a dead end (D-09).
-- **Do not** apply `white-space: pre-line` and do not collapse whitespace — EXPO-03's blank-line record separator must render as a visible blank line. Newline-separated output silently imports only the first Pokémon; the mono font and open line-height exist so this is verifiable by eye.
+- **Do not** apply `white-space: pre-line` and do not collapse whitespace — EXPO-03's blank-line record separator must render as a visible blank line. Newline-separated output silently imports only the first Pokémon; the mono family and `--text-body`'s 1.5 line-height exist so this is verifiable by eye.
 - A Mega slot renders as one line, `Species @ StoneItemName` (EXPO-02), still blank-line separated from its neighbours.
 - Helper text below at `--text-label` in `--color-text-muted`, naming both targets. One paste serves both — Showdown and pokebase accept the same text.
 - Copy feedback: the button label swaps per the copywriting table and also fires the polite live region. The button never changes colour on success.
@@ -384,7 +386,8 @@ No component in `src/ui/` may own a game rule. Whose turn it is, which round is 
 | Checkpoint prompt at draft complete only, never silent | CONTEXT.md D-11 |
 | Read-only second tab with explicit takeover | CONTEXT.md D-12 |
 | Storage canary as a blocking start screen | CONTEXT.md D-13 |
-| 96×96 PokeAPI sprites, single generic placeholder, `spriteMissing` flag | CONTEXT.md D-02, D-03, D-04, D-05 |
+| Committed individual PokeAPI PNGs, single generic placeholder, `spriteMissing` flag | CONTEXT.md D-02, D-03, D-04, D-05 |
+| **96×96 sprite pixel dimension — UNCONFIRMED, no source** | Not stated in D-02…D-05 (which record file size only, `~1–2.5 KB each`), not in `CLAUDE.md` §Sprites, not in `.planning/research/`. Working assumption pending the sprite build task, which must read the real dimensions and correct `--sprite-lg`, `--sprite-sm`, and the pool `<img>` attributes here. |
 | Blank-line record separator is the likeliest export bug | `CLAUDE.md` §Export Formats (verified) |
 | `pokebase.app → New/Import Team` entry label | `CLAUDE.md` §Export Formats (verified) |
 | No virtualization; `content-visibility` is the only hatch | `CLAUDE.md` §Supporting Libraries |
