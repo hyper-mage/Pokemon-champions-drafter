@@ -41,9 +41,23 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The host undoes the last pick at any point and the board returns exactly to its prior state.
   4. A refresh, a closed browser, or a second open tab never loses or silently overwrites a draft; the host is warned up front when browser storage is unavailable or restricted, is offered a JSON checkpoint at milestones, and can download the tournament as JSON and re-import it on another machine.
   5. Each finished team copies out as a blank-line-separated species-only paste that imports into both play.pokemonshowdown.com and pokebase.app, with a Mega slot exported as `Species @ StoneItemName` and passing Showdown's team validator.
-**Plans**: 3 plans
+**Plans**: 11 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Scaffold Vite + TypeScript + Preact with exactly two runtime dependencies, and build the CI purity gate (SHEL-04)
+- [ ] 01-02-PLAN.md — Live GitHub Pages URL deployed by a workflow that gates on purity and tests (SHEL-01, SHEL-02)
+- [ ] 01-03-PLAN.md — Committed regulation-stamped Champions roster snapshot, fail-loud regeneration script, hostile-species fixture test, and the 207-vs-208 re-diff (ROST-01, 03–10, 12)
+- [ ] 01-04-PLAN.md — Committed PokeAPI sprite set with measured native dimensions, placeholder, spriteMissing flags, and the PokeAPI LICENCE.txt resolution (ROST-11)
+- [ ] 01-05-PLAN.md — Token system from the UI Design Contract, app shell, and the pool grid rendering the real roster with art (ROST-02, ROST-11)
+- [ ] 01-06-PLAN.md — Append-only log, pure reducer, selectors, seeded RNG, click-to-pick, turn banner, and the draft board (SHEL-04, SHEL-05, SHEL-07)
+- [ ] 01-07-PLAN.md — Unlimited undo, localStorage autosave with a pagehide flush, and the blocking storage canary (SHEL-06, PERS-01, PERS-02)
+- [ ] 01-08-PLAN.md — toShowdownPaste with the blank-line separator and Mega stone form, plus the hand-verified export spike against both targets (EXPO-01…05)
+- [ ] 01-09-PLAN.md — BroadcastChannel write-ownership lock with heartbeat, stale recovery, and the read-only tab surface (PERS-03)
+- [ ] 01-10-PLAN.md — JSON download and import with a prototype-pollution-safe guard, the replace-draft confirmation, the completion checkpoint, and per-player export panels (PERS-04…07, EXPO-06)
+- [ ] 01-11-PLAN.md — Cache-first service worker precaching the whole inventory, plus the offline, `file://`, and phase close-out verification (SHEL-03, ROST-02)
+
 **UI hint**: yes
-**Notes**: Research need LOW — the roster pipeline mechanics are already empirically verified; remaining work is execution against the fixture set. Two verification chores belong here and must not be skipped: (a) an export spike hand-verifying both targets with a Mega-containing team, since pokebase.app's acceptance of an `@ item` line specifically was inferred rather than tested; (b) a numeric re-diff resolving the 207-vs-208 base-species discrepancy and re-verifying the canonical 73 Mega-capable count against the fixture set. Also decide and test the module-vs-classic-script question by literally double-clicking `index.html`, and read PokeAPI's `LICENCE.txt` before shipping sprites. SHEL-04 (pure core) is verified by a CI check and SHEL-07 (seeded randomness) by reproducibility after reload rather than by a user-visible behavior — they are enabling constraints for everything downstream. The two hardcoded players are scaffolding, replaced in Phase 2.
+**Notes**: Research need LOW — the roster pipeline mechanics are already empirically verified; remaining work is execution against the fixture set. Two verification chores belong here and must not be skipped: (a) an export spike hand-verifying both targets with a Mega-containing team, since pokebase.app's acceptance of an `@ item` line specifically was inferred rather than tested; (b) a numeric re-diff resolving the 207-vs-208 base-species discrepancy and re-verifying the canonical 73 Mega-capable count against the fixture set. Also decide and test the module-vs-classic-script question by literally double-clicking `index.html`, and read PokeAPI's `LICENCE.txt` before shipping sprites. SHEL-04 (pure core) is verified by a CI check and SHEL-07 (seeded randomness) by reproducibility after reload rather than by a user-visible behavior — they are enabling constraints for everything downstream. The two hardcoded players are scaffolding, replaced in Phase 2. **Plan count revised from 3 to 11 at planning time**: 32 requirements plus greenfield scaffolding plus six mandated verification chores cannot fit three plans at the 2–3-task, ~50%-context ceiling. The plan chain 01-01 through 01-06 is the walking skeleton proper (see `SKELETON.md`); 01-07 through 01-11 layer the remaining acceptance requirements onto it.
 
 ### Phase 2: Host-Configured Draft Night
 **Goal**: A host sets up a real tournament for their group — names, format, pool size, banlist — and 4–8 friends draft through it on one shared screen with everything they need visible at once
@@ -111,7 +125,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 0/3 | Not started | - |
+| 1. Draft Skeleton on a Real URL | 0/11 | Planned | - |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
