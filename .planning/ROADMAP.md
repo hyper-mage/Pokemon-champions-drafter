@@ -55,7 +55,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [ ] 01-02-PLAN.md — Live GitHub Pages URL deployed by a workflow that gates on purity and tests (SHEL-01, SHEL-02)
-- [ ] 01-03-PLAN.md — Committed regulation-stamped Champions roster snapshot, fail-loud regeneration script, hostile-species fixture test, and the 207-vs-208 re-diff (ROST-01, 03–10, 12)
+- [x] 01-03-PLAN.md — Committed regulation-stamped Champions roster snapshot, fail-loud regeneration script, hostile-species fixture test, and the 207-vs-208 re-diff (ROST-01, 03–10, 12)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 1/11 | In Progress|  |
+| 1. Draft Skeleton on a Real URL | 2/11 | In Progress|  |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
