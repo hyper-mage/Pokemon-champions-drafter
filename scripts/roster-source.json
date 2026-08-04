@@ -1,0 +1,71 @@
+{
+  "readme": [
+    "Pinned inputs for scripts/build-roster.mjs. The mod name lives HERE and nowhere else.",
+    "PITFALLS Pitfall 3: Showdown's mod naming floats. The mod that today resolves to",
+    "Regulation M-B is expected to become M-C when M-C ships, with a new frozen mod",
+    "appearing for M-B. A script with the mod name hardcoded would silently snapshot a",
+    "different regulation with no error signal. Changing a mod name is therefore a",
+    "reviewable edit to this file, and the count gate below is what makes the swap loud.",
+    "expectedCounts is written on first generation and asserted on every run afterwards.",
+    "Rewriting it requires the explicit --accept-drift flag."
+  ],
+  "package": "pokemon-showdown@0.11.11",
+  "upstreamCommit": null,
+  "upstreamIntegrity": "sha512-FdW7gt3TkG4AdXmpMTPYX2kx42VEfY8tQApjW9wEHOGzwH6Kn97wD0o5uIzAc4xpO1W+Tim70Ti9+FNkMNCA2w==",
+  "upstreamPinNote": [
+    "pokemon-showdown@0.11.11 publishes no gitHead in its package manifest and the tarball",
+    "carries no .git metadata, so the smogon/pokemon-showdown commit this release was cut",
+    "from cannot be resolved offline. No SHA has been invented here.",
+    "The pin of record is therefore the npm version plus the subresource integrity hash",
+    "above, which is the same value committed in package-lock.json and is what npm ci",
+    "verifies on every install. Substituting different bytes for this version fails the",
+    "install, so the pin is enforced, not merely documented."
+  ],
+  "default": "mb",
+  "regulations": [
+    {
+      "id": "mb",
+      "label": "M-B",
+      "mod": "champions",
+      "validFrom": "2026-06-17",
+      "validUntil": "2026-09-02",
+      "expectedCounts": {
+        "legalEntries": 311,
+        "baseSpecies": 207,
+        "alternateFormes": 104,
+        "megaFormes": 76,
+        "megaCapableSpecies": 74,
+        "draftable": 235,
+        "excludedNonstandard": 1160,
+        "excludedIllegalTier": 10,
+        "excludedBattleOnly": 7,
+        "excludedCosmetic": 29,
+        "distinctBaseSpecies": 208,
+        "megaCapableBaseSpecies": 73,
+        "orphanedMegaFormes": 0
+      }
+    },
+    {
+      "id": "ma",
+      "label": "M-A",
+      "mod": "championsregma",
+      "validFrom": "2026-04-08",
+      "validUntil": "2026-06-17",
+      "expectedCounts": {
+        "legalEntries": 273,
+        "baseSpecies": 185,
+        "alternateFormes": 88,
+        "megaFormes": 60,
+        "megaCapableSpecies": 59,
+        "draftable": 213,
+        "excludedNonstandard": 1198,
+        "excludedIllegalTier": 10,
+        "excludedBattleOnly": 7,
+        "excludedCosmetic": 29,
+        "distinctBaseSpecies": 186,
+        "megaCapableBaseSpecies": 58,
+        "orphanedMegaFormes": 0
+      }
+    }
+  ]
+}

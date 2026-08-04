@@ -1,0 +1,6035 @@
+{
+  "$doNotEditByHand": "Generated file. Edits are lost on the next run and will not match `checksum`.",
+  "$generator": "scripts/build-roster.mjs ma (from pokemon-showdown@0.11.11)",
+  "schemaVersion": 1,
+  "regulation": "M-A",
+  "validFrom": "2026-04-08",
+  "validUntil": "2026-06-17",
+  "upstreamRef": "npm:pokemon-showdown@0.11.11 (sha512-FdW7gt3TkG4AdXmpMTPYX2kx42VEfY8tQApjW9wEHOGzwH6Kn97wD0o5uIzAc4xpO1W+Tim70Ti9+FNkMNCA2w==)",
+  "generatedAt": "2026-08-04T19:12:04.898Z",
+  "counts": {
+    "legalEntries": 273,
+    "baseSpecies": 185,
+    "alternateFormes": 88,
+    "megaFormes": 60,
+    "megaCapableSpecies": 59,
+    "draftable": 213,
+    "excludedNonstandard": 1198,
+    "excludedIllegalTier": 10,
+    "excludedBattleOnly": 7,
+    "excludedCosmetic": 29,
+    "distinctBaseSpecies": 186,
+    "megaCapableBaseSpecies": 58,
+    "orphanedMegaFormes": 0
+  },
+  "checksum": "sha256-cd177d8cabf2b048a9b177d716218366d4ad1feb11c189f24f861a6dfaed2165",
+  "entries": [
+    {
+      "id": "abomasnow",
+      "name": "Abomasnow",
+      "num": 460,
+      "types": [
+        "Grass",
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 90,
+        "atk": 92,
+        "def": 75,
+        "spa": 92,
+        "spd": 85,
+        "spe": 60
+      },
+      "baseSpeciesId": "abomasnow",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "abomasnowmega",
+          "name": "Abomasnow-Mega",
+          "forme": "Mega",
+          "requiredItem": "Abomasite",
+          "spriteId": "abomasnow-mega",
+          "types": [
+            "Grass",
+            "Ice"
+          ],
+          "baseStats": {
+            "hp": 90,
+            "atk": 132,
+            "def": 105,
+            "spa": 132,
+            "spd": 105,
+            "spe": 30
+          }
+        }
+      ],
+      "spriteId": "abomasnow",
+      "spriteMissing": false
+    },
+    {
+      "id": "absol",
+      "name": "Absol",
+      "num": 359,
+      "types": [
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 130,
+        "def": 60,
+        "spa": 75,
+        "spd": 60,
+        "spe": 75
+      },
+      "baseSpeciesId": "absol",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "absolmega",
+          "name": "Absol-Mega",
+          "forme": "Mega",
+          "requiredItem": "Absolite",
+          "spriteId": "absol-mega",
+          "types": [
+            "Dark"
+          ],
+          "baseStats": {
+            "hp": 65,
+            "atk": 150,
+            "def": 60,
+            "spa": 115,
+            "spd": 60,
+            "spe": 115
+          }
+        }
+      ],
+      "spriteId": "absol",
+      "spriteMissing": false
+    },
+    {
+      "id": "aegislash",
+      "name": "Aegislash",
+      "num": 681,
+      "types": [
+        "Steel",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 50,
+        "def": 140,
+        "spa": 50,
+        "spd": 140,
+        "spe": 60
+      },
+      "baseSpeciesId": "aegislash",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "aegislash",
+      "spriteMissing": false
+    },
+    {
+      "id": "aerodactyl",
+      "name": "Aerodactyl",
+      "num": 142,
+      "types": [
+        "Rock",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 105,
+        "def": 65,
+        "spa": 60,
+        "spd": 75,
+        "spe": 130
+      },
+      "baseSpeciesId": "aerodactyl",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "aerodactylmega",
+          "name": "Aerodactyl-Mega",
+          "forme": "Mega",
+          "requiredItem": "Aerodactylite",
+          "spriteId": "aerodactyl-mega",
+          "types": [
+            "Rock",
+            "Flying"
+          ],
+          "baseStats": {
+            "hp": 80,
+            "atk": 135,
+            "def": 85,
+            "spa": 70,
+            "spd": 95,
+            "spe": 150
+          }
+        }
+      ],
+      "spriteId": "aerodactyl",
+      "spriteMissing": false
+    },
+    {
+      "id": "aggron",
+      "name": "Aggron",
+      "num": 306,
+      "types": [
+        "Steel",
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 110,
+        "def": 180,
+        "spa": 60,
+        "spd": 60,
+        "spe": 50
+      },
+      "baseSpeciesId": "aggron",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "aggronmega",
+          "name": "Aggron-Mega",
+          "forme": "Mega",
+          "requiredItem": "Aggronite",
+          "spriteId": "aggron-mega",
+          "types": [
+            "Steel"
+          ],
+          "baseStats": {
+            "hp": 70,
+            "atk": 140,
+            "def": 230,
+            "spa": 60,
+            "spd": 80,
+            "spe": 50
+          }
+        }
+      ],
+      "spriteId": "aggron",
+      "spriteMissing": false
+    },
+    {
+      "id": "alakazam",
+      "name": "Alakazam",
+      "num": 65,
+      "types": [
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 55,
+        "atk": 50,
+        "def": 45,
+        "spa": 135,
+        "spd": 95,
+        "spe": 120
+      },
+      "baseSpeciesId": "alakazam",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "alakazammega",
+          "name": "Alakazam-Mega",
+          "forme": "Mega",
+          "requiredItem": "Alakazite",
+          "spriteId": "alakazam-mega",
+          "types": [
+            "Psychic"
+          ],
+          "baseStats": {
+            "hp": 55,
+            "atk": 50,
+            "def": 65,
+            "spa": 175,
+            "spd": 105,
+            "spe": 150
+          }
+        }
+      ],
+      "spriteId": "alakazam",
+      "spriteMissing": false
+    },
+    {
+      "id": "alcremie",
+      "name": "Alcremie",
+      "num": 869,
+      "types": [
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 60,
+        "def": 75,
+        "spa": 110,
+        "spd": 121,
+        "spe": 64
+      },
+      "baseSpeciesId": "alcremie",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "alcremie",
+      "spriteMissing": false
+    },
+    {
+      "id": "altaria",
+      "name": "Altaria",
+      "num": 334,
+      "types": [
+        "Dragon",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 70,
+        "def": 90,
+        "spa": 70,
+        "spd": 105,
+        "spe": 80
+      },
+      "baseSpeciesId": "altaria",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "altariamega",
+          "name": "Altaria-Mega",
+          "forme": "Mega",
+          "requiredItem": "Altarianite",
+          "spriteId": "altaria-mega",
+          "types": [
+            "Dragon",
+            "Fairy"
+          ],
+          "baseStats": {
+            "hp": 75,
+            "atk": 110,
+            "def": 110,
+            "spa": 110,
+            "spd": 105,
+            "spe": 80
+          }
+        }
+      ],
+      "spriteId": "altaria",
+      "spriteMissing": false
+    },
+    {
+      "id": "ampharos",
+      "name": "Ampharos",
+      "num": 181,
+      "types": [
+        "Electric"
+      ],
+      "baseStats": {
+        "hp": 90,
+        "atk": 75,
+        "def": 85,
+        "spa": 115,
+        "spd": 90,
+        "spe": 55
+      },
+      "baseSpeciesId": "ampharos",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "ampharosmega",
+          "name": "Ampharos-Mega",
+          "forme": "Mega",
+          "requiredItem": "Ampharosite",
+          "spriteId": "ampharos-mega",
+          "types": [
+            "Electric",
+            "Dragon"
+          ],
+          "baseStats": {
+            "hp": 90,
+            "atk": 95,
+            "def": 105,
+            "spa": 165,
+            "spd": 110,
+            "spe": 45
+          }
+        }
+      ],
+      "spriteId": "ampharos",
+      "spriteMissing": false
+    },
+    {
+      "id": "appletun",
+      "name": "Appletun",
+      "num": 842,
+      "types": [
+        "Grass",
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 110,
+        "atk": 85,
+        "def": 80,
+        "spa": 100,
+        "spd": 80,
+        "spe": 30
+      },
+      "baseSpeciesId": "appletun",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "appletun",
+      "spriteMissing": false
+    },
+    {
+      "id": "araquanid",
+      "name": "Araquanid",
+      "num": 752,
+      "types": [
+        "Water",
+        "Bug"
+      ],
+      "baseStats": {
+        "hp": 68,
+        "atk": 70,
+        "def": 92,
+        "spa": 50,
+        "spd": 132,
+        "spe": 42
+      },
+      "baseSpeciesId": "araquanid",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "araquanid",
+      "spriteMissing": false
+    },
+    {
+      "id": "arbok",
+      "name": "Arbok",
+      "num": 24,
+      "types": [
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 95,
+        "def": 69,
+        "spa": 65,
+        "spd": 79,
+        "spe": 80
+      },
+      "baseSpeciesId": "arbok",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "arbok",
+      "spriteMissing": false
+    },
+    {
+      "id": "arcanine",
+      "name": "Arcanine",
+      "num": 59,
+      "types": [
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 90,
+        "atk": 110,
+        "def": 80,
+        "spa": 100,
+        "spd": 80,
+        "spe": 95
+      },
+      "baseSpeciesId": "arcanine",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "arcanine",
+      "spriteMissing": false
+    },
+    {
+      "id": "arcaninehisui",
+      "name": "Arcanine-Hisui",
+      "num": 59,
+      "types": [
+        "Fire",
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 115,
+        "def": 80,
+        "spa": 95,
+        "spd": 80,
+        "spe": 90
+      },
+      "baseSpeciesId": "arcanine",
+      "forme": "Hisui",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "arcanine-hisui",
+      "spriteMissing": false
+    },
+    {
+      "id": "archaludon",
+      "name": "Archaludon",
+      "num": 1018,
+      "types": [
+        "Steel",
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 90,
+        "atk": 105,
+        "def": 130,
+        "spa": 125,
+        "spd": 65,
+        "spe": 85
+      },
+      "baseSpeciesId": "archaludon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "archaludon",
+      "spriteMissing": false
+    },
+    {
+      "id": "ariados",
+      "name": "Ariados",
+      "num": 168,
+      "types": [
+        "Bug",
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 90,
+        "def": 70,
+        "spa": 60,
+        "spd": 70,
+        "spe": 40
+      },
+      "baseSpeciesId": "ariados",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "ariados",
+      "spriteMissing": false
+    },
+    {
+      "id": "armarouge",
+      "name": "Armarouge",
+      "num": 936,
+      "types": [
+        "Fire",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 60,
+        "def": 100,
+        "spa": 125,
+        "spd": 80,
+        "spe": 75
+      },
+      "baseSpeciesId": "armarouge",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "armarouge",
+      "spriteMissing": false
+    },
+    {
+      "id": "aromatisse",
+      "name": "Aromatisse",
+      "num": 683,
+      "types": [
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 101,
+        "atk": 72,
+        "def": 72,
+        "spa": 99,
+        "spd": 89,
+        "spe": 29
+      },
+      "baseSpeciesId": "aromatisse",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "aromatisse",
+      "spriteMissing": false
+    },
+    {
+      "id": "audino",
+      "name": "Audino",
+      "num": 531,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 103,
+        "atk": 60,
+        "def": 86,
+        "spa": 60,
+        "spd": 86,
+        "spe": 50
+      },
+      "baseSpeciesId": "audino",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "audinomega",
+          "name": "Audino-Mega",
+          "forme": "Mega",
+          "requiredItem": "Audinite",
+          "spriteId": "audino-mega",
+          "types": [
+            "Normal",
+            "Fairy"
+          ],
+          "baseStats": {
+            "hp": 103,
+            "atk": 60,
+            "def": 126,
+            "spa": 80,
+            "spd": 126,
+            "spe": 50
+          }
+        }
+      ],
+      "spriteId": "audino",
+      "spriteMissing": false
+    },
+    {
+      "id": "aurorus",
+      "name": "Aurorus",
+      "num": 699,
+      "types": [
+        "Rock",
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 123,
+        "atk": 77,
+        "def": 72,
+        "spa": 99,
+        "spd": 92,
+        "spe": 58
+      },
+      "baseSpeciesId": "aurorus",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "aurorus",
+      "spriteMissing": false
+    },
+    {
+      "id": "avalugg",
+      "name": "Avalugg",
+      "num": 713,
+      "types": [
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 117,
+        "def": 184,
+        "spa": 44,
+        "spd": 46,
+        "spe": 28
+      },
+      "baseSpeciesId": "avalugg",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "avalugg",
+      "spriteMissing": false
+    },
+    {
+      "id": "avalugghisui",
+      "name": "Avalugg-Hisui",
+      "num": 713,
+      "types": [
+        "Ice",
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 127,
+        "def": 184,
+        "spa": 34,
+        "spd": 36,
+        "spe": 38
+      },
+      "baseSpeciesId": "avalugg",
+      "forme": "Hisui",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "avalugg-hisui",
+      "spriteMissing": false
+    },
+    {
+      "id": "azumarill",
+      "name": "Azumarill",
+      "num": 184,
+      "types": [
+        "Water",
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 100,
+        "atk": 50,
+        "def": 80,
+        "spa": 60,
+        "spd": 80,
+        "spe": 50
+      },
+      "baseSpeciesId": "azumarill",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "azumarill",
+      "spriteMissing": false
+    },
+    {
+      "id": "banette",
+      "name": "Banette",
+      "num": 354,
+      "types": [
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 64,
+        "atk": 115,
+        "def": 65,
+        "spa": 83,
+        "spd": 63,
+        "spe": 65
+      },
+      "baseSpeciesId": "banette",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "banettemega",
+          "name": "Banette-Mega",
+          "forme": "Mega",
+          "requiredItem": "Banettite",
+          "spriteId": "banette-mega",
+          "types": [
+            "Ghost"
+          ],
+          "baseStats": {
+            "hp": 64,
+            "atk": 165,
+            "def": 75,
+            "spa": 93,
+            "spd": 83,
+            "spe": 75
+          }
+        }
+      ],
+      "spriteId": "banette",
+      "spriteMissing": false
+    },
+    {
+      "id": "basculegion",
+      "name": "Basculegion",
+      "num": 902,
+      "types": [
+        "Water",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 120,
+        "atk": 112,
+        "def": 65,
+        "spa": 80,
+        "spd": 75,
+        "spe": 78
+      },
+      "baseSpeciesId": "basculegion",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "basculegion",
+      "spriteMissing": false
+    },
+    {
+      "id": "basculegionf",
+      "name": "Basculegion-F",
+      "num": 902,
+      "types": [
+        "Water",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 120,
+        "atk": 92,
+        "def": 65,
+        "spa": 100,
+        "spd": 75,
+        "spe": 78
+      },
+      "baseSpeciesId": "basculegion",
+      "forme": "F",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "basculegion-f",
+      "spriteMissing": false
+    },
+    {
+      "id": "bastiodon",
+      "name": "Bastiodon",
+      "num": 411,
+      "types": [
+        "Rock",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 52,
+        "def": 168,
+        "spa": 47,
+        "spd": 138,
+        "spe": 30
+      },
+      "baseSpeciesId": "bastiodon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "bastiodon",
+      "spriteMissing": false
+    },
+    {
+      "id": "beartic",
+      "name": "Beartic",
+      "num": 614,
+      "types": [
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 130,
+        "def": 80,
+        "spa": 70,
+        "spd": 80,
+        "spe": 50
+      },
+      "baseSpeciesId": "beartic",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "beartic",
+      "spriteMissing": false
+    },
+    {
+      "id": "beedrill",
+      "name": "Beedrill",
+      "num": 15,
+      "types": [
+        "Bug",
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 90,
+        "def": 40,
+        "spa": 45,
+        "spd": 80,
+        "spe": 75
+      },
+      "baseSpeciesId": "beedrill",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "beedrillmega",
+          "name": "Beedrill-Mega",
+          "forme": "Mega",
+          "requiredItem": "Beedrillite",
+          "spriteId": "beedrill-mega",
+          "types": [
+            "Bug",
+            "Poison"
+          ],
+          "baseStats": {
+            "hp": 65,
+            "atk": 150,
+            "def": 40,
+            "spa": 15,
+            "spd": 80,
+            "spe": 145
+          }
+        }
+      ],
+      "spriteId": "beedrill",
+      "spriteMissing": false
+    },
+    {
+      "id": "bellibolt",
+      "name": "Bellibolt",
+      "num": 939,
+      "types": [
+        "Electric"
+      ],
+      "baseStats": {
+        "hp": 109,
+        "atk": 64,
+        "def": 91,
+        "spa": 103,
+        "spd": 83,
+        "spe": 45
+      },
+      "baseSpeciesId": "bellibolt",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "bellibolt",
+      "spriteMissing": false
+    },
+    {
+      "id": "blastoise",
+      "name": "Blastoise",
+      "num": 9,
+      "types": [
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 79,
+        "atk": 83,
+        "def": 100,
+        "spa": 85,
+        "spd": 105,
+        "spe": 78
+      },
+      "baseSpeciesId": "blastoise",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "blastoisemega",
+          "name": "Blastoise-Mega",
+          "forme": "Mega",
+          "requiredItem": "Blastoisinite",
+          "spriteId": "blastoise-mega",
+          "types": [
+            "Water"
+          ],
+          "baseStats": {
+            "hp": 79,
+            "atk": 103,
+            "def": 120,
+            "spa": 135,
+            "spd": 115,
+            "spe": 78
+          }
+        }
+      ],
+      "spriteId": "blastoise",
+      "spriteMissing": false
+    },
+    {
+      "id": "camerupt",
+      "name": "Camerupt",
+      "num": 323,
+      "types": [
+        "Fire",
+        "Ground"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 100,
+        "def": 70,
+        "spa": 105,
+        "spd": 75,
+        "spe": 40
+      },
+      "baseSpeciesId": "camerupt",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "cameruptmega",
+          "name": "Camerupt-Mega",
+          "forme": "Mega",
+          "requiredItem": "Cameruptite",
+          "spriteId": "camerupt-mega",
+          "types": [
+            "Fire",
+            "Ground"
+          ],
+          "baseStats": {
+            "hp": 70,
+            "atk": 120,
+            "def": 100,
+            "spa": 145,
+            "spd": 105,
+            "spe": 20
+          }
+        }
+      ],
+      "spriteId": "camerupt",
+      "spriteMissing": false
+    },
+    {
+      "id": "castform",
+      "name": "Castform",
+      "num": 351,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 70,
+        "def": 70,
+        "spa": 70,
+        "spd": 70,
+        "spe": 70
+      },
+      "baseSpeciesId": "castform",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "castform",
+      "spriteMissing": false
+    },
+    {
+      "id": "ceruledge",
+      "name": "Ceruledge",
+      "num": 937,
+      "types": [
+        "Fire",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 125,
+        "def": 80,
+        "spa": 60,
+        "spd": 100,
+        "spe": 85
+      },
+      "baseSpeciesId": "ceruledge",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "ceruledge",
+      "spriteMissing": false
+    },
+    {
+      "id": "chandelure",
+      "name": "Chandelure",
+      "num": 609,
+      "types": [
+        "Ghost",
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 55,
+        "def": 90,
+        "spa": 145,
+        "spd": 90,
+        "spe": 80
+      },
+      "baseSpeciesId": "chandelure",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "chandeluremega",
+          "name": "Chandelure-Mega",
+          "forme": "Mega",
+          "requiredItem": "Chandelurite",
+          "spriteId": "chandelure-mega",
+          "types": [
+            "Ghost",
+            "Fire"
+          ],
+          "baseStats": {
+            "hp": 60,
+            "atk": 75,
+            "def": 110,
+            "spa": 175,
+            "spd": 110,
+            "spe": 90
+          }
+        }
+      ],
+      "spriteId": "chandelure",
+      "spriteMissing": false
+    },
+    {
+      "id": "charizard",
+      "name": "Charizard",
+      "num": 6,
+      "types": [
+        "Fire",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 78,
+        "atk": 84,
+        "def": 78,
+        "spa": 109,
+        "spd": 85,
+        "spe": 100
+      },
+      "baseSpeciesId": "charizard",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "charizardmegax",
+          "name": "Charizard-Mega-X",
+          "forme": "Mega-X",
+          "requiredItem": "Charizardite X",
+          "spriteId": "charizard-megax",
+          "types": [
+            "Fire",
+            "Dragon"
+          ],
+          "baseStats": {
+            "hp": 78,
+            "atk": 130,
+            "def": 111,
+            "spa": 130,
+            "spd": 85,
+            "spe": 100
+          }
+        },
+        {
+          "id": "charizardmegay",
+          "name": "Charizard-Mega-Y",
+          "forme": "Mega-Y",
+          "requiredItem": "Charizardite Y",
+          "spriteId": "charizard-megay",
+          "types": [
+            "Fire",
+            "Flying"
+          ],
+          "baseStats": {
+            "hp": 78,
+            "atk": 104,
+            "def": 78,
+            "spa": 159,
+            "spd": 115,
+            "spe": 100
+          }
+        }
+      ],
+      "spriteId": "charizard",
+      "spriteMissing": false
+    },
+    {
+      "id": "chesnaught",
+      "name": "Chesnaught",
+      "num": 652,
+      "types": [
+        "Grass",
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 88,
+        "atk": 107,
+        "def": 122,
+        "spa": 74,
+        "spd": 75,
+        "spe": 64
+      },
+      "baseSpeciesId": "chesnaught",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "chesnaughtmega",
+          "name": "Chesnaught-Mega",
+          "forme": "Mega",
+          "requiredItem": "Chesnaughtite",
+          "spriteId": "chesnaught-mega",
+          "types": [
+            "Grass",
+            "Fighting"
+          ],
+          "baseStats": {
+            "hp": 88,
+            "atk": 137,
+            "def": 172,
+            "spa": 74,
+            "spd": 115,
+            "spe": 44
+          }
+        }
+      ],
+      "spriteId": "chesnaught",
+      "spriteMissing": false
+    },
+    {
+      "id": "chimecho",
+      "name": "Chimecho",
+      "num": 358,
+      "types": [
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 50,
+        "def": 80,
+        "spa": 95,
+        "spd": 90,
+        "spe": 65
+      },
+      "baseSpeciesId": "chimecho",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "chimechomega",
+          "name": "Chimecho-Mega",
+          "forme": "Mega",
+          "requiredItem": "Chimechite",
+          "spriteId": "chimecho-mega",
+          "types": [
+            "Psychic",
+            "Steel"
+          ],
+          "baseStats": {
+            "hp": 75,
+            "atk": 50,
+            "def": 110,
+            "spa": 135,
+            "spd": 120,
+            "spe": 65
+          }
+        }
+      ],
+      "spriteId": "chimecho",
+      "spriteMissing": false
+    },
+    {
+      "id": "clawitzer",
+      "name": "Clawitzer",
+      "num": 693,
+      "types": [
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 71,
+        "atk": 73,
+        "def": 88,
+        "spa": 120,
+        "spd": 89,
+        "spe": 59
+      },
+      "baseSpeciesId": "clawitzer",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "clawitzer",
+      "spriteMissing": false
+    },
+    {
+      "id": "clefable",
+      "name": "Clefable",
+      "num": 36,
+      "types": [
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 70,
+        "def": 73,
+        "spa": 95,
+        "spd": 90,
+        "spe": 60
+      },
+      "baseSpeciesId": "clefable",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "clefablemega",
+          "name": "Clefable-Mega",
+          "forme": "Mega",
+          "requiredItem": "Clefablite",
+          "spriteId": "clefable-mega",
+          "types": [
+            "Fairy",
+            "Flying"
+          ],
+          "baseStats": {
+            "hp": 95,
+            "atk": 80,
+            "def": 93,
+            "spa": 135,
+            "spd": 110,
+            "spe": 70
+          }
+        }
+      ],
+      "spriteId": "clefable",
+      "spriteMissing": false
+    },
+    {
+      "id": "cofagrigus",
+      "name": "Cofagrigus",
+      "num": 563,
+      "types": [
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 58,
+        "atk": 50,
+        "def": 145,
+        "spa": 95,
+        "spd": 105,
+        "spe": 30
+      },
+      "baseSpeciesId": "cofagrigus",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "cofagrigus",
+      "spriteMissing": false
+    },
+    {
+      "id": "conkeldurr",
+      "name": "Conkeldurr",
+      "num": 534,
+      "types": [
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 105,
+        "atk": 140,
+        "def": 95,
+        "spa": 55,
+        "spd": 65,
+        "spe": 45
+      },
+      "baseSpeciesId": "conkeldurr",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "conkeldurr",
+      "spriteMissing": false
+    },
+    {
+      "id": "corviknight",
+      "name": "Corviknight",
+      "num": 823,
+      "types": [
+        "Flying",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 98,
+        "atk": 87,
+        "def": 105,
+        "spa": 53,
+        "spd": 85,
+        "spe": 67
+      },
+      "baseSpeciesId": "corviknight",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "corviknight",
+      "spriteMissing": false
+    },
+    {
+      "id": "crabominable",
+      "name": "Crabominable",
+      "num": 740,
+      "types": [
+        "Fighting",
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 97,
+        "atk": 132,
+        "def": 77,
+        "spa": 62,
+        "spd": 67,
+        "spe": 43
+      },
+      "baseSpeciesId": "crabominable",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "crabominablemega",
+          "name": "Crabominable-Mega",
+          "forme": "Mega",
+          "requiredItem": "Crabominite",
+          "spriteId": "crabominable-mega",
+          "types": [
+            "Fighting",
+            "Ice"
+          ],
+          "baseStats": {
+            "hp": 97,
+            "atk": 157,
+            "def": 122,
+            "spa": 62,
+            "spd": 107,
+            "spe": 33
+          }
+        }
+      ],
+      "spriteId": "crabominable",
+      "spriteMissing": false
+    },
+    {
+      "id": "decidueye",
+      "name": "Decidueye",
+      "num": 724,
+      "types": [
+        "Grass",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 78,
+        "atk": 107,
+        "def": 75,
+        "spa": 100,
+        "spd": 100,
+        "spe": 70
+      },
+      "baseSpeciesId": "decidueye",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "decidueye",
+      "spriteMissing": false
+    },
+    {
+      "id": "decidueyehisui",
+      "name": "Decidueye-Hisui",
+      "num": 724,
+      "types": [
+        "Grass",
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 88,
+        "atk": 112,
+        "def": 80,
+        "spa": 95,
+        "spd": 95,
+        "spe": 60
+      },
+      "baseSpeciesId": "decidueye",
+      "forme": "Hisui",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "decidueye-hisui",
+      "spriteMissing": false
+    },
+    {
+      "id": "dedenne",
+      "name": "Dedenne",
+      "num": 702,
+      "types": [
+        "Electric",
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 67,
+        "atk": 58,
+        "def": 57,
+        "spa": 81,
+        "spd": 67,
+        "spe": 101
+      },
+      "baseSpeciesId": "dedenne",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "dedenne",
+      "spriteMissing": false
+    },
+    {
+      "id": "delphox",
+      "name": "Delphox",
+      "num": 655,
+      "types": [
+        "Fire",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 69,
+        "def": 72,
+        "spa": 114,
+        "spd": 100,
+        "spe": 104
+      },
+      "baseSpeciesId": "delphox",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "delphoxmega",
+          "name": "Delphox-Mega",
+          "forme": "Mega",
+          "requiredItem": "Delphoxite",
+          "spriteId": "delphox-mega",
+          "types": [
+            "Fire",
+            "Psychic"
+          ],
+          "baseStats": {
+            "hp": 75,
+            "atk": 69,
+            "def": 72,
+            "spa": 159,
+            "spd": 125,
+            "spe": 134
+          }
+        }
+      ],
+      "spriteId": "delphox",
+      "spriteMissing": false
+    },
+    {
+      "id": "diggersby",
+      "name": "Diggersby",
+      "num": 660,
+      "types": [
+        "Normal",
+        "Ground"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 56,
+        "def": 77,
+        "spa": 50,
+        "spd": 77,
+        "spe": 78
+      },
+      "baseSpeciesId": "diggersby",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "diggersby",
+      "spriteMissing": false
+    },
+    {
+      "id": "ditto",
+      "name": "Ditto",
+      "num": 132,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 48,
+        "atk": 48,
+        "def": 48,
+        "spa": 48,
+        "spd": 48,
+        "spe": 48
+      },
+      "baseSpeciesId": "ditto",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "ditto",
+      "spriteMissing": false
+    },
+    {
+      "id": "dragapult",
+      "name": "Dragapult",
+      "num": 887,
+      "types": [
+        "Dragon",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 88,
+        "atk": 120,
+        "def": 75,
+        "spa": 100,
+        "spd": 75,
+        "spe": 142
+      },
+      "baseSpeciesId": "dragapult",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "dragapult",
+      "spriteMissing": false
+    },
+    {
+      "id": "dragonite",
+      "name": "Dragonite",
+      "num": 149,
+      "types": [
+        "Dragon",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 91,
+        "atk": 134,
+        "def": 95,
+        "spa": 100,
+        "spd": 100,
+        "spe": 80
+      },
+      "baseSpeciesId": "dragonite",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "dragonitemega",
+          "name": "Dragonite-Mega",
+          "forme": "Mega",
+          "requiredItem": "Dragoninite",
+          "spriteId": "dragonite-mega",
+          "types": [
+            "Dragon",
+            "Flying"
+          ],
+          "baseStats": {
+            "hp": 91,
+            "atk": 124,
+            "def": 115,
+            "spa": 145,
+            "spd": 125,
+            "spe": 100
+          }
+        }
+      ],
+      "spriteId": "dragonite",
+      "spriteMissing": false
+    },
+    {
+      "id": "drampa",
+      "name": "Drampa",
+      "num": 780,
+      "types": [
+        "Normal",
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 78,
+        "atk": 60,
+        "def": 85,
+        "spa": 135,
+        "spd": 91,
+        "spe": 36
+      },
+      "baseSpeciesId": "drampa",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "drampamega",
+          "name": "Drampa-Mega",
+          "forme": "Mega",
+          "requiredItem": "Drampanite",
+          "spriteId": "drampa-mega",
+          "types": [
+            "Normal",
+            "Dragon"
+          ],
+          "baseStats": {
+            "hp": 78,
+            "atk": 85,
+            "def": 110,
+            "spa": 160,
+            "spd": 116,
+            "spe": 36
+          }
+        }
+      ],
+      "spriteId": "drampa",
+      "spriteMissing": false
+    },
+    {
+      "id": "emboar",
+      "name": "Emboar",
+      "num": 500,
+      "types": [
+        "Fire",
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 110,
+        "atk": 123,
+        "def": 65,
+        "spa": 100,
+        "spd": 65,
+        "spe": 65
+      },
+      "baseSpeciesId": "emboar",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "emboarmega",
+          "name": "Emboar-Mega",
+          "forme": "Mega",
+          "requiredItem": "Emboarite",
+          "spriteId": "emboar-mega",
+          "types": [
+            "Fire",
+            "Fighting"
+          ],
+          "baseStats": {
+            "hp": 110,
+            "atk": 148,
+            "def": 75,
+            "spa": 110,
+            "spd": 110,
+            "spe": 75
+          }
+        }
+      ],
+      "spriteId": "emboar",
+      "spriteMissing": false
+    },
+    {
+      "id": "emolga",
+      "name": "Emolga",
+      "num": 587,
+      "types": [
+        "Electric",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 55,
+        "atk": 75,
+        "def": 60,
+        "spa": 75,
+        "spd": 60,
+        "spe": 103
+      },
+      "baseSpeciesId": "emolga",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "emolga",
+      "spriteMissing": false
+    },
+    {
+      "id": "empoleon",
+      "name": "Empoleon",
+      "num": 395,
+      "types": [
+        "Water",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 84,
+        "atk": 86,
+        "def": 88,
+        "spa": 111,
+        "spd": 101,
+        "spe": 60
+      },
+      "baseSpeciesId": "empoleon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "empoleon",
+      "spriteMissing": false
+    },
+    {
+      "id": "espathra",
+      "name": "Espathra",
+      "num": 956,
+      "types": [
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 60,
+        "def": 60,
+        "spa": 101,
+        "spd": 60,
+        "spe": 105
+      },
+      "baseSpeciesId": "espathra",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "espathra",
+      "spriteMissing": false
+    },
+    {
+      "id": "espeon",
+      "name": "Espeon",
+      "num": 196,
+      "types": [
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 65,
+        "def": 60,
+        "spa": 130,
+        "spd": 95,
+        "spe": 110
+      },
+      "baseSpeciesId": "espeon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "espeon",
+      "spriteMissing": false
+    },
+    {
+      "id": "excadrill",
+      "name": "Excadrill",
+      "num": 530,
+      "types": [
+        "Ground",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 110,
+        "atk": 135,
+        "def": 60,
+        "spa": 50,
+        "spd": 65,
+        "spe": 88
+      },
+      "baseSpeciesId": "excadrill",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "excadrillmega",
+          "name": "Excadrill-Mega",
+          "forme": "Mega",
+          "requiredItem": "Excadrite",
+          "spriteId": "excadrill-mega",
+          "types": [
+            "Ground",
+            "Steel"
+          ],
+          "baseStats": {
+            "hp": 110,
+            "atk": 165,
+            "def": 100,
+            "spa": 65,
+            "spd": 65,
+            "spe": 103
+          }
+        }
+      ],
+      "spriteId": "excadrill",
+      "spriteMissing": false
+    },
+    {
+      "id": "farigiraf",
+      "name": "Farigiraf",
+      "num": 981,
+      "types": [
+        "Normal",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 120,
+        "atk": 90,
+        "def": 70,
+        "spa": 110,
+        "spd": 70,
+        "spe": 60
+      },
+      "baseSpeciesId": "farigiraf",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "farigiraf",
+      "spriteMissing": false
+    },
+    {
+      "id": "feraligatr",
+      "name": "Feraligatr",
+      "num": 160,
+      "types": [
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 105,
+        "def": 100,
+        "spa": 79,
+        "spd": 83,
+        "spe": 78
+      },
+      "baseSpeciesId": "feraligatr",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "feraligatrmega",
+          "name": "Feraligatr-Mega",
+          "forme": "Mega",
+          "requiredItem": "Feraligite",
+          "spriteId": "feraligatr-mega",
+          "types": [
+            "Water",
+            "Dragon"
+          ],
+          "baseStats": {
+            "hp": 85,
+            "atk": 160,
+            "def": 125,
+            "spa": 89,
+            "spd": 93,
+            "spe": 78
+          }
+        }
+      ],
+      "spriteId": "feraligatr",
+      "spriteMissing": false
+    },
+    {
+      "id": "flapple",
+      "name": "Flapple",
+      "num": 841,
+      "types": [
+        "Grass",
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 110,
+        "def": 80,
+        "spa": 95,
+        "spd": 60,
+        "spe": 70
+      },
+      "baseSpeciesId": "flapple",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "flapple",
+      "spriteMissing": false
+    },
+    {
+      "id": "flareon",
+      "name": "Flareon",
+      "num": 136,
+      "types": [
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 130,
+        "def": 60,
+        "spa": 95,
+        "spd": 110,
+        "spe": 65
+      },
+      "baseSpeciesId": "flareon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "flareon",
+      "spriteMissing": false
+    },
+    {
+      "id": "floetteeternal",
+      "name": "Floette-Eternal",
+      "num": 670,
+      "types": [
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 74,
+        "atk": 65,
+        "def": 67,
+        "spa": 125,
+        "spd": 128,
+        "spe": 92
+      },
+      "baseSpeciesId": "floette",
+      "forme": "Eternal",
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "floettemega",
+          "name": "Floette-Mega",
+          "forme": "Mega",
+          "requiredItem": "Floettite",
+          "spriteId": "floette-mega",
+          "types": [
+            "Fairy"
+          ],
+          "baseStats": {
+            "hp": 74,
+            "atk": 85,
+            "def": 87,
+            "spa": 155,
+            "spd": 148,
+            "spe": 102
+          }
+        }
+      ],
+      "spriteId": "floette-eternal",
+      "spriteMissing": false
+    },
+    {
+      "id": "florges",
+      "name": "Florges",
+      "num": 671,
+      "types": [
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 78,
+        "atk": 65,
+        "def": 68,
+        "spa": 112,
+        "spd": 154,
+        "spe": 75
+      },
+      "baseSpeciesId": "florges",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "florges",
+      "spriteMissing": false
+    },
+    {
+      "id": "forretress",
+      "name": "Forretress",
+      "num": 205,
+      "types": [
+        "Bug",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 90,
+        "def": 140,
+        "spa": 60,
+        "spd": 60,
+        "spe": 40
+      },
+      "baseSpeciesId": "forretress",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "forretress",
+      "spriteMissing": false
+    },
+    {
+      "id": "froslass",
+      "name": "Froslass",
+      "num": 478,
+      "types": [
+        "Ice",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 80,
+        "def": 70,
+        "spa": 80,
+        "spd": 70,
+        "spe": 110
+      },
+      "baseSpeciesId": "froslass",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "froslassmega",
+          "name": "Froslass-Mega",
+          "forme": "Mega",
+          "requiredItem": "Froslassite",
+          "spriteId": "froslass-mega",
+          "types": [
+            "Ice",
+            "Ghost"
+          ],
+          "baseStats": {
+            "hp": 70,
+            "atk": 80,
+            "def": 70,
+            "spa": 140,
+            "spd": 100,
+            "spe": 120
+          }
+        }
+      ],
+      "spriteId": "froslass",
+      "spriteMissing": false
+    },
+    {
+      "id": "furfrou",
+      "name": "Furfrou",
+      "num": 676,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 80,
+        "def": 60,
+        "spa": 65,
+        "spd": 90,
+        "spe": 102
+      },
+      "baseSpeciesId": "furfrou",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "furfrou",
+      "spriteMissing": false
+    },
+    {
+      "id": "gallade",
+      "name": "Gallade",
+      "num": 475,
+      "types": [
+        "Psychic",
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 68,
+        "atk": 125,
+        "def": 65,
+        "spa": 65,
+        "spd": 115,
+        "spe": 80
+      },
+      "baseSpeciesId": "gallade",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "gallademega",
+          "name": "Gallade-Mega",
+          "forme": "Mega",
+          "requiredItem": "Galladite",
+          "spriteId": "gallade-mega",
+          "types": [
+            "Psychic",
+            "Fighting"
+          ],
+          "baseStats": {
+            "hp": 68,
+            "atk": 165,
+            "def": 95,
+            "spa": 65,
+            "spd": 115,
+            "spe": 110
+          }
+        }
+      ],
+      "spriteId": "gallade",
+      "spriteMissing": false
+    },
+    {
+      "id": "garbodor",
+      "name": "Garbodor",
+      "num": 569,
+      "types": [
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 95,
+        "def": 82,
+        "spa": 60,
+        "spd": 82,
+        "spe": 75
+      },
+      "baseSpeciesId": "garbodor",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "garbodor",
+      "spriteMissing": false
+    },
+    {
+      "id": "garchomp",
+      "name": "Garchomp",
+      "num": 445,
+      "types": [
+        "Dragon",
+        "Ground"
+      ],
+      "baseStats": {
+        "hp": 108,
+        "atk": 130,
+        "def": 95,
+        "spa": 80,
+        "spd": 85,
+        "spe": 102
+      },
+      "baseSpeciesId": "garchomp",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "garchompmega",
+          "name": "Garchomp-Mega",
+          "forme": "Mega",
+          "requiredItem": "Garchompite",
+          "spriteId": "garchomp-mega",
+          "types": [
+            "Dragon",
+            "Ground"
+          ],
+          "baseStats": {
+            "hp": 108,
+            "atk": 170,
+            "def": 115,
+            "spa": 120,
+            "spd": 95,
+            "spe": 92
+          }
+        }
+      ],
+      "spriteId": "garchomp",
+      "spriteMissing": false
+    },
+    {
+      "id": "gardevoir",
+      "name": "Gardevoir",
+      "num": 282,
+      "types": [
+        "Psychic",
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 68,
+        "atk": 65,
+        "def": 65,
+        "spa": 125,
+        "spd": 115,
+        "spe": 80
+      },
+      "baseSpeciesId": "gardevoir",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "gardevoirmega",
+          "name": "Gardevoir-Mega",
+          "forme": "Mega",
+          "requiredItem": "Gardevoirite",
+          "spriteId": "gardevoir-mega",
+          "types": [
+            "Psychic",
+            "Fairy"
+          ],
+          "baseStats": {
+            "hp": 68,
+            "atk": 85,
+            "def": 65,
+            "spa": 165,
+            "spd": 135,
+            "spe": 100
+          }
+        }
+      ],
+      "spriteId": "gardevoir",
+      "spriteMissing": false
+    },
+    {
+      "id": "garganacl",
+      "name": "Garganacl",
+      "num": 934,
+      "types": [
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 100,
+        "atk": 100,
+        "def": 130,
+        "spa": 45,
+        "spd": 90,
+        "spe": 35
+      },
+      "baseSpeciesId": "garganacl",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "garganacl",
+      "spriteMissing": false
+    },
+    {
+      "id": "gengar",
+      "name": "Gengar",
+      "num": 94,
+      "types": [
+        "Ghost",
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 65,
+        "def": 60,
+        "spa": 130,
+        "spd": 75,
+        "spe": 110
+      },
+      "baseSpeciesId": "gengar",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "gengarmega",
+          "name": "Gengar-Mega",
+          "forme": "Mega",
+          "requiredItem": "Gengarite",
+          "spriteId": "gengar-mega",
+          "types": [
+            "Ghost",
+            "Poison"
+          ],
+          "baseStats": {
+            "hp": 60,
+            "atk": 65,
+            "def": 80,
+            "spa": 170,
+            "spd": 95,
+            "spe": 130
+          }
+        }
+      ],
+      "spriteId": "gengar",
+      "spriteMissing": false
+    },
+    {
+      "id": "glaceon",
+      "name": "Glaceon",
+      "num": 471,
+      "types": [
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 60,
+        "def": 110,
+        "spa": 130,
+        "spd": 95,
+        "spe": 65
+      },
+      "baseSpeciesId": "glaceon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "glaceon",
+      "spriteMissing": false
+    },
+    {
+      "id": "glalie",
+      "name": "Glalie",
+      "num": 362,
+      "types": [
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 80,
+        "def": 80,
+        "spa": 80,
+        "spd": 80,
+        "spe": 80
+      },
+      "baseSpeciesId": "glalie",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "glaliemega",
+          "name": "Glalie-Mega",
+          "forme": "Mega",
+          "requiredItem": "Glalitite",
+          "spriteId": "glalie-mega",
+          "types": [
+            "Ice"
+          ],
+          "baseStats": {
+            "hp": 80,
+            "atk": 120,
+            "def": 80,
+            "spa": 120,
+            "spd": 80,
+            "spe": 100
+          }
+        }
+      ],
+      "spriteId": "glalie",
+      "spriteMissing": false
+    },
+    {
+      "id": "glimmora",
+      "name": "Glimmora",
+      "num": 970,
+      "types": [
+        "Rock",
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 83,
+        "atk": 55,
+        "def": 90,
+        "spa": 130,
+        "spd": 81,
+        "spe": 86
+      },
+      "baseSpeciesId": "glimmora",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "glimmoramega",
+          "name": "Glimmora-Mega",
+          "forme": "Mega",
+          "requiredItem": "Glimmoranite",
+          "spriteId": "glimmora-mega",
+          "types": [
+            "Rock",
+            "Poison"
+          ],
+          "baseStats": {
+            "hp": 83,
+            "atk": 90,
+            "def": 105,
+            "spa": 150,
+            "spd": 96,
+            "spe": 101
+          }
+        }
+      ],
+      "spriteId": "glimmora",
+      "spriteMissing": false
+    },
+    {
+      "id": "gliscor",
+      "name": "Gliscor",
+      "num": 472,
+      "types": [
+        "Ground",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 95,
+        "def": 125,
+        "spa": 45,
+        "spd": 75,
+        "spe": 95
+      },
+      "baseSpeciesId": "gliscor",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "gliscor",
+      "spriteMissing": false
+    },
+    {
+      "id": "golurk",
+      "name": "Golurk",
+      "num": 623,
+      "types": [
+        "Ground",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 89,
+        "atk": 124,
+        "def": 80,
+        "spa": 55,
+        "spd": 80,
+        "spe": 55
+      },
+      "baseSpeciesId": "golurk",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "golurkmega",
+          "name": "Golurk-Mega",
+          "forme": "Mega",
+          "requiredItem": "Golurkite",
+          "spriteId": "golurk-mega",
+          "types": [
+            "Ground",
+            "Ghost"
+          ],
+          "baseStats": {
+            "hp": 89,
+            "atk": 159,
+            "def": 105,
+            "spa": 70,
+            "spd": 105,
+            "spe": 55
+          }
+        }
+      ],
+      "spriteId": "golurk",
+      "spriteMissing": false
+    },
+    {
+      "id": "goodra",
+      "name": "Goodra",
+      "num": 706,
+      "types": [
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 90,
+        "atk": 100,
+        "def": 70,
+        "spa": 110,
+        "spd": 150,
+        "spe": 80
+      },
+      "baseSpeciesId": "goodra",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "goodra",
+      "spriteMissing": false
+    },
+    {
+      "id": "goodrahisui",
+      "name": "Goodra-Hisui",
+      "num": 706,
+      "types": [
+        "Steel",
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 100,
+        "def": 100,
+        "spa": 110,
+        "spd": 150,
+        "spe": 60
+      },
+      "baseSpeciesId": "goodra",
+      "forme": "Hisui",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "goodra-hisui",
+      "spriteMissing": false
+    },
+    {
+      "id": "gourgeist",
+      "name": "Gourgeist",
+      "num": 711,
+      "types": [
+        "Ghost",
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 90,
+        "def": 122,
+        "spa": 58,
+        "spd": 75,
+        "spe": 84
+      },
+      "baseSpeciesId": "gourgeist",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "gourgeist",
+      "spriteMissing": false
+    },
+    {
+      "id": "gourgeistlarge",
+      "name": "Gourgeist-Large",
+      "num": 711,
+      "types": [
+        "Ghost",
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 95,
+        "def": 122,
+        "spa": 58,
+        "spd": 75,
+        "spe": 69
+      },
+      "baseSpeciesId": "gourgeist",
+      "forme": "Large",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "gourgeist-large",
+      "spriteMissing": false
+    },
+    {
+      "id": "gourgeistsmall",
+      "name": "Gourgeist-Small",
+      "num": 711,
+      "types": [
+        "Ghost",
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 55,
+        "atk": 85,
+        "def": 122,
+        "spa": 58,
+        "spd": 75,
+        "spe": 99
+      },
+      "baseSpeciesId": "gourgeist",
+      "forme": "Small",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "gourgeist-small",
+      "spriteMissing": false
+    },
+    {
+      "id": "gourgeistsuper",
+      "name": "Gourgeist-Super",
+      "num": 711,
+      "types": [
+        "Ghost",
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 100,
+        "def": 122,
+        "spa": 58,
+        "spd": 75,
+        "spe": 54
+      },
+      "baseSpeciesId": "gourgeist",
+      "forme": "Super",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "gourgeist-super",
+      "spriteMissing": false
+    },
+    {
+      "id": "greninja",
+      "name": "Greninja",
+      "num": 658,
+      "types": [
+        "Water",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 72,
+        "atk": 95,
+        "def": 67,
+        "spa": 103,
+        "spd": 71,
+        "spe": 122
+      },
+      "baseSpeciesId": "greninja",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "greninjamega",
+          "name": "Greninja-Mega",
+          "forme": "Mega",
+          "requiredItem": "Greninjite",
+          "spriteId": "greninja-mega",
+          "types": [
+            "Water",
+            "Dark"
+          ],
+          "baseStats": {
+            "hp": 72,
+            "atk": 125,
+            "def": 77,
+            "spa": 133,
+            "spd": 81,
+            "spe": 142
+          }
+        }
+      ],
+      "spriteId": "greninja",
+      "spriteMissing": false
+    },
+    {
+      "id": "gyarados",
+      "name": "Gyarados",
+      "num": 130,
+      "types": [
+        "Water",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 125,
+        "def": 79,
+        "spa": 60,
+        "spd": 100,
+        "spe": 81
+      },
+      "baseSpeciesId": "gyarados",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "gyaradosmega",
+          "name": "Gyarados-Mega",
+          "forme": "Mega",
+          "requiredItem": "Gyaradosite",
+          "spriteId": "gyarados-mega",
+          "types": [
+            "Water",
+            "Dark"
+          ],
+          "baseStats": {
+            "hp": 95,
+            "atk": 155,
+            "def": 109,
+            "spa": 70,
+            "spd": 130,
+            "spe": 81
+          }
+        }
+      ],
+      "spriteId": "gyarados",
+      "spriteMissing": false
+    },
+    {
+      "id": "hatterene",
+      "name": "Hatterene",
+      "num": 858,
+      "types": [
+        "Psychic",
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 57,
+        "atk": 90,
+        "def": 95,
+        "spa": 136,
+        "spd": 103,
+        "spe": 29
+      },
+      "baseSpeciesId": "hatterene",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "hatterene",
+      "spriteMissing": false
+    },
+    {
+      "id": "hawlucha",
+      "name": "Hawlucha",
+      "num": 701,
+      "types": [
+        "Fighting",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 78,
+        "atk": 92,
+        "def": 75,
+        "spa": 74,
+        "spd": 63,
+        "spe": 118
+      },
+      "baseSpeciesId": "hawlucha",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "hawluchamega",
+          "name": "Hawlucha-Mega",
+          "forme": "Mega",
+          "requiredItem": "Hawluchanite",
+          "spriteId": "hawlucha-mega",
+          "types": [
+            "Fighting",
+            "Flying"
+          ],
+          "baseStats": {
+            "hp": 78,
+            "atk": 137,
+            "def": 100,
+            "spa": 74,
+            "spd": 93,
+            "spe": 118
+          }
+        }
+      ],
+      "spriteId": "hawlucha",
+      "spriteMissing": false
+    },
+    {
+      "id": "heliolisk",
+      "name": "Heliolisk",
+      "num": 695,
+      "types": [
+        "Electric",
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 62,
+        "atk": 55,
+        "def": 52,
+        "spa": 109,
+        "spd": 94,
+        "spe": 109
+      },
+      "baseSpeciesId": "heliolisk",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "heliolisk",
+      "spriteMissing": false
+    },
+    {
+      "id": "heracross",
+      "name": "Heracross",
+      "num": 214,
+      "types": [
+        "Bug",
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 125,
+        "def": 75,
+        "spa": 40,
+        "spd": 95,
+        "spe": 85
+      },
+      "baseSpeciesId": "heracross",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "heracrossmega",
+          "name": "Heracross-Mega",
+          "forme": "Mega",
+          "requiredItem": "Heracronite",
+          "spriteId": "heracross-mega",
+          "types": [
+            "Bug",
+            "Fighting"
+          ],
+          "baseStats": {
+            "hp": 80,
+            "atk": 185,
+            "def": 115,
+            "spa": 40,
+            "spd": 105,
+            "spe": 75
+          }
+        }
+      ],
+      "spriteId": "heracross",
+      "spriteMissing": false
+    },
+    {
+      "id": "hippowdon",
+      "name": "Hippowdon",
+      "num": 450,
+      "types": [
+        "Ground"
+      ],
+      "baseStats": {
+        "hp": 108,
+        "atk": 112,
+        "def": 118,
+        "spa": 68,
+        "spd": 72,
+        "spe": 47
+      },
+      "baseSpeciesId": "hippowdon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "hippowdon",
+      "spriteMissing": false
+    },
+    {
+      "id": "houndoom",
+      "name": "Houndoom",
+      "num": 229,
+      "types": [
+        "Dark",
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 90,
+        "def": 50,
+        "spa": 110,
+        "spd": 80,
+        "spe": 95
+      },
+      "baseSpeciesId": "houndoom",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "houndoommega",
+          "name": "Houndoom-Mega",
+          "forme": "Mega",
+          "requiredItem": "Houndoominite",
+          "spriteId": "houndoom-mega",
+          "types": [
+            "Dark",
+            "Fire"
+          ],
+          "baseStats": {
+            "hp": 75,
+            "atk": 90,
+            "def": 90,
+            "spa": 140,
+            "spd": 90,
+            "spe": 115
+          }
+        }
+      ],
+      "spriteId": "houndoom",
+      "spriteMissing": false
+    },
+    {
+      "id": "hydrapple",
+      "name": "Hydrapple",
+      "num": 1019,
+      "types": [
+        "Grass",
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 106,
+        "atk": 80,
+        "def": 110,
+        "spa": 120,
+        "spd": 80,
+        "spe": 44
+      },
+      "baseSpeciesId": "hydrapple",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "hydrapple",
+      "spriteMissing": false
+    },
+    {
+      "id": "hydreigon",
+      "name": "Hydreigon",
+      "num": 635,
+      "types": [
+        "Dark",
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 92,
+        "atk": 105,
+        "def": 90,
+        "spa": 125,
+        "spd": 90,
+        "spe": 98
+      },
+      "baseSpeciesId": "hydreigon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "hydreigon",
+      "spriteMissing": false
+    },
+    {
+      "id": "incineroar",
+      "name": "Incineroar",
+      "num": 727,
+      "types": [
+        "Fire",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 115,
+        "def": 90,
+        "spa": 80,
+        "spd": 90,
+        "spe": 60
+      },
+      "baseSpeciesId": "incineroar",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "incineroar",
+      "spriteMissing": false
+    },
+    {
+      "id": "infernape",
+      "name": "Infernape",
+      "num": 392,
+      "types": [
+        "Fire",
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 76,
+        "atk": 104,
+        "def": 71,
+        "spa": 104,
+        "spd": 71,
+        "spe": 108
+      },
+      "baseSpeciesId": "infernape",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "infernape",
+      "spriteMissing": false
+    },
+    {
+      "id": "jolteon",
+      "name": "Jolteon",
+      "num": 135,
+      "types": [
+        "Electric"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 65,
+        "def": 60,
+        "spa": 110,
+        "spd": 95,
+        "spe": 130
+      },
+      "baseSpeciesId": "jolteon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "jolteon",
+      "spriteMissing": false
+    },
+    {
+      "id": "kangaskhan",
+      "name": "Kangaskhan",
+      "num": 115,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 105,
+        "atk": 95,
+        "def": 80,
+        "spa": 40,
+        "spd": 80,
+        "spe": 90
+      },
+      "baseSpeciesId": "kangaskhan",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "kangaskhanmega",
+          "name": "Kangaskhan-Mega",
+          "forme": "Mega",
+          "requiredItem": "Kangaskhanite",
+          "spriteId": "kangaskhan-mega",
+          "types": [
+            "Normal"
+          ],
+          "baseStats": {
+            "hp": 105,
+            "atk": 125,
+            "def": 100,
+            "spa": 60,
+            "spd": 100,
+            "spe": 100
+          }
+        }
+      ],
+      "spriteId": "kangaskhan",
+      "spriteMissing": false
+    },
+    {
+      "id": "kingambit",
+      "name": "Kingambit",
+      "num": 983,
+      "types": [
+        "Dark",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 100,
+        "atk": 135,
+        "def": 120,
+        "spa": 60,
+        "spd": 85,
+        "spe": 50
+      },
+      "baseSpeciesId": "kingambit",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "kingambit",
+      "spriteMissing": false
+    },
+    {
+      "id": "kleavor",
+      "name": "Kleavor",
+      "num": 900,
+      "types": [
+        "Bug",
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 135,
+        "def": 95,
+        "spa": 45,
+        "spd": 70,
+        "spe": 85
+      },
+      "baseSpeciesId": "kleavor",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "kleavor",
+      "spriteMissing": false
+    },
+    {
+      "id": "klefki",
+      "name": "Klefki",
+      "num": 707,
+      "types": [
+        "Steel",
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 57,
+        "atk": 80,
+        "def": 91,
+        "spa": 80,
+        "spd": 87,
+        "spe": 75
+      },
+      "baseSpeciesId": "klefki",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "klefki",
+      "spriteMissing": false
+    },
+    {
+      "id": "kommoo",
+      "name": "Kommo-o",
+      "num": 784,
+      "types": [
+        "Dragon",
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 110,
+        "def": 125,
+        "spa": 100,
+        "spd": 105,
+        "spe": 85
+      },
+      "baseSpeciesId": "kommoo",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "kommoo",
+      "spriteMissing": false
+    },
+    {
+      "id": "krookodile",
+      "name": "Krookodile",
+      "num": 553,
+      "types": [
+        "Ground",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 117,
+        "def": 80,
+        "spa": 65,
+        "spd": 70,
+        "spe": 92
+      },
+      "baseSpeciesId": "krookodile",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "krookodile",
+      "spriteMissing": false
+    },
+    {
+      "id": "leafeon",
+      "name": "Leafeon",
+      "num": 470,
+      "types": [
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 110,
+        "def": 130,
+        "spa": 60,
+        "spd": 65,
+        "spe": 95
+      },
+      "baseSpeciesId": "leafeon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "leafeon",
+      "spriteMissing": false
+    },
+    {
+      "id": "liepard",
+      "name": "Liepard",
+      "num": 510,
+      "types": [
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 64,
+        "atk": 88,
+        "def": 50,
+        "spa": 88,
+        "spd": 50,
+        "spe": 106
+      },
+      "baseSpeciesId": "liepard",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "liepard",
+      "spriteMissing": false
+    },
+    {
+      "id": "lopunny",
+      "name": "Lopunny",
+      "num": 428,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 76,
+        "def": 84,
+        "spa": 54,
+        "spd": 96,
+        "spe": 105
+      },
+      "baseSpeciesId": "lopunny",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "lopunnymega",
+          "name": "Lopunny-Mega",
+          "forme": "Mega",
+          "requiredItem": "Lopunnite",
+          "spriteId": "lopunny-mega",
+          "types": [
+            "Normal",
+            "Fighting"
+          ],
+          "baseStats": {
+            "hp": 65,
+            "atk": 136,
+            "def": 94,
+            "spa": 54,
+            "spd": 96,
+            "spe": 135
+          }
+        }
+      ],
+      "spriteId": "lopunny",
+      "spriteMissing": false
+    },
+    {
+      "id": "lucario",
+      "name": "Lucario",
+      "num": 448,
+      "types": [
+        "Fighting",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 110,
+        "def": 70,
+        "spa": 115,
+        "spd": 70,
+        "spe": 90
+      },
+      "baseSpeciesId": "lucario",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "lucariomega",
+          "name": "Lucario-Mega",
+          "forme": "Mega",
+          "requiredItem": "Lucarionite",
+          "spriteId": "lucario-mega",
+          "types": [
+            "Fighting",
+            "Steel"
+          ],
+          "baseStats": {
+            "hp": 70,
+            "atk": 145,
+            "def": 88,
+            "spa": 140,
+            "spd": 70,
+            "spe": 112
+          }
+        }
+      ],
+      "spriteId": "lucario",
+      "spriteMissing": false
+    },
+    {
+      "id": "luxray",
+      "name": "Luxray",
+      "num": 405,
+      "types": [
+        "Electric"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 120,
+        "def": 79,
+        "spa": 95,
+        "spd": 79,
+        "spe": 70
+      },
+      "baseSpeciesId": "luxray",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "luxray",
+      "spriteMissing": false
+    },
+    {
+      "id": "lycanroc",
+      "name": "Lycanroc",
+      "num": 745,
+      "types": [
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 115,
+        "def": 65,
+        "spa": 55,
+        "spd": 65,
+        "spe": 112
+      },
+      "baseSpeciesId": "lycanroc",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "lycanroc",
+      "spriteMissing": false
+    },
+    {
+      "id": "lycanrocdusk",
+      "name": "Lycanroc-Dusk",
+      "num": 745,
+      "types": [
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 117,
+        "def": 65,
+        "spa": 55,
+        "spd": 65,
+        "spe": 110
+      },
+      "baseSpeciesId": "lycanroc",
+      "forme": "Dusk",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "lycanroc-dusk",
+      "spriteMissing": false
+    },
+    {
+      "id": "lycanrocmidnight",
+      "name": "Lycanroc-Midnight",
+      "num": 745,
+      "types": [
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 115,
+        "def": 75,
+        "spa": 55,
+        "spd": 75,
+        "spe": 82
+      },
+      "baseSpeciesId": "lycanroc",
+      "forme": "Midnight",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "lycanroc-midnight",
+      "spriteMissing": false
+    },
+    {
+      "id": "machamp",
+      "name": "Machamp",
+      "num": 68,
+      "types": [
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 90,
+        "atk": 130,
+        "def": 80,
+        "spa": 65,
+        "spd": 85,
+        "spe": 55
+      },
+      "baseSpeciesId": "machamp",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "machamp",
+      "spriteMissing": false
+    },
+    {
+      "id": "mamoswine",
+      "name": "Mamoswine",
+      "num": 473,
+      "types": [
+        "Ice",
+        "Ground"
+      ],
+      "baseStats": {
+        "hp": 110,
+        "atk": 130,
+        "def": 80,
+        "spa": 70,
+        "spd": 60,
+        "spe": 80
+      },
+      "baseSpeciesId": "mamoswine",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "mamoswine",
+      "spriteMissing": false
+    },
+    {
+      "id": "manectric",
+      "name": "Manectric",
+      "num": 310,
+      "types": [
+        "Electric"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 75,
+        "def": 60,
+        "spa": 105,
+        "spd": 60,
+        "spe": 105
+      },
+      "baseSpeciesId": "manectric",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "manectricmega",
+          "name": "Manectric-Mega",
+          "forme": "Mega",
+          "requiredItem": "Manectite",
+          "spriteId": "manectric-mega",
+          "types": [
+            "Electric"
+          ],
+          "baseStats": {
+            "hp": 70,
+            "atk": 75,
+            "def": 80,
+            "spa": 135,
+            "spd": 80,
+            "spe": 135
+          }
+        }
+      ],
+      "spriteId": "manectric",
+      "spriteMissing": false
+    },
+    {
+      "id": "maushold",
+      "name": "Maushold",
+      "num": 925,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 74,
+        "atk": 75,
+        "def": 70,
+        "spa": 65,
+        "spd": 75,
+        "spe": 111
+      },
+      "baseSpeciesId": "maushold",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "maushold",
+      "spriteMissing": false
+    },
+    {
+      "id": "medicham",
+      "name": "Medicham",
+      "num": 308,
+      "types": [
+        "Fighting",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 60,
+        "def": 75,
+        "spa": 60,
+        "spd": 75,
+        "spe": 80
+      },
+      "baseSpeciesId": "medicham",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "medichammega",
+          "name": "Medicham-Mega",
+          "forme": "Mega",
+          "requiredItem": "Medichamite",
+          "spriteId": "medicham-mega",
+          "types": [
+            "Fighting",
+            "Psychic"
+          ],
+          "baseStats": {
+            "hp": 60,
+            "atk": 100,
+            "def": 85,
+            "spa": 80,
+            "spd": 85,
+            "spe": 100
+          }
+        }
+      ],
+      "spriteId": "medicham",
+      "spriteMissing": false
+    },
+    {
+      "id": "meganium",
+      "name": "Meganium",
+      "num": 154,
+      "types": [
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 82,
+        "def": 100,
+        "spa": 83,
+        "spd": 100,
+        "spe": 80
+      },
+      "baseSpeciesId": "meganium",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "meganiummega",
+          "name": "Meganium-Mega",
+          "forme": "Mega",
+          "requiredItem": "Meganiumite",
+          "spriteId": "meganium-mega",
+          "types": [
+            "Grass",
+            "Fairy"
+          ],
+          "baseStats": {
+            "hp": 80,
+            "atk": 92,
+            "def": 115,
+            "spa": 143,
+            "spd": 115,
+            "spe": 80
+          }
+        }
+      ],
+      "spriteId": "meganium",
+      "spriteMissing": false
+    },
+    {
+      "id": "meowscarada",
+      "name": "Meowscarada",
+      "num": 908,
+      "types": [
+        "Grass",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 76,
+        "atk": 110,
+        "def": 70,
+        "spa": 81,
+        "spd": 70,
+        "spe": 123
+      },
+      "baseSpeciesId": "meowscarada",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "meowscarada",
+      "spriteMissing": false
+    },
+    {
+      "id": "meowstic",
+      "name": "Meowstic",
+      "num": 678,
+      "types": [
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 74,
+        "atk": 48,
+        "def": 76,
+        "spa": 83,
+        "spd": 81,
+        "spe": 104
+      },
+      "baseSpeciesId": "meowstic",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "meowsticmmega",
+          "name": "Meowstic-M-Mega",
+          "forme": "M-Mega",
+          "requiredItem": "Meowsticite",
+          "spriteId": "meowstic-mmega",
+          "types": [
+            "Psychic"
+          ],
+          "baseStats": {
+            "hp": 74,
+            "atk": 48,
+            "def": 76,
+            "spa": 143,
+            "spd": 101,
+            "spe": 124
+          }
+        }
+      ],
+      "spriteId": "meowstic",
+      "spriteMissing": false
+    },
+    {
+      "id": "meowsticf",
+      "name": "Meowstic-F",
+      "num": 678,
+      "types": [
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 74,
+        "atk": 48,
+        "def": 76,
+        "spa": 83,
+        "spd": 81,
+        "spe": 104
+      },
+      "baseSpeciesId": "meowstic",
+      "forme": "F",
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "meowsticfmega",
+          "name": "Meowstic-F-Mega",
+          "forme": "F-Mega",
+          "requiredItem": "Meowsticite",
+          "spriteId": "meowstic-fmega",
+          "types": [
+            "Psychic"
+          ],
+          "baseStats": {
+            "hp": 74,
+            "atk": 48,
+            "def": 76,
+            "spa": 143,
+            "spd": 101,
+            "spe": 124
+          }
+        }
+      ],
+      "spriteId": "meowstic-f",
+      "spriteMissing": false
+    },
+    {
+      "id": "milotic",
+      "name": "Milotic",
+      "num": 350,
+      "types": [
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 60,
+        "def": 79,
+        "spa": 100,
+        "spd": 125,
+        "spe": 81
+      },
+      "baseSpeciesId": "milotic",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "milotic",
+      "spriteMissing": false
+    },
+    {
+      "id": "mimikyu",
+      "name": "Mimikyu",
+      "num": 778,
+      "types": [
+        "Ghost",
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 55,
+        "atk": 90,
+        "def": 80,
+        "spa": 50,
+        "spd": 105,
+        "spe": 96
+      },
+      "baseSpeciesId": "mimikyu",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "mimikyu",
+      "spriteMissing": false
+    },
+    {
+      "id": "morpeko",
+      "name": "Morpeko",
+      "num": 877,
+      "types": [
+        "Electric",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 58,
+        "atk": 95,
+        "def": 58,
+        "spa": 70,
+        "spd": 58,
+        "spe": 97
+      },
+      "baseSpeciesId": "morpeko",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "morpeko",
+      "spriteMissing": false
+    },
+    {
+      "id": "mrrime",
+      "name": "Mr. Rime",
+      "num": 866,
+      "types": [
+        "Ice",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 85,
+        "def": 75,
+        "spa": 110,
+        "spd": 100,
+        "spe": 70
+      },
+      "baseSpeciesId": "mrrime",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "mrrime",
+      "spriteMissing": false
+    },
+    {
+      "id": "mudsdale",
+      "name": "Mudsdale",
+      "num": 750,
+      "types": [
+        "Ground"
+      ],
+      "baseStats": {
+        "hp": 100,
+        "atk": 125,
+        "def": 100,
+        "spa": 55,
+        "spd": 85,
+        "spe": 35
+      },
+      "baseSpeciesId": "mudsdale",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "mudsdale",
+      "spriteMissing": false
+    },
+    {
+      "id": "ninetales",
+      "name": "Ninetales",
+      "num": 38,
+      "types": [
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 73,
+        "atk": 76,
+        "def": 75,
+        "spa": 81,
+        "spd": 100,
+        "spe": 100
+      },
+      "baseSpeciesId": "ninetales",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "ninetales",
+      "spriteMissing": false
+    },
+    {
+      "id": "ninetalesalola",
+      "name": "Ninetales-Alola",
+      "num": 38,
+      "types": [
+        "Ice",
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 73,
+        "atk": 67,
+        "def": 75,
+        "spa": 81,
+        "spd": 100,
+        "spe": 109
+      },
+      "baseSpeciesId": "ninetales",
+      "forme": "Alola",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "ninetales-alola",
+      "spriteMissing": false
+    },
+    {
+      "id": "noivern",
+      "name": "Noivern",
+      "num": 715,
+      "types": [
+        "Flying",
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 70,
+        "def": 80,
+        "spa": 97,
+        "spd": 80,
+        "spe": 123
+      },
+      "baseSpeciesId": "noivern",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "noivern",
+      "spriteMissing": false
+    },
+    {
+      "id": "oranguru",
+      "name": "Oranguru",
+      "num": 765,
+      "types": [
+        "Normal",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 90,
+        "atk": 60,
+        "def": 80,
+        "spa": 90,
+        "spd": 110,
+        "spe": 60
+      },
+      "baseSpeciesId": "oranguru",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "oranguru",
+      "spriteMissing": false
+    },
+    {
+      "id": "orthworm",
+      "name": "Orthworm",
+      "num": 968,
+      "types": [
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 85,
+        "def": 145,
+        "spa": 60,
+        "spd": 55,
+        "spe": 65
+      },
+      "baseSpeciesId": "orthworm",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "orthworm",
+      "spriteMissing": false
+    },
+    {
+      "id": "palafin",
+      "name": "Palafin",
+      "num": 964,
+      "types": [
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 100,
+        "atk": 70,
+        "def": 72,
+        "spa": 53,
+        "spd": 62,
+        "spe": 100
+      },
+      "baseSpeciesId": "palafin",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "palafin",
+      "spriteMissing": false
+    },
+    {
+      "id": "pangoro",
+      "name": "Pangoro",
+      "num": 675,
+      "types": [
+        "Fighting",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 124,
+        "def": 78,
+        "spa": 69,
+        "spd": 71,
+        "spe": 58
+      },
+      "baseSpeciesId": "pangoro",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "pangoro",
+      "spriteMissing": false
+    },
+    {
+      "id": "passimian",
+      "name": "Passimian",
+      "num": 766,
+      "types": [
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 100,
+        "atk": 120,
+        "def": 90,
+        "spa": 40,
+        "spd": 60,
+        "spe": 80
+      },
+      "baseSpeciesId": "passimian",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "passimian",
+      "spriteMissing": false
+    },
+    {
+      "id": "pelipper",
+      "name": "Pelipper",
+      "num": 279,
+      "types": [
+        "Water",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 50,
+        "def": 100,
+        "spa": 95,
+        "spd": 70,
+        "spe": 65
+      },
+      "baseSpeciesId": "pelipper",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "pelipper",
+      "spriteMissing": false
+    },
+    {
+      "id": "pidgeot",
+      "name": "Pidgeot",
+      "num": 18,
+      "types": [
+        "Normal",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 83,
+        "atk": 80,
+        "def": 75,
+        "spa": 70,
+        "spd": 70,
+        "spe": 101
+      },
+      "baseSpeciesId": "pidgeot",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "pidgeotmega",
+          "name": "Pidgeot-Mega",
+          "forme": "Mega",
+          "requiredItem": "Pidgeotite",
+          "spriteId": "pidgeot-mega",
+          "types": [
+            "Normal",
+            "Flying"
+          ],
+          "baseStats": {
+            "hp": 83,
+            "atk": 80,
+            "def": 80,
+            "spa": 135,
+            "spd": 80,
+            "spe": 121
+          }
+        }
+      ],
+      "spriteId": "pidgeot",
+      "spriteMissing": false
+    },
+    {
+      "id": "pikachu",
+      "name": "Pikachu",
+      "num": 25,
+      "types": [
+        "Electric"
+      ],
+      "baseStats": {
+        "hp": 35,
+        "atk": 55,
+        "def": 40,
+        "spa": 50,
+        "spd": 50,
+        "spe": 90
+      },
+      "baseSpeciesId": "pikachu",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "pikachu",
+      "spriteMissing": false
+    },
+    {
+      "id": "pinsir",
+      "name": "Pinsir",
+      "num": 127,
+      "types": [
+        "Bug"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 125,
+        "def": 100,
+        "spa": 55,
+        "spd": 70,
+        "spe": 85
+      },
+      "baseSpeciesId": "pinsir",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "pinsirmega",
+          "name": "Pinsir-Mega",
+          "forme": "Mega",
+          "requiredItem": "Pinsirite",
+          "spriteId": "pinsir-mega",
+          "types": [
+            "Bug",
+            "Flying"
+          ],
+          "baseStats": {
+            "hp": 65,
+            "atk": 155,
+            "def": 120,
+            "spa": 65,
+            "spd": 90,
+            "spe": 105
+          }
+        }
+      ],
+      "spriteId": "pinsir",
+      "spriteMissing": false
+    },
+    {
+      "id": "politoed",
+      "name": "Politoed",
+      "num": 186,
+      "types": [
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 90,
+        "atk": 75,
+        "def": 75,
+        "spa": 90,
+        "spd": 100,
+        "spe": 70
+      },
+      "baseSpeciesId": "politoed",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "politoed",
+      "spriteMissing": false
+    },
+    {
+      "id": "polteageist",
+      "name": "Polteageist",
+      "num": 855,
+      "types": [
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 65,
+        "def": 65,
+        "spa": 134,
+        "spd": 114,
+        "spe": 70
+      },
+      "baseSpeciesId": "polteageist",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "polteageist",
+      "spriteMissing": false
+    },
+    {
+      "id": "primarina",
+      "name": "Primarina",
+      "num": 730,
+      "types": [
+        "Water",
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 74,
+        "def": 74,
+        "spa": 126,
+        "spd": 116,
+        "spe": 60
+      },
+      "baseSpeciesId": "primarina",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "primarina",
+      "spriteMissing": false
+    },
+    {
+      "id": "quaquaval",
+      "name": "Quaquaval",
+      "num": 914,
+      "types": [
+        "Water",
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 120,
+        "def": 80,
+        "spa": 85,
+        "spd": 75,
+        "spe": 85
+      },
+      "baseSpeciesId": "quaquaval",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "quaquaval",
+      "spriteMissing": false
+    },
+    {
+      "id": "raichu",
+      "name": "Raichu",
+      "num": 26,
+      "types": [
+        "Electric"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 90,
+        "def": 55,
+        "spa": 90,
+        "spd": 80,
+        "spe": 110
+      },
+      "baseSpeciesId": "raichu",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "raichu",
+      "spriteMissing": false
+    },
+    {
+      "id": "raichualola",
+      "name": "Raichu-Alola",
+      "num": 26,
+      "types": [
+        "Electric",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 85,
+        "def": 50,
+        "spa": 95,
+        "spd": 85,
+        "spe": 110
+      },
+      "baseSpeciesId": "raichu",
+      "forme": "Alola",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "raichu-alola",
+      "spriteMissing": false
+    },
+    {
+      "id": "rampardos",
+      "name": "Rampardos",
+      "num": 409,
+      "types": [
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 97,
+        "atk": 165,
+        "def": 60,
+        "spa": 65,
+        "spd": 50,
+        "spe": 58
+      },
+      "baseSpeciesId": "rampardos",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "rampardos",
+      "spriteMissing": false
+    },
+    {
+      "id": "reuniclus",
+      "name": "Reuniclus",
+      "num": 579,
+      "types": [
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 110,
+        "atk": 65,
+        "def": 75,
+        "spa": 125,
+        "spd": 85,
+        "spe": 30
+      },
+      "baseSpeciesId": "reuniclus",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "reuniclus",
+      "spriteMissing": false
+    },
+    {
+      "id": "rhyperior",
+      "name": "Rhyperior",
+      "num": 464,
+      "types": [
+        "Ground",
+        "Rock"
+      ],
+      "baseStats": {
+        "hp": 115,
+        "atk": 140,
+        "def": 130,
+        "spa": 55,
+        "spd": 55,
+        "spe": 40
+      },
+      "baseSpeciesId": "rhyperior",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "rhyperior",
+      "spriteMissing": false
+    },
+    {
+      "id": "roserade",
+      "name": "Roserade",
+      "num": 407,
+      "types": [
+        "Grass",
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 70,
+        "def": 65,
+        "spa": 125,
+        "spd": 105,
+        "spe": 90
+      },
+      "baseSpeciesId": "roserade",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "roserade",
+      "spriteMissing": false
+    },
+    {
+      "id": "rotom",
+      "name": "Rotom",
+      "num": 479,
+      "types": [
+        "Electric",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 50,
+        "atk": 50,
+        "def": 77,
+        "spa": 95,
+        "spd": 77,
+        "spe": 91
+      },
+      "baseSpeciesId": "rotom",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "rotom",
+      "spriteMissing": false
+    },
+    {
+      "id": "rotomfan",
+      "name": "Rotom-Fan",
+      "num": 479,
+      "types": [
+        "Electric",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 50,
+        "atk": 65,
+        "def": 107,
+        "spa": 105,
+        "spd": 107,
+        "spe": 86
+      },
+      "baseSpeciesId": "rotom",
+      "forme": "Fan",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "rotom-fan",
+      "spriteMissing": false
+    },
+    {
+      "id": "rotomfrost",
+      "name": "Rotom-Frost",
+      "num": 479,
+      "types": [
+        "Electric",
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 50,
+        "atk": 65,
+        "def": 107,
+        "spa": 105,
+        "spd": 107,
+        "spe": 86
+      },
+      "baseSpeciesId": "rotom",
+      "forme": "Frost",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "rotom-frost",
+      "spriteMissing": false
+    },
+    {
+      "id": "rotomheat",
+      "name": "Rotom-Heat",
+      "num": 479,
+      "types": [
+        "Electric",
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 50,
+        "atk": 65,
+        "def": 107,
+        "spa": 105,
+        "spd": 107,
+        "spe": 86
+      },
+      "baseSpeciesId": "rotom",
+      "forme": "Heat",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "rotom-heat",
+      "spriteMissing": false
+    },
+    {
+      "id": "rotommow",
+      "name": "Rotom-Mow",
+      "num": 479,
+      "types": [
+        "Electric",
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 50,
+        "atk": 65,
+        "def": 107,
+        "spa": 105,
+        "spd": 107,
+        "spe": 86
+      },
+      "baseSpeciesId": "rotom",
+      "forme": "Mow",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "rotom-mow",
+      "spriteMissing": false
+    },
+    {
+      "id": "rotomwash",
+      "name": "Rotom-Wash",
+      "num": 479,
+      "types": [
+        "Electric",
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 50,
+        "atk": 65,
+        "def": 107,
+        "spa": 105,
+        "spd": 107,
+        "spe": 86
+      },
+      "baseSpeciesId": "rotom",
+      "forme": "Wash",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "rotom-wash",
+      "spriteMissing": false
+    },
+    {
+      "id": "runerigus",
+      "name": "Runerigus",
+      "num": 867,
+      "types": [
+        "Ground",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 58,
+        "atk": 95,
+        "def": 145,
+        "spa": 50,
+        "spd": 105,
+        "spe": 30
+      },
+      "baseSpeciesId": "runerigus",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "runerigus",
+      "spriteMissing": false
+    },
+    {
+      "id": "sableye",
+      "name": "Sableye",
+      "num": 302,
+      "types": [
+        "Dark",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 50,
+        "atk": 75,
+        "def": 75,
+        "spa": 65,
+        "spd": 65,
+        "spe": 50
+      },
+      "baseSpeciesId": "sableye",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "sableyemega",
+          "name": "Sableye-Mega",
+          "forme": "Mega",
+          "requiredItem": "Sablenite",
+          "spriteId": "sableye-mega",
+          "types": [
+            "Dark",
+            "Ghost"
+          ],
+          "baseStats": {
+            "hp": 50,
+            "atk": 85,
+            "def": 125,
+            "spa": 85,
+            "spd": 115,
+            "spe": 20
+          }
+        }
+      ],
+      "spriteId": "sableye",
+      "spriteMissing": false
+    },
+    {
+      "id": "salazzle",
+      "name": "Salazzle",
+      "num": 758,
+      "types": [
+        "Poison",
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 68,
+        "atk": 64,
+        "def": 60,
+        "spa": 111,
+        "spd": 60,
+        "spe": 117
+      },
+      "baseSpeciesId": "salazzle",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "salazzle",
+      "spriteMissing": false
+    },
+    {
+      "id": "samurott",
+      "name": "Samurott",
+      "num": 503,
+      "types": [
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 100,
+        "def": 85,
+        "spa": 108,
+        "spd": 70,
+        "spe": 70
+      },
+      "baseSpeciesId": "samurott",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "samurott",
+      "spriteMissing": false
+    },
+    {
+      "id": "samurotthisui",
+      "name": "Samurott-Hisui",
+      "num": 503,
+      "types": [
+        "Water",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 90,
+        "atk": 108,
+        "def": 80,
+        "spa": 100,
+        "spd": 65,
+        "spe": 85
+      },
+      "baseSpeciesId": "samurott",
+      "forme": "Hisui",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "samurott-hisui",
+      "spriteMissing": false
+    },
+    {
+      "id": "sandaconda",
+      "name": "Sandaconda",
+      "num": 844,
+      "types": [
+        "Ground"
+      ],
+      "baseStats": {
+        "hp": 72,
+        "atk": 107,
+        "def": 125,
+        "spa": 65,
+        "spd": 70,
+        "spe": 71
+      },
+      "baseSpeciesId": "sandaconda",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "sandaconda",
+      "spriteMissing": false
+    },
+    {
+      "id": "scizor",
+      "name": "Scizor",
+      "num": 212,
+      "types": [
+        "Bug",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 130,
+        "def": 100,
+        "spa": 55,
+        "spd": 80,
+        "spe": 65
+      },
+      "baseSpeciesId": "scizor",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "scizormega",
+          "name": "Scizor-Mega",
+          "forme": "Mega",
+          "requiredItem": "Scizorite",
+          "spriteId": "scizor-mega",
+          "types": [
+            "Bug",
+            "Steel"
+          ],
+          "baseStats": {
+            "hp": 70,
+            "atk": 150,
+            "def": 140,
+            "spa": 65,
+            "spd": 100,
+            "spe": 75
+          }
+        }
+      ],
+      "spriteId": "scizor",
+      "spriteMissing": false
+    },
+    {
+      "id": "scovillain",
+      "name": "Scovillain",
+      "num": 952,
+      "types": [
+        "Grass",
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 108,
+        "def": 65,
+        "spa": 108,
+        "spd": 65,
+        "spe": 75
+      },
+      "baseSpeciesId": "scovillain",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "scovillainmega",
+          "name": "Scovillain-Mega",
+          "forme": "Mega",
+          "requiredItem": "Scovillainite",
+          "spriteId": "scovillain-mega",
+          "types": [
+            "Grass",
+            "Fire"
+          ],
+          "baseStats": {
+            "hp": 65,
+            "atk": 138,
+            "def": 85,
+            "spa": 138,
+            "spd": 85,
+            "spe": 75
+          }
+        }
+      ],
+      "spriteId": "scovillain",
+      "spriteMissing": false
+    },
+    {
+      "id": "serperior",
+      "name": "Serperior",
+      "num": 497,
+      "types": [
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 75,
+        "def": 95,
+        "spa": 75,
+        "spd": 95,
+        "spe": 113
+      },
+      "baseSpeciesId": "serperior",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "serperior",
+      "spriteMissing": false
+    },
+    {
+      "id": "sharpedo",
+      "name": "Sharpedo",
+      "num": 319,
+      "types": [
+        "Water",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 120,
+        "def": 40,
+        "spa": 95,
+        "spd": 40,
+        "spe": 95
+      },
+      "baseSpeciesId": "sharpedo",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "sharpedomega",
+          "name": "Sharpedo-Mega",
+          "forme": "Mega",
+          "requiredItem": "Sharpedonite",
+          "spriteId": "sharpedo-mega",
+          "types": [
+            "Water",
+            "Dark"
+          ],
+          "baseStats": {
+            "hp": 70,
+            "atk": 140,
+            "def": 70,
+            "spa": 110,
+            "spd": 65,
+            "spe": 105
+          }
+        }
+      ],
+      "spriteId": "sharpedo",
+      "spriteMissing": false
+    },
+    {
+      "id": "simipour",
+      "name": "Simipour",
+      "num": 516,
+      "types": [
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 98,
+        "def": 63,
+        "spa": 98,
+        "spd": 63,
+        "spe": 101
+      },
+      "baseSpeciesId": "simipour",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "simipour",
+      "spriteMissing": false
+    },
+    {
+      "id": "simisage",
+      "name": "Simisage",
+      "num": 512,
+      "types": [
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 98,
+        "def": 63,
+        "spa": 98,
+        "spd": 63,
+        "spe": 101
+      },
+      "baseSpeciesId": "simisage",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "simisage",
+      "spriteMissing": false
+    },
+    {
+      "id": "simisear",
+      "name": "Simisear",
+      "num": 514,
+      "types": [
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 98,
+        "def": 63,
+        "spa": 98,
+        "spd": 63,
+        "spe": 101
+      },
+      "baseSpeciesId": "simisear",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "simisear",
+      "spriteMissing": false
+    },
+    {
+      "id": "sinistcha",
+      "name": "Sinistcha",
+      "num": 1013,
+      "types": [
+        "Grass",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 71,
+        "atk": 60,
+        "def": 106,
+        "spa": 121,
+        "spd": 80,
+        "spe": 70
+      },
+      "baseSpeciesId": "sinistcha",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "sinistcha",
+      "spriteMissing": false
+    },
+    {
+      "id": "skarmory",
+      "name": "Skarmory",
+      "num": 227,
+      "types": [
+        "Steel",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 65,
+        "atk": 80,
+        "def": 140,
+        "spa": 40,
+        "spd": 70,
+        "spe": 70
+      },
+      "baseSpeciesId": "skarmory",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "skarmorymega",
+          "name": "Skarmory-Mega",
+          "forme": "Mega",
+          "requiredItem": "Skarmorite",
+          "spriteId": "skarmory-mega",
+          "types": [
+            "Steel",
+            "Flying"
+          ],
+          "baseStats": {
+            "hp": 65,
+            "atk": 140,
+            "def": 110,
+            "spa": 40,
+            "spd": 100,
+            "spe": 110
+          }
+        }
+      ],
+      "spriteId": "skarmory",
+      "spriteMissing": false
+    },
+    {
+      "id": "skeledirge",
+      "name": "Skeledirge",
+      "num": 911,
+      "types": [
+        "Fire",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 104,
+        "atk": 75,
+        "def": 100,
+        "spa": 110,
+        "spd": 75,
+        "spe": 66
+      },
+      "baseSpeciesId": "skeledirge",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "skeledirge",
+      "spriteMissing": false
+    },
+    {
+      "id": "slowbro",
+      "name": "Slowbro",
+      "num": 80,
+      "types": [
+        "Water",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 75,
+        "def": 110,
+        "spa": 100,
+        "spd": 80,
+        "spe": 30
+      },
+      "baseSpeciesId": "slowbro",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "slowbromega",
+          "name": "Slowbro-Mega",
+          "forme": "Mega",
+          "requiredItem": "Slowbronite",
+          "spriteId": "slowbro-mega",
+          "types": [
+            "Water",
+            "Psychic"
+          ],
+          "baseStats": {
+            "hp": 95,
+            "atk": 75,
+            "def": 180,
+            "spa": 130,
+            "spd": 80,
+            "spe": 30
+          }
+        }
+      ],
+      "spriteId": "slowbro",
+      "spriteMissing": false
+    },
+    {
+      "id": "slowbrogalar",
+      "name": "Slowbro-Galar",
+      "num": 80,
+      "types": [
+        "Poison",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 100,
+        "def": 95,
+        "spa": 100,
+        "spd": 70,
+        "spe": 30
+      },
+      "baseSpeciesId": "slowbro",
+      "forme": "Galar",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "slowbro-galar",
+      "spriteMissing": false
+    },
+    {
+      "id": "slowking",
+      "name": "Slowking",
+      "num": 199,
+      "types": [
+        "Water",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 75,
+        "def": 80,
+        "spa": 100,
+        "spd": 110,
+        "spe": 30
+      },
+      "baseSpeciesId": "slowking",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "slowking",
+      "spriteMissing": false
+    },
+    {
+      "id": "slowkinggalar",
+      "name": "Slowking-Galar",
+      "num": 199,
+      "types": [
+        "Poison",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 65,
+        "def": 80,
+        "spa": 110,
+        "spd": 110,
+        "spe": 30
+      },
+      "baseSpeciesId": "slowking",
+      "forme": "Galar",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "slowking-galar",
+      "spriteMissing": false
+    },
+    {
+      "id": "slurpuff",
+      "name": "Slurpuff",
+      "num": 685,
+      "types": [
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 82,
+        "atk": 80,
+        "def": 86,
+        "spa": 85,
+        "spd": 75,
+        "spe": 72
+      },
+      "baseSpeciesId": "slurpuff",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "slurpuff",
+      "spriteMissing": false
+    },
+    {
+      "id": "sneasler",
+      "name": "Sneasler",
+      "num": 903,
+      "types": [
+        "Fighting",
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 130,
+        "def": 60,
+        "spa": 40,
+        "spd": 80,
+        "spe": 120
+      },
+      "baseSpeciesId": "sneasler",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "sneasler",
+      "spriteMissing": false
+    },
+    {
+      "id": "snorlax",
+      "name": "Snorlax",
+      "num": 143,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 160,
+        "atk": 110,
+        "def": 65,
+        "spa": 65,
+        "spd": 110,
+        "spe": 30
+      },
+      "baseSpeciesId": "snorlax",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "snorlax",
+      "spriteMissing": false
+    },
+    {
+      "id": "spiritomb",
+      "name": "Spiritomb",
+      "num": 442,
+      "types": [
+        "Ghost",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 50,
+        "atk": 92,
+        "def": 108,
+        "spa": 92,
+        "spd": 108,
+        "spe": 35
+      },
+      "baseSpeciesId": "spiritomb",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "spiritomb",
+      "spriteMissing": false
+    },
+    {
+      "id": "starmie",
+      "name": "Starmie",
+      "num": 121,
+      "types": [
+        "Water",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 75,
+        "def": 85,
+        "spa": 100,
+        "spd": 85,
+        "spe": 115
+      },
+      "baseSpeciesId": "starmie",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "starmiemega",
+          "name": "Starmie-Mega",
+          "forme": "Mega",
+          "requiredItem": "Starminite",
+          "spriteId": "starmie-mega",
+          "types": [
+            "Water",
+            "Psychic"
+          ],
+          "baseStats": {
+            "hp": 60,
+            "atk": 100,
+            "def": 105,
+            "spa": 130,
+            "spd": 105,
+            "spe": 120
+          }
+        }
+      ],
+      "spriteId": "starmie",
+      "spriteMissing": false
+    },
+    {
+      "id": "steelix",
+      "name": "Steelix",
+      "num": 208,
+      "types": [
+        "Steel",
+        "Ground"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 85,
+        "def": 200,
+        "spa": 55,
+        "spd": 65,
+        "spe": 30
+      },
+      "baseSpeciesId": "steelix",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "steelixmega",
+          "name": "Steelix-Mega",
+          "forme": "Mega",
+          "requiredItem": "Steelixite",
+          "spriteId": "steelix-mega",
+          "types": [
+            "Steel",
+            "Ground"
+          ],
+          "baseStats": {
+            "hp": 75,
+            "atk": 125,
+            "def": 230,
+            "spa": 55,
+            "spd": 95,
+            "spe": 30
+          }
+        }
+      ],
+      "spriteId": "steelix",
+      "spriteMissing": false
+    },
+    {
+      "id": "stunfisk",
+      "name": "Stunfisk",
+      "num": 618,
+      "types": [
+        "Ground",
+        "Electric"
+      ],
+      "baseStats": {
+        "hp": 109,
+        "atk": 66,
+        "def": 84,
+        "spa": 81,
+        "spd": 99,
+        "spe": 32
+      },
+      "baseSpeciesId": "stunfisk",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "stunfisk",
+      "spriteMissing": false
+    },
+    {
+      "id": "stunfiskgalar",
+      "name": "Stunfisk-Galar",
+      "num": 618,
+      "types": [
+        "Ground",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 109,
+        "atk": 81,
+        "def": 99,
+        "spa": 66,
+        "spd": 84,
+        "spe": 32
+      },
+      "baseSpeciesId": "stunfisk",
+      "forme": "Galar",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "stunfisk-galar",
+      "spriteMissing": false
+    },
+    {
+      "id": "sylveon",
+      "name": "Sylveon",
+      "num": 700,
+      "types": [
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 65,
+        "def": 65,
+        "spa": 110,
+        "spd": 130,
+        "spe": 60
+      },
+      "baseSpeciesId": "sylveon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "sylveon",
+      "spriteMissing": false
+    },
+    {
+      "id": "talonflame",
+      "name": "Talonflame",
+      "num": 663,
+      "types": [
+        "Fire",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 78,
+        "atk": 81,
+        "def": 71,
+        "spa": 74,
+        "spd": 69,
+        "spe": 126
+      },
+      "baseSpeciesId": "talonflame",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "talonflame",
+      "spriteMissing": false
+    },
+    {
+      "id": "tauros",
+      "name": "Tauros",
+      "num": 128,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 100,
+        "def": 95,
+        "spa": 40,
+        "spd": 70,
+        "spe": 110
+      },
+      "baseSpeciesId": "tauros",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "tauros",
+      "spriteMissing": false
+    },
+    {
+      "id": "taurospaldeaaqua",
+      "name": "Tauros-Paldea-Aqua",
+      "num": 128,
+      "types": [
+        "Fighting",
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 110,
+        "def": 105,
+        "spa": 30,
+        "spd": 70,
+        "spe": 100
+      },
+      "baseSpeciesId": "tauros",
+      "forme": "Paldea-Aqua",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "tauros-paldeaaqua",
+      "spriteMissing": false
+    },
+    {
+      "id": "taurospaldeablaze",
+      "name": "Tauros-Paldea-Blaze",
+      "num": 128,
+      "types": [
+        "Fighting",
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 110,
+        "def": 105,
+        "spa": 30,
+        "spd": 70,
+        "spe": 100
+      },
+      "baseSpeciesId": "tauros",
+      "forme": "Paldea-Blaze",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "tauros-paldeablaze",
+      "spriteMissing": false
+    },
+    {
+      "id": "taurospaldeacombat",
+      "name": "Tauros-Paldea-Combat",
+      "num": 128,
+      "types": [
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 75,
+        "atk": 110,
+        "def": 105,
+        "spa": 30,
+        "spd": 70,
+        "spe": 100
+      },
+      "baseSpeciesId": "tauros",
+      "forme": "Paldea-Combat",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "tauros-paldeacombat",
+      "spriteMissing": false
+    },
+    {
+      "id": "tinkaton",
+      "name": "Tinkaton",
+      "num": 959,
+      "types": [
+        "Fairy",
+        "Steel"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 75,
+        "def": 77,
+        "spa": 70,
+        "spd": 105,
+        "spe": 94
+      },
+      "baseSpeciesId": "tinkaton",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "tinkaton",
+      "spriteMissing": false
+    },
+    {
+      "id": "torkoal",
+      "name": "Torkoal",
+      "num": 324,
+      "types": [
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 85,
+        "def": 140,
+        "spa": 85,
+        "spd": 70,
+        "spe": 20
+      },
+      "baseSpeciesId": "torkoal",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "torkoal",
+      "spriteMissing": false
+    },
+    {
+      "id": "torterra",
+      "name": "Torterra",
+      "num": 389,
+      "types": [
+        "Grass",
+        "Ground"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 109,
+        "def": 105,
+        "spa": 75,
+        "spd": 85,
+        "spe": 56
+      },
+      "baseSpeciesId": "torterra",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "torterra",
+      "spriteMissing": false
+    },
+    {
+      "id": "toucannon",
+      "name": "Toucannon",
+      "num": 733,
+      "types": [
+        "Normal",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 120,
+        "def": 75,
+        "spa": 75,
+        "spd": 75,
+        "spe": 60
+      },
+      "baseSpeciesId": "toucannon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "toucannon",
+      "spriteMissing": false
+    },
+    {
+      "id": "toxapex",
+      "name": "Toxapex",
+      "num": 748,
+      "types": [
+        "Poison",
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 50,
+        "atk": 63,
+        "def": 152,
+        "spa": 53,
+        "spd": 142,
+        "spe": 35
+      },
+      "baseSpeciesId": "toxapex",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "toxapex",
+      "spriteMissing": false
+    },
+    {
+      "id": "toxicroak",
+      "name": "Toxicroak",
+      "num": 454,
+      "types": [
+        "Poison",
+        "Fighting"
+      ],
+      "baseStats": {
+        "hp": 83,
+        "atk": 106,
+        "def": 65,
+        "spa": 86,
+        "spd": 65,
+        "spe": 85
+      },
+      "baseSpeciesId": "toxicroak",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "toxicroak",
+      "spriteMissing": false
+    },
+    {
+      "id": "trevenant",
+      "name": "Trevenant",
+      "num": 709,
+      "types": [
+        "Ghost",
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 110,
+        "def": 76,
+        "spa": 65,
+        "spd": 82,
+        "spe": 56
+      },
+      "baseSpeciesId": "trevenant",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "trevenant",
+      "spriteMissing": false
+    },
+    {
+      "id": "tsareena",
+      "name": "Tsareena",
+      "num": 763,
+      "types": [
+        "Grass"
+      ],
+      "baseStats": {
+        "hp": 72,
+        "atk": 120,
+        "def": 98,
+        "spa": 50,
+        "spd": 98,
+        "spe": 72
+      },
+      "baseSpeciesId": "tsareena",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "tsareena",
+      "spriteMissing": false
+    },
+    {
+      "id": "typhlosion",
+      "name": "Typhlosion",
+      "num": 157,
+      "types": [
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 78,
+        "atk": 84,
+        "def": 78,
+        "spa": 109,
+        "spd": 85,
+        "spe": 100
+      },
+      "baseSpeciesId": "typhlosion",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "typhlosion",
+      "spriteMissing": false
+    },
+    {
+      "id": "typhlosionhisui",
+      "name": "Typhlosion-Hisui",
+      "num": 157,
+      "types": [
+        "Fire",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 73,
+        "atk": 84,
+        "def": 78,
+        "spa": 119,
+        "spd": 85,
+        "spe": 95
+      },
+      "baseSpeciesId": "typhlosion",
+      "forme": "Hisui",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "typhlosion-hisui",
+      "spriteMissing": false
+    },
+    {
+      "id": "tyranitar",
+      "name": "Tyranitar",
+      "num": 248,
+      "types": [
+        "Rock",
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 100,
+        "atk": 134,
+        "def": 110,
+        "spa": 95,
+        "spd": 100,
+        "spe": 61
+      },
+      "baseSpeciesId": "tyranitar",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "tyranitarmega",
+          "name": "Tyranitar-Mega",
+          "forme": "Mega",
+          "requiredItem": "Tyranitarite",
+          "spriteId": "tyranitar-mega",
+          "types": [
+            "Rock",
+            "Dark"
+          ],
+          "baseStats": {
+            "hp": 100,
+            "atk": 164,
+            "def": 150,
+            "spa": 95,
+            "spd": 120,
+            "spe": 71
+          }
+        }
+      ],
+      "spriteId": "tyranitar",
+      "spriteMissing": false
+    },
+    {
+      "id": "tyrantrum",
+      "name": "Tyrantrum",
+      "num": 697,
+      "types": [
+        "Rock",
+        "Dragon"
+      ],
+      "baseStats": {
+        "hp": 82,
+        "atk": 121,
+        "def": 119,
+        "spa": 69,
+        "spd": 59,
+        "spe": 71
+      },
+      "baseSpeciesId": "tyrantrum",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "tyrantrum",
+      "spriteMissing": false
+    },
+    {
+      "id": "umbreon",
+      "name": "Umbreon",
+      "num": 197,
+      "types": [
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 95,
+        "atk": 65,
+        "def": 110,
+        "spa": 60,
+        "spd": 130,
+        "spe": 65
+      },
+      "baseSpeciesId": "umbreon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "umbreon",
+      "spriteMissing": false
+    },
+    {
+      "id": "vanilluxe",
+      "name": "Vanilluxe",
+      "num": 584,
+      "types": [
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 71,
+        "atk": 95,
+        "def": 85,
+        "spa": 110,
+        "spd": 95,
+        "spe": 79
+      },
+      "baseSpeciesId": "vanilluxe",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "vanilluxe",
+      "spriteMissing": false
+    },
+    {
+      "id": "vaporeon",
+      "name": "Vaporeon",
+      "num": 134,
+      "types": [
+        "Water"
+      ],
+      "baseStats": {
+        "hp": 130,
+        "atk": 65,
+        "def": 60,
+        "spa": 110,
+        "spd": 95,
+        "spe": 65
+      },
+      "baseSpeciesId": "vaporeon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "vaporeon",
+      "spriteMissing": false
+    },
+    {
+      "id": "venusaur",
+      "name": "Venusaur",
+      "num": 3,
+      "types": [
+        "Grass",
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 82,
+        "def": 83,
+        "spa": 100,
+        "spd": 100,
+        "spe": 80
+      },
+      "baseSpeciesId": "venusaur",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "venusaurmega",
+          "name": "Venusaur-Mega",
+          "forme": "Mega",
+          "requiredItem": "Venusaurite",
+          "spriteId": "venusaur-mega",
+          "types": [
+            "Grass",
+            "Poison"
+          ],
+          "baseStats": {
+            "hp": 80,
+            "atk": 100,
+            "def": 123,
+            "spa": 122,
+            "spd": 120,
+            "spe": 80
+          }
+        }
+      ],
+      "spriteId": "venusaur",
+      "spriteMissing": false
+    },
+    {
+      "id": "victreebel",
+      "name": "Victreebel",
+      "num": 71,
+      "types": [
+        "Grass",
+        "Poison"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 105,
+        "def": 65,
+        "spa": 100,
+        "spd": 70,
+        "spe": 70
+      },
+      "baseSpeciesId": "victreebel",
+      "forme": null,
+      "megaCapable": true,
+      "megaFormes": [
+        {
+          "id": "victreebelmega",
+          "name": "Victreebel-Mega",
+          "forme": "Mega",
+          "requiredItem": "Victreebelite",
+          "spriteId": "victreebel-mega",
+          "types": [
+            "Grass",
+            "Poison"
+          ],
+          "baseStats": {
+            "hp": 80,
+            "atk": 125,
+            "def": 85,
+            "spa": 135,
+            "spd": 95,
+            "spe": 70
+          }
+        }
+      ],
+      "spriteId": "victreebel",
+      "spriteMissing": false
+    },
+    {
+      "id": "vivillon",
+      "name": "Vivillon",
+      "num": 666,
+      "types": [
+        "Bug",
+        "Flying"
+      ],
+      "baseStats": {
+        "hp": 80,
+        "atk": 52,
+        "def": 50,
+        "spa": 90,
+        "spd": 50,
+        "spe": 89
+      },
+      "baseSpeciesId": "vivillon",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "vivillon",
+      "spriteMissing": false
+    },
+    {
+      "id": "volcarona",
+      "name": "Volcarona",
+      "num": 637,
+      "types": [
+        "Bug",
+        "Fire"
+      ],
+      "baseStats": {
+        "hp": 85,
+        "atk": 60,
+        "def": 65,
+        "spa": 135,
+        "spd": 105,
+        "spe": 100
+      },
+      "baseSpeciesId": "volcarona",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "volcarona",
+      "spriteMissing": false
+    },
+    {
+      "id": "watchog",
+      "name": "Watchog",
+      "num": 505,
+      "types": [
+        "Normal"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 85,
+        "def": 69,
+        "spa": 60,
+        "spd": 69,
+        "spe": 77
+      },
+      "baseSpeciesId": "watchog",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "watchog",
+      "spriteMissing": false
+    },
+    {
+      "id": "weavile",
+      "name": "Weavile",
+      "num": 461,
+      "types": [
+        "Dark",
+        "Ice"
+      ],
+      "baseStats": {
+        "hp": 70,
+        "atk": 120,
+        "def": 65,
+        "spa": 45,
+        "spd": 85,
+        "spe": 125
+      },
+      "baseSpeciesId": "weavile",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "weavile",
+      "spriteMissing": false
+    },
+    {
+      "id": "whimsicott",
+      "name": "Whimsicott",
+      "num": 547,
+      "types": [
+        "Grass",
+        "Fairy"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 67,
+        "def": 85,
+        "spa": 77,
+        "spd": 75,
+        "spe": 116
+      },
+      "baseSpeciesId": "whimsicott",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "whimsicott",
+      "spriteMissing": false
+    },
+    {
+      "id": "wyrdeer",
+      "name": "Wyrdeer",
+      "num": 899,
+      "types": [
+        "Normal",
+        "Psychic"
+      ],
+      "baseStats": {
+        "hp": 103,
+        "atk": 105,
+        "def": 72,
+        "spa": 105,
+        "spd": 75,
+        "spe": 65
+      },
+      "baseSpeciesId": "wyrdeer",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "wyrdeer",
+      "spriteMissing": false
+    },
+    {
+      "id": "zoroark",
+      "name": "Zoroark",
+      "num": 571,
+      "types": [
+        "Dark"
+      ],
+      "baseStats": {
+        "hp": 60,
+        "atk": 105,
+        "def": 60,
+        "spa": 120,
+        "spd": 60,
+        "spe": 105
+      },
+      "baseSpeciesId": "zoroark",
+      "forme": null,
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "zoroark",
+      "spriteMissing": false
+    },
+    {
+      "id": "zoroarkhisui",
+      "name": "Zoroark-Hisui",
+      "num": 571,
+      "types": [
+        "Normal",
+        "Ghost"
+      ],
+      "baseStats": {
+        "hp": 55,
+        "atk": 100,
+        "def": 60,
+        "spa": 125,
+        "spd": 60,
+        "spe": 110
+      },
+      "baseSpeciesId": "zoroark",
+      "forme": "Hisui",
+      "megaCapable": false,
+      "megaFormes": [],
+      "spriteId": "zoroark-hisui",
+      "spriteMissing": false
+    }
+  ]
+}
