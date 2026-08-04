@@ -1,0 +1,1578 @@
+{
+  "$doNotEditByHand": "Generated file. Edits are lost on the next run of scripts/build-sprites.mjs.",
+  "$generator": "scripts/build-sprites.mjs",
+  "generatedAt": "2026-08-04T23:35:39.080Z",
+  "source": {
+    "index": "https://pokeapi.co/api/v2/pokemon?limit=100000&offset=0",
+    "sprites": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/"
+  },
+  "directory": "sprites",
+  "placeholder": "_placeholder.png",
+  "nativeWidth": 96,
+  "nativeHeight": 96,
+  "dimensionHistogram": {
+    "96x96": 311
+  },
+  "outliers": [],
+  "total": 311,
+  "resolved": 311,
+  "missing": [],
+  "missingSpriteIds": [],
+  "byRosterId": {
+    "abomasnow": {
+      "pokeapiId": 460,
+      "file": "460.png",
+      "slug": "abomasnow"
+    },
+    "abomasnowmega": {
+      "pokeapiId": 10060,
+      "file": "10060.png",
+      "slug": "abomasnow-mega"
+    },
+    "absol": {
+      "pokeapiId": 359,
+      "file": "359.png",
+      "slug": "absol"
+    },
+    "absolmega": {
+      "pokeapiId": 10057,
+      "file": "10057.png",
+      "slug": "absol-mega"
+    },
+    "aegislash": {
+      "pokeapiId": 681,
+      "file": "681.png",
+      "slug": "aegislash-shield"
+    },
+    "aerodactyl": {
+      "pokeapiId": 142,
+      "file": "142.png",
+      "slug": "aerodactyl"
+    },
+    "aerodactylmega": {
+      "pokeapiId": 10042,
+      "file": "10042.png",
+      "slug": "aerodactyl-mega"
+    },
+    "aggron": {
+      "pokeapiId": 306,
+      "file": "306.png",
+      "slug": "aggron"
+    },
+    "aggronmega": {
+      "pokeapiId": 10053,
+      "file": "10053.png",
+      "slug": "aggron-mega"
+    },
+    "alakazam": {
+      "pokeapiId": 65,
+      "file": "65.png",
+      "slug": "alakazam"
+    },
+    "alakazammega": {
+      "pokeapiId": 10037,
+      "file": "10037.png",
+      "slug": "alakazam-mega"
+    },
+    "alcremie": {
+      "pokeapiId": 869,
+      "file": "869.png",
+      "slug": "alcremie"
+    },
+    "altaria": {
+      "pokeapiId": 334,
+      "file": "334.png",
+      "slug": "altaria"
+    },
+    "altariamega": {
+      "pokeapiId": 10067,
+      "file": "10067.png",
+      "slug": "altaria-mega"
+    },
+    "ampharos": {
+      "pokeapiId": 181,
+      "file": "181.png",
+      "slug": "ampharos"
+    },
+    "ampharosmega": {
+      "pokeapiId": 10045,
+      "file": "10045.png",
+      "slug": "ampharos-mega"
+    },
+    "annihilape": {
+      "pokeapiId": 979,
+      "file": "979.png",
+      "slug": "annihilape"
+    },
+    "appletun": {
+      "pokeapiId": 842,
+      "file": "842.png",
+      "slug": "appletun"
+    },
+    "araquanid": {
+      "pokeapiId": 752,
+      "file": "752.png",
+      "slug": "araquanid"
+    },
+    "arbok": {
+      "pokeapiId": 24,
+      "file": "24.png",
+      "slug": "arbok"
+    },
+    "arcanine": {
+      "pokeapiId": 59,
+      "file": "59.png",
+      "slug": "arcanine"
+    },
+    "arcaninehisui": {
+      "pokeapiId": 10230,
+      "file": "10230.png",
+      "slug": "arcanine-hisui"
+    },
+    "archaludon": {
+      "pokeapiId": 1018,
+      "file": "1018.png",
+      "slug": "archaludon"
+    },
+    "ariados": {
+      "pokeapiId": 168,
+      "file": "168.png",
+      "slug": "ariados"
+    },
+    "armarouge": {
+      "pokeapiId": 936,
+      "file": "936.png",
+      "slug": "armarouge"
+    },
+    "aromatisse": {
+      "pokeapiId": 683,
+      "file": "683.png",
+      "slug": "aromatisse"
+    },
+    "audino": {
+      "pokeapiId": 531,
+      "file": "531.png",
+      "slug": "audino"
+    },
+    "audinomega": {
+      "pokeapiId": 10069,
+      "file": "10069.png",
+      "slug": "audino-mega"
+    },
+    "aurorus": {
+      "pokeapiId": 699,
+      "file": "699.png",
+      "slug": "aurorus"
+    },
+    "avalugg": {
+      "pokeapiId": 713,
+      "file": "713.png",
+      "slug": "avalugg"
+    },
+    "avalugghisui": {
+      "pokeapiId": 10243,
+      "file": "10243.png",
+      "slug": "avalugg-hisui"
+    },
+    "azumarill": {
+      "pokeapiId": 184,
+      "file": "184.png",
+      "slug": "azumarill"
+    },
+    "banette": {
+      "pokeapiId": 354,
+      "file": "354.png",
+      "slug": "banette"
+    },
+    "banettemega": {
+      "pokeapiId": 10056,
+      "file": "10056.png",
+      "slug": "banette-mega"
+    },
+    "barbaracle": {
+      "pokeapiId": 689,
+      "file": "689.png",
+      "slug": "barbaracle"
+    },
+    "barbaraclemega": {
+      "pokeapiId": 10298,
+      "file": "10298.png",
+      "slug": "barbaracle-mega"
+    },
+    "basculegion": {
+      "pokeapiId": 902,
+      "file": "902.png",
+      "slug": "basculegion-male"
+    },
+    "basculegionf": {
+      "pokeapiId": 10248,
+      "file": "10248.png",
+      "slug": "basculegion-female"
+    },
+    "bastiodon": {
+      "pokeapiId": 411,
+      "file": "411.png",
+      "slug": "bastiodon"
+    },
+    "beartic": {
+      "pokeapiId": 614,
+      "file": "614.png",
+      "slug": "beartic"
+    },
+    "beedrill": {
+      "pokeapiId": 15,
+      "file": "15.png",
+      "slug": "beedrill"
+    },
+    "beedrillmega": {
+      "pokeapiId": 10090,
+      "file": "10090.png",
+      "slug": "beedrill-mega"
+    },
+    "bellibolt": {
+      "pokeapiId": 939,
+      "file": "939.png",
+      "slug": "bellibolt"
+    },
+    "blastoise": {
+      "pokeapiId": 9,
+      "file": "9.png",
+      "slug": "blastoise"
+    },
+    "blastoisemega": {
+      "pokeapiId": 10036,
+      "file": "10036.png",
+      "slug": "blastoise-mega"
+    },
+    "blaziken": {
+      "pokeapiId": 257,
+      "file": "257.png",
+      "slug": "blaziken"
+    },
+    "blazikenmega": {
+      "pokeapiId": 10050,
+      "file": "10050.png",
+      "slug": "blaziken-mega"
+    },
+    "camerupt": {
+      "pokeapiId": 323,
+      "file": "323.png",
+      "slug": "camerupt"
+    },
+    "cameruptmega": {
+      "pokeapiId": 10087,
+      "file": "10087.png",
+      "slug": "camerupt-mega"
+    },
+    "castform": {
+      "pokeapiId": 351,
+      "file": "351.png",
+      "slug": "castform"
+    },
+    "ceruledge": {
+      "pokeapiId": 937,
+      "file": "937.png",
+      "slug": "ceruledge"
+    },
+    "chandelure": {
+      "pokeapiId": 609,
+      "file": "609.png",
+      "slug": "chandelure"
+    },
+    "chandeluremega": {
+      "pokeapiId": 10291,
+      "file": "10291.png",
+      "slug": "chandelure-mega"
+    },
+    "charizard": {
+      "pokeapiId": 6,
+      "file": "6.png",
+      "slug": "charizard"
+    },
+    "charizardmegax": {
+      "pokeapiId": 10034,
+      "file": "10034.png",
+      "slug": "charizard-mega-x"
+    },
+    "charizardmegay": {
+      "pokeapiId": 10035,
+      "file": "10035.png",
+      "slug": "charizard-mega-y"
+    },
+    "chesnaught": {
+      "pokeapiId": 652,
+      "file": "652.png",
+      "slug": "chesnaught"
+    },
+    "chesnaughtmega": {
+      "pokeapiId": 10292,
+      "file": "10292.png",
+      "slug": "chesnaught-mega"
+    },
+    "chimecho": {
+      "pokeapiId": 358,
+      "file": "358.png",
+      "slug": "chimecho"
+    },
+    "chimechomega": {
+      "pokeapiId": 10306,
+      "file": "10306.png",
+      "slug": "chimecho-mega"
+    },
+    "clawitzer": {
+      "pokeapiId": 693,
+      "file": "693.png",
+      "slug": "clawitzer"
+    },
+    "clefable": {
+      "pokeapiId": 36,
+      "file": "36.png",
+      "slug": "clefable"
+    },
+    "clefablemega": {
+      "pokeapiId": 10278,
+      "file": "10278.png",
+      "slug": "clefable-mega"
+    },
+    "cofagrigus": {
+      "pokeapiId": 563,
+      "file": "563.png",
+      "slug": "cofagrigus"
+    },
+    "conkeldurr": {
+      "pokeapiId": 534,
+      "file": "534.png",
+      "slug": "conkeldurr"
+    },
+    "corviknight": {
+      "pokeapiId": 823,
+      "file": "823.png",
+      "slug": "corviknight"
+    },
+    "crabominable": {
+      "pokeapiId": 740,
+      "file": "740.png",
+      "slug": "crabominable"
+    },
+    "crabominablemega": {
+      "pokeapiId": 10315,
+      "file": "10315.png",
+      "slug": "crabominable-mega"
+    },
+    "decidueye": {
+      "pokeapiId": 724,
+      "file": "724.png",
+      "slug": "decidueye"
+    },
+    "decidueyehisui": {
+      "pokeapiId": 10244,
+      "file": "10244.png",
+      "slug": "decidueye-hisui"
+    },
+    "dedenne": {
+      "pokeapiId": 702,
+      "file": "702.png",
+      "slug": "dedenne"
+    },
+    "delphox": {
+      "pokeapiId": 655,
+      "file": "655.png",
+      "slug": "delphox"
+    },
+    "delphoxmega": {
+      "pokeapiId": 10293,
+      "file": "10293.png",
+      "slug": "delphox-mega"
+    },
+    "diggersby": {
+      "pokeapiId": 660,
+      "file": "660.png",
+      "slug": "diggersby"
+    },
+    "ditto": {
+      "pokeapiId": 132,
+      "file": "132.png",
+      "slug": "ditto"
+    },
+    "dragalge": {
+      "pokeapiId": 691,
+      "file": "691.png",
+      "slug": "dragalge"
+    },
+    "dragalgemega": {
+      "pokeapiId": 10299,
+      "file": "10299.png",
+      "slug": "dragalge-mega"
+    },
+    "dragapult": {
+      "pokeapiId": 887,
+      "file": "887.png",
+      "slug": "dragapult"
+    },
+    "dragonite": {
+      "pokeapiId": 149,
+      "file": "149.png",
+      "slug": "dragonite"
+    },
+    "dragonitemega": {
+      "pokeapiId": 10281,
+      "file": "10281.png",
+      "slug": "dragonite-mega"
+    },
+    "drampa": {
+      "pokeapiId": 780,
+      "file": "780.png",
+      "slug": "drampa"
+    },
+    "drampamega": {
+      "pokeapiId": 10302,
+      "file": "10302.png",
+      "slug": "drampa-mega"
+    },
+    "eelektross": {
+      "pokeapiId": 604,
+      "file": "604.png",
+      "slug": "eelektross"
+    },
+    "eelektrossmega": {
+      "pokeapiId": 10290,
+      "file": "10290.png",
+      "slug": "eelektross-mega"
+    },
+    "emboar": {
+      "pokeapiId": 500,
+      "file": "500.png",
+      "slug": "emboar"
+    },
+    "emboarmega": {
+      "pokeapiId": 10286,
+      "file": "10286.png",
+      "slug": "emboar-mega"
+    },
+    "emolga": {
+      "pokeapiId": 587,
+      "file": "587.png",
+      "slug": "emolga"
+    },
+    "empoleon": {
+      "pokeapiId": 395,
+      "file": "395.png",
+      "slug": "empoleon"
+    },
+    "espathra": {
+      "pokeapiId": 956,
+      "file": "956.png",
+      "slug": "espathra"
+    },
+    "espeon": {
+      "pokeapiId": 196,
+      "file": "196.png",
+      "slug": "espeon"
+    },
+    "excadrill": {
+      "pokeapiId": 530,
+      "file": "530.png",
+      "slug": "excadrill"
+    },
+    "excadrillmega": {
+      "pokeapiId": 10287,
+      "file": "10287.png",
+      "slug": "excadrill-mega"
+    },
+    "falinks": {
+      "pokeapiId": 870,
+      "file": "870.png",
+      "slug": "falinks"
+    },
+    "falinksmega": {
+      "pokeapiId": 10303,
+      "file": "10303.png",
+      "slug": "falinks-mega"
+    },
+    "farigiraf": {
+      "pokeapiId": 981,
+      "file": "981.png",
+      "slug": "farigiraf"
+    },
+    "feraligatr": {
+      "pokeapiId": 160,
+      "file": "160.png",
+      "slug": "feraligatr"
+    },
+    "feraligatrmega": {
+      "pokeapiId": 10283,
+      "file": "10283.png",
+      "slug": "feraligatr-mega"
+    },
+    "flapple": {
+      "pokeapiId": 841,
+      "file": "841.png",
+      "slug": "flapple"
+    },
+    "flareon": {
+      "pokeapiId": 136,
+      "file": "136.png",
+      "slug": "flareon"
+    },
+    "floetteeternal": {
+      "pokeapiId": 10061,
+      "file": "10061.png",
+      "slug": "floette-eternal"
+    },
+    "floettemega": {
+      "pokeapiId": 10296,
+      "file": "10296.png",
+      "slug": "floette-mega"
+    },
+    "florges": {
+      "pokeapiId": 671,
+      "file": "671.png",
+      "slug": "florges"
+    },
+    "forretress": {
+      "pokeapiId": 205,
+      "file": "205.png",
+      "slug": "forretress"
+    },
+    "froslass": {
+      "pokeapiId": 478,
+      "file": "478.png",
+      "slug": "froslass"
+    },
+    "froslassmega": {
+      "pokeapiId": 10285,
+      "file": "10285.png",
+      "slug": "froslass-mega"
+    },
+    "furfrou": {
+      "pokeapiId": 676,
+      "file": "676.png",
+      "slug": "furfrou"
+    },
+    "gallade": {
+      "pokeapiId": 475,
+      "file": "475.png",
+      "slug": "gallade"
+    },
+    "gallademega": {
+      "pokeapiId": 10068,
+      "file": "10068.png",
+      "slug": "gallade-mega"
+    },
+    "garbodor": {
+      "pokeapiId": 569,
+      "file": "569.png",
+      "slug": "garbodor"
+    },
+    "garchomp": {
+      "pokeapiId": 445,
+      "file": "445.png",
+      "slug": "garchomp"
+    },
+    "garchompmega": {
+      "pokeapiId": 10058,
+      "file": "10058.png",
+      "slug": "garchomp-mega"
+    },
+    "gardevoir": {
+      "pokeapiId": 282,
+      "file": "282.png",
+      "slug": "gardevoir"
+    },
+    "gardevoirmega": {
+      "pokeapiId": 10051,
+      "file": "10051.png",
+      "slug": "gardevoir-mega"
+    },
+    "garganacl": {
+      "pokeapiId": 934,
+      "file": "934.png",
+      "slug": "garganacl"
+    },
+    "gengar": {
+      "pokeapiId": 94,
+      "file": "94.png",
+      "slug": "gengar"
+    },
+    "gengarmega": {
+      "pokeapiId": 10038,
+      "file": "10038.png",
+      "slug": "gengar-mega"
+    },
+    "gholdengo": {
+      "pokeapiId": 1000,
+      "file": "1000.png",
+      "slug": "gholdengo"
+    },
+    "glaceon": {
+      "pokeapiId": 471,
+      "file": "471.png",
+      "slug": "glaceon"
+    },
+    "glalie": {
+      "pokeapiId": 362,
+      "file": "362.png",
+      "slug": "glalie"
+    },
+    "glaliemega": {
+      "pokeapiId": 10074,
+      "file": "10074.png",
+      "slug": "glalie-mega"
+    },
+    "glimmora": {
+      "pokeapiId": 970,
+      "file": "970.png",
+      "slug": "glimmora"
+    },
+    "glimmoramega": {
+      "pokeapiId": 10321,
+      "file": "10321.png",
+      "slug": "glimmora-mega"
+    },
+    "gliscor": {
+      "pokeapiId": 472,
+      "file": "472.png",
+      "slug": "gliscor"
+    },
+    "golurk": {
+      "pokeapiId": 623,
+      "file": "623.png",
+      "slug": "golurk"
+    },
+    "golurkmega": {
+      "pokeapiId": 10313,
+      "file": "10313.png",
+      "slug": "golurk-mega"
+    },
+    "goodra": {
+      "pokeapiId": 706,
+      "file": "706.png",
+      "slug": "goodra"
+    },
+    "goodrahisui": {
+      "pokeapiId": 10242,
+      "file": "10242.png",
+      "slug": "goodra-hisui"
+    },
+    "gourgeist": {
+      "pokeapiId": 711,
+      "file": "711.png",
+      "slug": "gourgeist-average"
+    },
+    "gourgeistlarge": {
+      "pokeapiId": 10031,
+      "file": "10031.png",
+      "slug": "gourgeist-large"
+    },
+    "gourgeistsmall": {
+      "pokeapiId": 10030,
+      "file": "10030.png",
+      "slug": "gourgeist-small"
+    },
+    "gourgeistsuper": {
+      "pokeapiId": 10032,
+      "file": "10032.png",
+      "slug": "gourgeist-super"
+    },
+    "greninja": {
+      "pokeapiId": 658,
+      "file": "658.png",
+      "slug": "greninja"
+    },
+    "greninjamega": {
+      "pokeapiId": 10294,
+      "file": "10294.png",
+      "slug": "greninja-mega"
+    },
+    "grimmsnarl": {
+      "pokeapiId": 861,
+      "file": "861.png",
+      "slug": "grimmsnarl"
+    },
+    "gyarados": {
+      "pokeapiId": 130,
+      "file": "130.png",
+      "slug": "gyarados"
+    },
+    "gyaradosmega": {
+      "pokeapiId": 10041,
+      "file": "10041.png",
+      "slug": "gyarados-mega"
+    },
+    "hatterene": {
+      "pokeapiId": 858,
+      "file": "858.png",
+      "slug": "hatterene"
+    },
+    "hawlucha": {
+      "pokeapiId": 701,
+      "file": "701.png",
+      "slug": "hawlucha"
+    },
+    "hawluchamega": {
+      "pokeapiId": 10300,
+      "file": "10300.png",
+      "slug": "hawlucha-mega"
+    },
+    "heliolisk": {
+      "pokeapiId": 695,
+      "file": "695.png",
+      "slug": "heliolisk"
+    },
+    "heracross": {
+      "pokeapiId": 214,
+      "file": "214.png",
+      "slug": "heracross"
+    },
+    "heracrossmega": {
+      "pokeapiId": 10047,
+      "file": "10047.png",
+      "slug": "heracross-mega"
+    },
+    "hippowdon": {
+      "pokeapiId": 450,
+      "file": "450.png",
+      "slug": "hippowdon"
+    },
+    "houndoom": {
+      "pokeapiId": 229,
+      "file": "229.png",
+      "slug": "houndoom"
+    },
+    "houndoommega": {
+      "pokeapiId": 10048,
+      "file": "10048.png",
+      "slug": "houndoom-mega"
+    },
+    "houndstone": {
+      "pokeapiId": 972,
+      "file": "972.png",
+      "slug": "houndstone"
+    },
+    "hydrapple": {
+      "pokeapiId": 1019,
+      "file": "1019.png",
+      "slug": "hydrapple"
+    },
+    "hydreigon": {
+      "pokeapiId": 635,
+      "file": "635.png",
+      "slug": "hydreigon"
+    },
+    "incineroar": {
+      "pokeapiId": 727,
+      "file": "727.png",
+      "slug": "incineroar"
+    },
+    "infernape": {
+      "pokeapiId": 392,
+      "file": "392.png",
+      "slug": "infernape"
+    },
+    "jolteon": {
+      "pokeapiId": 135,
+      "file": "135.png",
+      "slug": "jolteon"
+    },
+    "kangaskhan": {
+      "pokeapiId": 115,
+      "file": "115.png",
+      "slug": "kangaskhan"
+    },
+    "kangaskhanmega": {
+      "pokeapiId": 10039,
+      "file": "10039.png",
+      "slug": "kangaskhan-mega"
+    },
+    "kingambit": {
+      "pokeapiId": 983,
+      "file": "983.png",
+      "slug": "kingambit"
+    },
+    "kleavor": {
+      "pokeapiId": 900,
+      "file": "900.png",
+      "slug": "kleavor"
+    },
+    "klefki": {
+      "pokeapiId": 707,
+      "file": "707.png",
+      "slug": "klefki"
+    },
+    "kommoo": {
+      "pokeapiId": 784,
+      "file": "784.png",
+      "slug": "kommo-o"
+    },
+    "krookodile": {
+      "pokeapiId": 553,
+      "file": "553.png",
+      "slug": "krookodile"
+    },
+    "leafeon": {
+      "pokeapiId": 470,
+      "file": "470.png",
+      "slug": "leafeon"
+    },
+    "liepard": {
+      "pokeapiId": 510,
+      "file": "510.png",
+      "slug": "liepard"
+    },
+    "lopunny": {
+      "pokeapiId": 428,
+      "file": "428.png",
+      "slug": "lopunny"
+    },
+    "lopunnymega": {
+      "pokeapiId": 10088,
+      "file": "10088.png",
+      "slug": "lopunny-mega"
+    },
+    "lucario": {
+      "pokeapiId": 448,
+      "file": "448.png",
+      "slug": "lucario"
+    },
+    "lucariomega": {
+      "pokeapiId": 10059,
+      "file": "10059.png",
+      "slug": "lucario-mega"
+    },
+    "luxray": {
+      "pokeapiId": 405,
+      "file": "405.png",
+      "slug": "luxray"
+    },
+    "lycanroc": {
+      "pokeapiId": 745,
+      "file": "745.png",
+      "slug": "lycanroc-midday"
+    },
+    "lycanrocdusk": {
+      "pokeapiId": 10152,
+      "file": "10152.png",
+      "slug": "lycanroc-dusk"
+    },
+    "lycanrocmidnight": {
+      "pokeapiId": 10126,
+      "file": "10126.png",
+      "slug": "lycanroc-midnight"
+    },
+    "machamp": {
+      "pokeapiId": 68,
+      "file": "68.png",
+      "slug": "machamp"
+    },
+    "malamar": {
+      "pokeapiId": 687,
+      "file": "687.png",
+      "slug": "malamar"
+    },
+    "malamarmega": {
+      "pokeapiId": 10297,
+      "file": "10297.png",
+      "slug": "malamar-mega"
+    },
+    "mamoswine": {
+      "pokeapiId": 473,
+      "file": "473.png",
+      "slug": "mamoswine"
+    },
+    "manectric": {
+      "pokeapiId": 310,
+      "file": "310.png",
+      "slug": "manectric"
+    },
+    "manectricmega": {
+      "pokeapiId": 10055,
+      "file": "10055.png",
+      "slug": "manectric-mega"
+    },
+    "maushold": {
+      "pokeapiId": 10257,
+      "file": "10257.png",
+      "slug": "maushold-family-of-three"
+    },
+    "mawile": {
+      "pokeapiId": 303,
+      "file": "303.png",
+      "slug": "mawile"
+    },
+    "mawilemega": {
+      "pokeapiId": 10052,
+      "file": "10052.png",
+      "slug": "mawile-mega"
+    },
+    "medicham": {
+      "pokeapiId": 308,
+      "file": "308.png",
+      "slug": "medicham"
+    },
+    "medichammega": {
+      "pokeapiId": 10054,
+      "file": "10054.png",
+      "slug": "medicham-mega"
+    },
+    "meganium": {
+      "pokeapiId": 154,
+      "file": "154.png",
+      "slug": "meganium"
+    },
+    "meganiummega": {
+      "pokeapiId": 10282,
+      "file": "10282.png",
+      "slug": "meganium-mega"
+    },
+    "meowscarada": {
+      "pokeapiId": 908,
+      "file": "908.png",
+      "slug": "meowscarada"
+    },
+    "meowstic": {
+      "pokeapiId": 678,
+      "file": "678.png",
+      "slug": "meowstic-male"
+    },
+    "meowsticf": {
+      "pokeapiId": 10025,
+      "file": "10025.png",
+      "slug": "meowstic-female"
+    },
+    "meowsticfmega": {
+      "pokeapiId": 10326,
+      "file": "10326.png",
+      "slug": "meowstic-female-mega"
+    },
+    "meowsticmmega": {
+      "pokeapiId": 10314,
+      "file": "10314.png",
+      "slug": "meowstic-male-mega"
+    },
+    "metagross": {
+      "pokeapiId": 376,
+      "file": "376.png",
+      "slug": "metagross"
+    },
+    "metagrossmega": {
+      "pokeapiId": 10076,
+      "file": "10076.png",
+      "slug": "metagross-mega"
+    },
+    "milotic": {
+      "pokeapiId": 350,
+      "file": "350.png",
+      "slug": "milotic"
+    },
+    "mimikyu": {
+      "pokeapiId": 778,
+      "file": "778.png",
+      "slug": "mimikyu-disguised"
+    },
+    "morpeko": {
+      "pokeapiId": 877,
+      "file": "877.png",
+      "slug": "morpeko-full-belly"
+    },
+    "mrrime": {
+      "pokeapiId": 866,
+      "file": "866.png",
+      "slug": "mr-rime"
+    },
+    "mudsdale": {
+      "pokeapiId": 750,
+      "file": "750.png",
+      "slug": "mudsdale"
+    },
+    "musharna": {
+      "pokeapiId": 518,
+      "file": "518.png",
+      "slug": "musharna"
+    },
+    "ninetales": {
+      "pokeapiId": 38,
+      "file": "38.png",
+      "slug": "ninetales"
+    },
+    "ninetalesalola": {
+      "pokeapiId": 10104,
+      "file": "10104.png",
+      "slug": "ninetales-alola"
+    },
+    "noivern": {
+      "pokeapiId": 715,
+      "file": "715.png",
+      "slug": "noivern"
+    },
+    "oranguru": {
+      "pokeapiId": 765,
+      "file": "765.png",
+      "slug": "oranguru"
+    },
+    "orthworm": {
+      "pokeapiId": 968,
+      "file": "968.png",
+      "slug": "orthworm"
+    },
+    "overqwil": {
+      "pokeapiId": 904,
+      "file": "904.png",
+      "slug": "overqwil"
+    },
+    "palafin": {
+      "pokeapiId": 964,
+      "file": "964.png",
+      "slug": "palafin-zero"
+    },
+    "pangoro": {
+      "pokeapiId": 675,
+      "file": "675.png",
+      "slug": "pangoro"
+    },
+    "passimian": {
+      "pokeapiId": 766,
+      "file": "766.png",
+      "slug": "passimian"
+    },
+    "pelipper": {
+      "pokeapiId": 279,
+      "file": "279.png",
+      "slug": "pelipper"
+    },
+    "pidgeot": {
+      "pokeapiId": 18,
+      "file": "18.png",
+      "slug": "pidgeot"
+    },
+    "pidgeotmega": {
+      "pokeapiId": 10073,
+      "file": "10073.png",
+      "slug": "pidgeot-mega"
+    },
+    "pikachu": {
+      "pokeapiId": 25,
+      "file": "25.png",
+      "slug": "pikachu"
+    },
+    "pinsir": {
+      "pokeapiId": 127,
+      "file": "127.png",
+      "slug": "pinsir"
+    },
+    "pinsirmega": {
+      "pokeapiId": 10040,
+      "file": "10040.png",
+      "slug": "pinsir-mega"
+    },
+    "politoed": {
+      "pokeapiId": 186,
+      "file": "186.png",
+      "slug": "politoed"
+    },
+    "polteageist": {
+      "pokeapiId": 855,
+      "file": "855.png",
+      "slug": "polteageist"
+    },
+    "primarina": {
+      "pokeapiId": 730,
+      "file": "730.png",
+      "slug": "primarina"
+    },
+    "pyroar": {
+      "pokeapiId": 668,
+      "file": "668.png",
+      "slug": "pyroar-male"
+    },
+    "pyroarmega": {
+      "pokeapiId": 10295,
+      "file": "10295.png",
+      "slug": "pyroar-mega"
+    },
+    "quaquaval": {
+      "pokeapiId": 914,
+      "file": "914.png",
+      "slug": "quaquaval"
+    },
+    "qwilfish": {
+      "pokeapiId": 211,
+      "file": "211.png",
+      "slug": "qwilfish"
+    },
+    "raichu": {
+      "pokeapiId": 26,
+      "file": "26.png",
+      "slug": "raichu"
+    },
+    "raichualola": {
+      "pokeapiId": 10100,
+      "file": "10100.png",
+      "slug": "raichu-alola"
+    },
+    "raichumegax": {
+      "pokeapiId": 10304,
+      "file": "10304.png",
+      "slug": "raichu-mega-x"
+    },
+    "raichumegay": {
+      "pokeapiId": 10305,
+      "file": "10305.png",
+      "slug": "raichu-mega-y"
+    },
+    "rampardos": {
+      "pokeapiId": 409,
+      "file": "409.png",
+      "slug": "rampardos"
+    },
+    "reuniclus": {
+      "pokeapiId": 579,
+      "file": "579.png",
+      "slug": "reuniclus"
+    },
+    "rhyperior": {
+      "pokeapiId": 464,
+      "file": "464.png",
+      "slug": "rhyperior"
+    },
+    "roserade": {
+      "pokeapiId": 407,
+      "file": "407.png",
+      "slug": "roserade"
+    },
+    "rotom": {
+      "pokeapiId": 479,
+      "file": "479.png",
+      "slug": "rotom"
+    },
+    "rotomfan": {
+      "pokeapiId": 10011,
+      "file": "10011.png",
+      "slug": "rotom-fan"
+    },
+    "rotomfrost": {
+      "pokeapiId": 10010,
+      "file": "10010.png",
+      "slug": "rotom-frost"
+    },
+    "rotomheat": {
+      "pokeapiId": 10008,
+      "file": "10008.png",
+      "slug": "rotom-heat"
+    },
+    "rotommow": {
+      "pokeapiId": 10012,
+      "file": "10012.png",
+      "slug": "rotom-mow"
+    },
+    "rotomwash": {
+      "pokeapiId": 10009,
+      "file": "10009.png",
+      "slug": "rotom-wash"
+    },
+    "runerigus": {
+      "pokeapiId": 867,
+      "file": "867.png",
+      "slug": "runerigus"
+    },
+    "sableye": {
+      "pokeapiId": 302,
+      "file": "302.png",
+      "slug": "sableye"
+    },
+    "sableyemega": {
+      "pokeapiId": 10066,
+      "file": "10066.png",
+      "slug": "sableye-mega"
+    },
+    "salazzle": {
+      "pokeapiId": 758,
+      "file": "758.png",
+      "slug": "salazzle"
+    },
+    "samurott": {
+      "pokeapiId": 503,
+      "file": "503.png",
+      "slug": "samurott"
+    },
+    "samurotthisui": {
+      "pokeapiId": 10236,
+      "file": "10236.png",
+      "slug": "samurott-hisui"
+    },
+    "sandaconda": {
+      "pokeapiId": 844,
+      "file": "844.png",
+      "slug": "sandaconda"
+    },
+    "sceptile": {
+      "pokeapiId": 254,
+      "file": "254.png",
+      "slug": "sceptile"
+    },
+    "sceptilemega": {
+      "pokeapiId": 10065,
+      "file": "10065.png",
+      "slug": "sceptile-mega"
+    },
+    "scizor": {
+      "pokeapiId": 212,
+      "file": "212.png",
+      "slug": "scizor"
+    },
+    "scizormega": {
+      "pokeapiId": 10046,
+      "file": "10046.png",
+      "slug": "scizor-mega"
+    },
+    "scolipede": {
+      "pokeapiId": 545,
+      "file": "545.png",
+      "slug": "scolipede"
+    },
+    "scolipedemega": {
+      "pokeapiId": 10288,
+      "file": "10288.png",
+      "slug": "scolipede-mega"
+    },
+    "scovillain": {
+      "pokeapiId": 952,
+      "file": "952.png",
+      "slug": "scovillain"
+    },
+    "scovillainmega": {
+      "pokeapiId": 10320,
+      "file": "10320.png",
+      "slug": "scovillain-mega"
+    },
+    "scrafty": {
+      "pokeapiId": 560,
+      "file": "560.png",
+      "slug": "scrafty"
+    },
+    "scraftymega": {
+      "pokeapiId": 10289,
+      "file": "10289.png",
+      "slug": "scrafty-mega"
+    },
+    "serperior": {
+      "pokeapiId": 497,
+      "file": "497.png",
+      "slug": "serperior"
+    },
+    "sharpedo": {
+      "pokeapiId": 319,
+      "file": "319.png",
+      "slug": "sharpedo"
+    },
+    "sharpedomega": {
+      "pokeapiId": 10070,
+      "file": "10070.png",
+      "slug": "sharpedo-mega"
+    },
+    "simipour": {
+      "pokeapiId": 516,
+      "file": "516.png",
+      "slug": "simipour"
+    },
+    "simisage": {
+      "pokeapiId": 512,
+      "file": "512.png",
+      "slug": "simisage"
+    },
+    "simisear": {
+      "pokeapiId": 514,
+      "file": "514.png",
+      "slug": "simisear"
+    },
+    "sinistcha": {
+      "pokeapiId": 1013,
+      "file": "1013.png",
+      "slug": "sinistcha"
+    },
+    "skarmory": {
+      "pokeapiId": 227,
+      "file": "227.png",
+      "slug": "skarmory"
+    },
+    "skarmorymega": {
+      "pokeapiId": 10284,
+      "file": "10284.png",
+      "slug": "skarmory-mega"
+    },
+    "skeledirge": {
+      "pokeapiId": 911,
+      "file": "911.png",
+      "slug": "skeledirge"
+    },
+    "slowbro": {
+      "pokeapiId": 80,
+      "file": "80.png",
+      "slug": "slowbro"
+    },
+    "slowbrogalar": {
+      "pokeapiId": 10165,
+      "file": "10165.png",
+      "slug": "slowbro-galar"
+    },
+    "slowbromega": {
+      "pokeapiId": 10071,
+      "file": "10071.png",
+      "slug": "slowbro-mega"
+    },
+    "slowking": {
+      "pokeapiId": 199,
+      "file": "199.png",
+      "slug": "slowking"
+    },
+    "slowkinggalar": {
+      "pokeapiId": 10172,
+      "file": "10172.png",
+      "slug": "slowking-galar"
+    },
+    "slurpuff": {
+      "pokeapiId": 685,
+      "file": "685.png",
+      "slug": "slurpuff"
+    },
+    "sneasler": {
+      "pokeapiId": 903,
+      "file": "903.png",
+      "slug": "sneasler"
+    },
+    "snorlax": {
+      "pokeapiId": 143,
+      "file": "143.png",
+      "slug": "snorlax"
+    },
+    "spiritomb": {
+      "pokeapiId": 442,
+      "file": "442.png",
+      "slug": "spiritomb"
+    },
+    "staraptor": {
+      "pokeapiId": 398,
+      "file": "398.png",
+      "slug": "staraptor"
+    },
+    "staraptormega": {
+      "pokeapiId": 10308,
+      "file": "10308.png",
+      "slug": "staraptor-mega"
+    },
+    "starmie": {
+      "pokeapiId": 121,
+      "file": "121.png",
+      "slug": "starmie"
+    },
+    "starmiemega": {
+      "pokeapiId": 10280,
+      "file": "10280.png",
+      "slug": "starmie-mega"
+    },
+    "steelix": {
+      "pokeapiId": 208,
+      "file": "208.png",
+      "slug": "steelix"
+    },
+    "steelixmega": {
+      "pokeapiId": 10072,
+      "file": "10072.png",
+      "slug": "steelix-mega"
+    },
+    "stunfisk": {
+      "pokeapiId": 618,
+      "file": "618.png",
+      "slug": "stunfisk"
+    },
+    "stunfiskgalar": {
+      "pokeapiId": 10180,
+      "file": "10180.png",
+      "slug": "stunfisk-galar"
+    },
+    "swampert": {
+      "pokeapiId": 260,
+      "file": "260.png",
+      "slug": "swampert"
+    },
+    "swampertmega": {
+      "pokeapiId": 10064,
+      "file": "10064.png",
+      "slug": "swampert-mega"
+    },
+    "sylveon": {
+      "pokeapiId": 700,
+      "file": "700.png",
+      "slug": "sylveon"
+    },
+    "talonflame": {
+      "pokeapiId": 663,
+      "file": "663.png",
+      "slug": "talonflame"
+    },
+    "tauros": {
+      "pokeapiId": 128,
+      "file": "128.png",
+      "slug": "tauros"
+    },
+    "taurospaldeaaqua": {
+      "pokeapiId": 10252,
+      "file": "10252.png",
+      "slug": "tauros-paldea-aqua-breed"
+    },
+    "taurospaldeablaze": {
+      "pokeapiId": 10251,
+      "file": "10251.png",
+      "slug": "tauros-paldea-blaze-breed"
+    },
+    "taurospaldeacombat": {
+      "pokeapiId": 10250,
+      "file": "10250.png",
+      "slug": "tauros-paldea-combat-breed"
+    },
+    "tinkaton": {
+      "pokeapiId": 959,
+      "file": "959.png",
+      "slug": "tinkaton"
+    },
+    "torkoal": {
+      "pokeapiId": 324,
+      "file": "324.png",
+      "slug": "torkoal"
+    },
+    "torterra": {
+      "pokeapiId": 389,
+      "file": "389.png",
+      "slug": "torterra"
+    },
+    "toucannon": {
+      "pokeapiId": 733,
+      "file": "733.png",
+      "slug": "toucannon"
+    },
+    "toxapex": {
+      "pokeapiId": 748,
+      "file": "748.png",
+      "slug": "toxapex"
+    },
+    "toxicroak": {
+      "pokeapiId": 454,
+      "file": "454.png",
+      "slug": "toxicroak"
+    },
+    "trevenant": {
+      "pokeapiId": 709,
+      "file": "709.png",
+      "slug": "trevenant"
+    },
+    "tsareena": {
+      "pokeapiId": 763,
+      "file": "763.png",
+      "slug": "tsareena"
+    },
+    "typhlosion": {
+      "pokeapiId": 157,
+      "file": "157.png",
+      "slug": "typhlosion"
+    },
+    "typhlosionhisui": {
+      "pokeapiId": 10233,
+      "file": "10233.png",
+      "slug": "typhlosion-hisui"
+    },
+    "tyranitar": {
+      "pokeapiId": 248,
+      "file": "248.png",
+      "slug": "tyranitar"
+    },
+    "tyranitarmega": {
+      "pokeapiId": 10049,
+      "file": "10049.png",
+      "slug": "tyranitar-mega"
+    },
+    "tyrantrum": {
+      "pokeapiId": 697,
+      "file": "697.png",
+      "slug": "tyrantrum"
+    },
+    "umbreon": {
+      "pokeapiId": 197,
+      "file": "197.png",
+      "slug": "umbreon"
+    },
+    "vanilluxe": {
+      "pokeapiId": 584,
+      "file": "584.png",
+      "slug": "vanilluxe"
+    },
+    "vaporeon": {
+      "pokeapiId": 134,
+      "file": "134.png",
+      "slug": "vaporeon"
+    },
+    "venusaur": {
+      "pokeapiId": 3,
+      "file": "3.png",
+      "slug": "venusaur"
+    },
+    "venusaurmega": {
+      "pokeapiId": 10033,
+      "file": "10033.png",
+      "slug": "venusaur-mega"
+    },
+    "victreebel": {
+      "pokeapiId": 71,
+      "file": "71.png",
+      "slug": "victreebel"
+    },
+    "victreebelmega": {
+      "pokeapiId": 10279,
+      "file": "10279.png",
+      "slug": "victreebel-mega"
+    },
+    "vileplume": {
+      "pokeapiId": 45,
+      "file": "45.png",
+      "slug": "vileplume"
+    },
+    "vivillon": {
+      "pokeapiId": 666,
+      "file": "666.png",
+      "slug": "vivillon"
+    },
+    "volcarona": {
+      "pokeapiId": 637,
+      "file": "637.png",
+      "slug": "volcarona"
+    },
+    "watchog": {
+      "pokeapiId": 505,
+      "file": "505.png",
+      "slug": "watchog"
+    },
+    "weavile": {
+      "pokeapiId": 461,
+      "file": "461.png",
+      "slug": "weavile"
+    },
+    "whimsicott": {
+      "pokeapiId": 547,
+      "file": "547.png",
+      "slug": "whimsicott"
+    },
+    "wyrdeer": {
+      "pokeapiId": 899,
+      "file": "899.png",
+      "slug": "wyrdeer"
+    },
+    "zoroark": {
+      "pokeapiId": 571,
+      "file": "571.png",
+      "slug": "zoroark"
+    },
+    "zoroarkhisui": {
+      "pokeapiId": 10239,
+      "file": "10239.png",
+      "slug": "zoroark-hisui"
+    }
+  }
+}

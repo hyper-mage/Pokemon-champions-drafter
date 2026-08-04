@@ -4,3 +4,10 @@ dist
 coverage
 .DS_Store
 *.local
+
+# Build-script scratch. Holds the cached PokeAPI id index so a sprite rebuild is
+# offline and instant. Regenerated on demand; never an input to a review.
+scripts/.cache/
+
+# public/sprites/ is deliberately NOT ignored. The committed art is the whole
+# point of D-01 (zero cost) and D-16 (offline from the second visit).
