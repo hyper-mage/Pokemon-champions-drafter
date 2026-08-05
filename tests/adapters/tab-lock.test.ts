@@ -47,10 +47,25 @@ const STORAGE_KEY = 'champions-drafter:tournament';
 interface Port {
   handler: ((message: LockMessage) => void) | null;
   open: boolean;
+  muted: boolean;
+}
+
+/**
+ * A channel that can also be struck dumb.
+ *
+ * `close()` models a tab that is gone; `setMuted(true)` models one that is still there and
+ * has stopped speaking — a main thread blocked on a long task, or a background tab whose
+ * timers the browser has throttled. The distinction matters because the two must look
+ * identical to a *secondary*, which is the whole basis of stale detection: a secondary
+ * cannot tell a dead owner from a wedged one, so it must treat silence itself as the
+ * signal and then take the words back when the owner speaks again.
+ */
+interface TestChannel extends LockChannel {
+  setMuted(muted: boolean): void;
 }
 
 interface Bus {
-  connect(): LockChannel;
+  connect(): TestChannel;
   /** Deliver everything queued while in `manual` mode. */
   flush(): void;
 }
@@ -74,18 +89,25 @@ function makeBus(delivery: 'sync' | 'manual' = 'sync'): Bus {
   }
 
   return {
-    connect(): LockChannel {
-      const port: Port = { handler: null, open: true };
+    connect(): TestChannel {
+      const port: Port = { handler: null, open: true, muted: false };
       ports.push(port);
 
       return {
         postMessage(message: LockMessage): void {
-          if (!port.open) return;
+          // A muted port still runs its own timers — the owner's heartbeat interval keeps
+          // firing — but nothing it sends reaches the bus. That is precisely the shape of
+          // a blocked main thread, and it is what makes the owner *look* dead without
+          // being dead.
+          if (!port.open || port.muted) return;
           if (delivery === 'sync') deliver(port, message);
           else queue.push({ from: port, message });
         },
         listen(handler: (message: LockMessage) => void): void {
           port.handler = handler;
+        },
+        setMuted(muted: boolean): void {
+          port.muted = muted;
         },
         close(): void {
           port.open = false;
@@ -370,16 +392,30 @@ describe('stale lock', () => {
 
   it('clears the stale flag if the owner comes back', () => {
     const bus = makeBus();
-    const a = boot(createTabLock({ tabId: 'a', channel: bus.connect() }));
+    const aChannel = bus.connect();
+    const a = boot(createTabLock({ tabId: 'a', channel: aChannel }));
     const b = boot(createTabLock({ tabId: 'b', channel: bus.connect() }));
 
-    // A main thread blocked for ten seconds is a slow tab, not a dead one.
+    // The owner's main thread wedges. Its heartbeat interval still fires; none of it
+    // reaches the bus. To `b` this is indistinguishable from a tab that has died, and
+    // that is the point — `b` must not need to tell the difference to react.
+    aChannel.setMuted(true);
     vi.advanceTimersByTime(STALE_THRESHOLD_MS);
     expect(b.state().stale).toBe(true);
 
+    // ...and then the tab comes back. A blocked main thread is a slow tab, not a dead
+    // one, so a single heartbeat has to be enough to withdraw the accusation. Without
+    // this, a tab that stuttered once would wear the stale banner until it was reloaded,
+    // and the host would be invited to take over a tournament nobody had actually left.
+    aChannel.setMuted(false);
     vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
     expect(b.state().stale).toBe(false);
+
+    // Recovery is not a handoff: `b` withdrew the stale flag, not the lock. Ownership
+    // never moved, because ownership only ever moves on a click.
     expect(a.isOwner()).toBe(true);
+    expect(b.isOwner()).toBe(false);
+    expect(b.state().status).toBe('secondary');
   });
 
   it('lets the surviving tab claim by clicking, with everything intact', () => {
