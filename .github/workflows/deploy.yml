@@ -52,6 +52,12 @@ jobs:
       - name: Enforce the pure-core boundary (SHEL-04)
         run: npm run check:pure
 
+      # T-01-04: roster display names reach the DOM as text children, which Preact
+      # escapes. This fails the deploy on any raw-HTML sink anywhere under src/, so
+      # that guarantee is enforced rather than assumed.
+      - name: Enforce the no-raw-HTML boundary (T-01-04)
+        run: npm run check:nohtml
+
       - name: Run tests
         run: npm run test
 

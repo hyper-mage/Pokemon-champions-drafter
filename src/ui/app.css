@@ -1,0 +1,96 @@
+/*
+ * app.css — the layout shell and the global interaction baseline.
+ *
+ * Consumes tokens.css and declares no raw colour and no raw length for anything the
+ * token table covers. tokens.css must be imported before this file so every
+ * custom property is declared before it is consumed.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: var(--text-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/*
+ * The shell: one column, centred, capped so a wide monitor does not stretch the pool
+ * grid into an unreadable band. Vertical order once the later plans land is
+ * read-only banner, TopBar, TurnBanner, BoardGrid, PoolGrid.
+ */
+.app-shell {
+  max-width: 1600px;
+  margin-inline: auto;
+  padding: var(--space-4);
+}
+
+/*
+ * The one <h1> per screen. Headings never skip a level below it.
+ */
+.app-shell__title {
+  margin: 0 0 var(--space-5);
+  font: var(--text-display);
+}
+
+/*
+ * Load status copy. Deliberately NOT --color-danger: the UI-SPEC reserves the
+ * destructive colour for exactly two surfaces, the storage-unavailable blocking
+ * screen and the import-overwrite confirm button, and a roster fetch that has not
+ * finished is neither.
+ */
+.app-shell__status {
+  margin: 0;
+  max-width: 60ch;
+}
+
+/*
+ * The accent focus ring, applied once, globally.
+ *
+ * Suppressing the outline is forbidden anywhere in this project unless an
+ * equal-or-better ring replaces it in the same rule. The banned declaration is
+ * deliberately not written out here, even as an example: the CI check for it is a
+ * plain text search, and a stylesheet that quotes the pattern in a comment makes the
+ * gate report its own documentation. Same reasoning as the pure-core checker.
+ *
+ * The 2px offset puts the ring on the background so it stays visible even around an
+ * accent-filled control.
+ */
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/*
+ * Visually hidden but reachable by assistive technology. Used for the single polite
+ * live region at app root.
+ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * Motion budget: colour and border transitions only, at most 120ms. Nothing is lost
+ * by removing them, which is why this block can be blunt.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,52 @@
+/*
+ * MonCard — one pool cell.
+ *
+ * Consumes tokens only. Phase 2's density toggle changes --sprite-lg, --cell-min,
+ * --cell-h and --text-label; nothing in this file should need to change with it.
+ *
+ * The cell is the click target in its entirety, which puts it far above --target-min
+ * in both axes (--cell-min wide by --cell-h tall).
+ */
+
+.mon-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: var(--cell-h);
+  padding: var(--space-2);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  /* Motion budget: colour only, at most 120ms. No layout or entrance animation. */
+  transition: background-color 120ms ease;
+}
+
+.mon-card:hover {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * No :focus rule here on purpose — the global accent ring in app.css covers every
+ * focusable element, and a per-component ring is how a design system drifts.
+ * No :active rule either; the pick is instant, so there is nothing to preview.
+ */
+
+.mon-card__sprite {
+  display: block;
+  flex: none;
+  width: var(--sprite-lg);
+  height: var(--sprite-lg);
+}
+
+.mon-card__name {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+  font: var(--text-label);
+}
