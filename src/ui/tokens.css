@@ -1,0 +1,82 @@
+/*
+ * tokens.css — the design contract, as CSS custom properties.
+ *
+ * Transcribed from .planning/phases/01-draft-skeleton-on-a-real-url/01-UI-SPEC.md
+ * (approved). This file declares values; it must never style an element. Every other
+ * stylesheet in the project consumes these tokens and declares no raw colour and no
+ * raw length for anything covered here. That rule is what makes Phase 2's three
+ * display densities (DRFT-06) a token swap rather than a restyle (CONTEXT.md D-07).
+ *
+ * Phase 2 density contract: the densities change exactly four tokens —
+ * --sprite-lg, --cell-min, --cell-h, --text-label. Nothing else.
+ *
+ * Typography convention, chosen once and held: each --text-* token is a complete
+ * `font` shorthand, `<weight> <size>/<line-height> <family>`, so a consumer writes
+ * `font: var(--text-heading)` and gets all four decisions together. The one surface
+ * that needs a different family (the export paste block) sets `font-family:
+ * var(--font-mono)` on the line AFTER its `font:` shorthand, which keeps the size
+ * and line-height while swapping only the family.
+ */
+
+:root {
+  /* Native form controls, scrollbars and the file picker follow the theme. */
+  color-scheme: dark;
+
+  /* --- Spacing scale. Every value is a multiple of 4; there are no exceptions. --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 48px;
+  --space-7: 64px;
+
+  /* --- Size tokens. Sizing constraints, not spacing; also multiples of 4. ---
+   *
+   * --sprite-lg is the MEASURED native size of the committed PokeAPI PNGs, read from
+   * the IHDR chunk of all 311 files by scripts/build-sprites.mjs on 2026-08-04:
+   * 96x96, zero outliers. It is recorded in public/data/sprite-meta.json as
+   * nativeWidth/nativeHeight. Rendering at the native size is what keeps the art
+   * crisp, so this token and the <img> width/height attributes must agree with that
+   * file. --sprite-sm is an exact 2:1 integer downscale.
+   */
+  --sprite-lg: 96px;
+  --sprite-sm: 48px;
+  --cell-min: 112px;
+  --cell-h: 144px;
+  --target-min: 44px;
+  --radius: 8px;
+  --border-w: 2px;
+  --hairline-w: 1px;
+
+  /* --- Font families. --font-mono carries no size of its own. --- */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  /* --- Type scale. Exactly four sizes, exactly two weights. No 500, no 700,
+   *     no italics. No surface may introduce a fifth size. --- */
+  --text-body: 400 18px / 1.5 var(--font-sans);
+  --text-label: 600 14px / 1.4 var(--font-sans);
+  --text-heading: 600 24px / 1.25 var(--font-sans);
+  --text-display: 600 36px / 1.15 var(--font-sans);
+
+  /* --- Colour. Contrast ratios are from the UI-SPEC's full token table; every text
+   *     pairing clears 4.5:1 and every state-carrying boundary clears 3:1. --- */
+  --color-bg: #0f1216;
+  --color-surface: #1a1f26;
+  --color-surface-raised: #232a33;
+  --color-text: #e8edf2;
+  --color-text-muted: #9aa7b4;
+  --color-hairline: #313a45;
+  --color-border-strong: #66768a;
+  --color-accent: #ffcb05;
+  --color-accent-ink: #0f1216;
+  --color-accent-soft: rgba(255, 203, 5, 0.12);
+  --color-danger: #ff7a70;
+  --color-danger-ink: #0f1216;
+
+  /* The focus ring is the accent, always. Reserved use 3 of 3. */
+  --focus-ring: var(--color-accent);
+}

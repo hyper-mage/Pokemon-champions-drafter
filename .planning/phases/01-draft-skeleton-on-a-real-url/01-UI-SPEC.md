@@ -58,8 +58,8 @@ These are separate from the spacing scale but are still multiples of 4. They exi
 
 | Token | Value | Notes |
 |-------|-------|-------|
-| `--sprite-lg` | 96px | Pool cell sprite. **The 96px figure is an unconfirmed working assumption, not a sourced fact** — no upstream artifact states a pixel dimension for PokeAPI `sprites/pokemon/{id}.png`. CONTEXT.md D-02 and `CLAUDE.md` §Sprites record file size only (`~1–2.5 KB each`). The sprite build task must read the actual dimensions off the downloaded PNGs and correct this row if they differ; set `--sprite-lg` to the true native size so the cell renders 1:1 with no scaling blur. Do not treat 96 as settled until that verification runs. |
-| `--sprite-sm` | 48px | Board / team-strip chip sprite. Exact 2:1 integer downscale of the assumed 96px source, so it stays crisp. Re-derive alongside `--sprite-lg` if the verification above lands on a different native size. |
+| `--sprite-lg` | 96px | Pool cell sprite. **Measured, not assumed.** `scripts/build-sprites.mjs` read the IHDR chunk of all 311 committed PokeAPI PNGs on **2026-08-04**: every file is **96×96, zero outliers** (`public/data/sprite-meta.json` → `nativeWidth` / `nativeHeight`, `dimensionHistogram: { "96x96": 311 }`). The cell therefore renders 1:1 with no scaling blur. `_placeholder.png` is generated at the same 96×96 so a gap cannot break grid rhythm. Plan 01-05 wires the pool `<img>` `width`/`height` attributes to this same measured figure. |
+| `--sprite-sm` | 48px | Board / team-strip chip sprite. Exact 2:1 integer downscale of the **measured** 96px source, so it stays crisp. |
 | `--cell-min` | 112px | Pool grid `minmax()` floor |
 | `--cell-h` | 144px | Pool cell height |
 | `--target-min` | 44px | Minimum interactive target, width and height. Exceeds WCAG 2.2 SC 2.5.8 (24px) and meets SC 2.5.5 (44px). |
@@ -253,7 +253,7 @@ gap: var(--space-2);
 
 - Each cell is a real `<button type="button">`, `--cell-h` tall, `--color-surface` fill, `--hairline-w solid var(--color-border-strong)` border, `--radius` corners. Whole cell is the target; far above `--target-min`.
 - Cell content, top to bottom: `<img>` at `--sprite-lg`, `--space-1` gap, species name at `--text-label`, centred, `text-overflow: ellipsis` on one line with the full name in `title`.
-- `<img>` **must** carry explicit `width`/`height` attributes and `alt=""` (decorative — the adjacent name is the accessible label). The explicit dimensions prevent 234 simultaneous layout shifts. Write the sprite's true native size into those attributes — `96`/`96` under the current working assumption, corrected together with `--sprite-lg` once the sprite build task verifies the real dimensions (see the Size tokens table). `loading="lazy"` is **not** used: D-16 precaches every sprite, so lazy loading buys nothing and costs pop-in.
+- `<img>` **must** carry explicit `width`/`height` attributes and `alt=""` (decorative — the adjacent name is the accessible label). The explicit dimensions prevent 234 simultaneous layout shifts. The attributes carry the sprite's measured native size — `96`/`96`, confirmed against all 311 committed PNGs on 2026-08-04 (see the Size tokens table) — read from `public/data/sprite-meta.json` rather than typed as a literal, so the attributes and `--sprite-lg` cannot drift apart. `loading="lazy"` is **not** used: D-16 precaches every sprite, so lazy loading buys nothing and costs pop-in.
 - Missing sprite (ROST-11 / D-04 / D-05): render the single committed placeholder authored at exactly the same pixel dimensions as the real sprites, chosen by the `spriteMissing: true` flag on the roster entry. **Never** fire a request the build already knows 404s. The species name renders unchanged.
 - Hover: fill → `--color-surface-raised`, 120ms ease. Focus: the accent ring. Active: no separate style needed.
 - **A picked species is removed from the DOM immediately** — not greyed, not disabled. This is the success criterion's literal wording.
@@ -388,7 +388,7 @@ No component in `src/ui/` may own a game rule. Whose turn it is, which round is 
 | Read-only second tab with explicit takeover | CONTEXT.md D-12 |
 | Storage canary as a blocking start screen | CONTEXT.md D-13 |
 | Committed individual PokeAPI PNGs, single generic placeholder, `spriteMissing` flag | CONTEXT.md D-02, D-03, D-04, D-05 |
-| **96×96 sprite pixel dimension — UNCONFIRMED, no source** | Not stated in D-02…D-05 (which record file size only, `~1–2.5 KB each`), not in `CLAUDE.md` §Sprites, not in `.planning/research/`. Working assumption pending the sprite build task, which must read the real dimensions and correct `--sprite-lg`, `--sprite-sm`, and the pool `<img>` attributes here. |
+| **96×96 sprite pixel dimension — CONFIRMED by measurement, 2026-08-04** | `scripts/build-sprites.mjs` (plan 01-04) read the IHDR chunk of all 311 committed PNGs: `dimensionHistogram: { "96x96": 311 }`, `outliers: []`. Recorded in `public/data/sprite-meta.json` and in `.planning/phases/01-draft-skeleton-on-a-real-url/01-04-SUMMARY.md`. The working assumption happened to be right; it is no longer an assumption. |
 | Blank-line record separator is the likeliest export bug | `CLAUDE.md` §Export Formats (verified) |
 | `pokebase.app → New/Import Team` entry label | `CLAUDE.md` §Export Formats (verified) |
 | No virtualization; `content-visibility` is the only hatch | `CLAUDE.md` §Supporting Libraries |
