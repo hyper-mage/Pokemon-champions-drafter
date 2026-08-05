@@ -188,6 +188,7 @@ Buttons name a verb and its object. Nothing is labelled `OK`, `Submit`, `Yes`, `
 | Turn banner, draft over | `Draft complete — 12 picks, 2 teams` |
 | Pool heading | `Pool` |
 | Pool count | `{n} available` |
+| Pool loading state | `Loading the pool…` |
 | Board heading | `Draft board` |
 | Round column headers | `R1` … `R6` |
 | Undo button | `Undo last pick` |
