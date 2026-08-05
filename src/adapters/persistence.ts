@@ -31,6 +31,7 @@ import { computed, signal, type ReadonlySignal } from '@preact/signals';
 
 import { SCHEMA_VERSION, type TournamentDoc } from '../core/model';
 import { now } from './clock';
+import { isOwner } from './tab-lock';
 
 /** One key, one tournament. Namespaced so a future key cannot collide with this one. */
 const STORAGE_KEY = 'champions-drafter:tournament';
@@ -141,8 +142,22 @@ export function probeStorage(): ProbeResult {
  * JSON-serializable by test, but a future field that is not would otherwise throw here
  * and take the draft screen down with it, which is a strictly worse outcome than a
  * warning banner.
+ *
+ * ## The ownership gate — PERS-03 / T-01-06
+ *
+ * This is the enforcement point for the tab lock, and it is one line on purpose. The
+ * read-only banner in a secondary tab is the *explanation*; this is the *guarantee*. A
+ * tab that does not hold write ownership never reaches `setItem` for the tournament key,
+ * so the last-writer-wins clobber is structurally unreachable rather than merely
+ * discouraged.
+ *
+ * A refused write deliberately does NOT raise `savingBlocked`. That signal means "this
+ * browser will not save your draft", and a read-only tab's problem is the opposite: the
+ * draft is being saved, correctly, by the tab that owns it.
  */
 export function save(doc: TournamentDoc): boolean {
+  if (!isOwner()) return false;
+
   const record: PersistedRecord = {
     schemaVersion: SCHEMA_VERSION,
     generation: generation + 1,
@@ -237,6 +252,53 @@ export function load(): TournamentDoc | null {
   generation = Number.isSafeInteger(storedGeneration) ? (storedGeneration as number) : 0;
 
   return parsed['doc'];
+}
+
+/**
+ * The stored document, but only when it is newer than anything this tab has written.
+ *
+ * This is the whole of the T-01-40 mitigation and it exists for exactly one caller: a tab
+ * that is being promoted to write ownership. Consider the sequence the lock makes
+ * possible — tab B opens read-only, tab A drafts ten more picks, then the host clicks
+ * `Take over drafting here` in B. B's in-memory document is ten picks behind. Promoting
+ * it without this call would let B's very next autosave overwrite A's work, which is
+ * precisely the clobber the lock was built to prevent, arriving through the front door.
+ *
+ * `generation` is the comparison because it is the one field that is monotonic per write
+ * — 01-07 recorded it on every save specifically so this check would not need a schema
+ * migration to exist. `savedAt` would be the obvious alternative and is not usable: it
+ * comes from two different tabs' clocks.
+ *
+ * Returns null when there is nothing newer, so the caller can leave a tab that is already
+ * current exactly as it is.
+ */
+export function loadIfNewer(): TournamentDoc | null {
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+
+  if (raw === null) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (!isPlainRecord(parsed)) return null;
+
+  const storedGeneration = parsed['generation'];
+  if (!Number.isSafeInteger(storedGeneration)) return null;
+  if ((storedGeneration as number) <= generation) return null;
+
+  // Re-read through `load` rather than trusting the parse above: the promoted tab is
+  // about to adopt this document and fold it, and every shape check `load` makes is one
+  // the fold path would otherwise dereference blind.
+  return load();
 }
 
 // ---------------------------------------------------------------------------
