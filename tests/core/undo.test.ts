@@ -226,8 +226,10 @@ describe('undoLast', () => {
 
     const next = undoLast(makeDoc(log));
 
-    expect(next.log).toHaveLength(3);
-    expect(next.log[2]?.type).toBe(DRAFT_PICK_UNDONE);
+    // pool/built, draft/started, the surviving first pick, and the trailing entry the
+    // naive `pop()` would have taken instead.
+    expect(next.log).toHaveLength(4);
+    expect(next.log[3]?.type).toBe(DRAFT_PICK_UNDONE);
     expect(next.log.filter((action) => action.type === DRAFT_PICK_MADE)).toHaveLength(1);
   });
 });

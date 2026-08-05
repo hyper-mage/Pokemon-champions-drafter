@@ -33,8 +33,10 @@ import {
   type TournamentDoc,
 } from './core/model';
 import type { RosterEntry, RosterSnapshot } from './core/roster/types';
-import { apply, canApply, type CanApplyResult } from './core/reduce';
+import { apply, canApply, fold, type CanApplyResult } from './core/reduce';
 import { selectStartingOrder } from './core/selectors';
+import { canUndo, lastPickAction, undoLast } from './core/undo';
+import { announce } from './ui/components/LiveRegion';
 
 /**
  * Every action this build originates is the host's. Under sync this becomes a device
@@ -94,6 +96,24 @@ export function subscribe(listener: () => void): () => void {
  * a reload does. `tests/core/reduce.test.ts` asserts that equivalence action by action
  * rather than trusting it.
  */
+/**
+ * One past the highest `seq` the log has ever handed out.
+ *
+ * `log.length` would be the obvious answer and is the same number for as long as the
+ * log only ever grows. Undo makes it wrong: `undoLast` removes an entry, and once a
+ * removal can happen anywhere but the end (Phase 2 interleaves card plays and bans), a
+ * length-derived `seq` collides with one already in the log. `seq` is the identity a
+ * `draft/pickUndone` targets and the thing `DraftPick.seq` promises is stable, so a
+ * duplicate would silently retract the wrong pick.
+ */
+function nextSeq(log: readonly Action[]): number {
+  let highest = -1;
+  for (const action of log) {
+    if (action.seq > highest) highest = action.seq;
+  }
+  return highest + 1;
+}
+
 export function dispatch(intent: Intent): CanApplyResult {
   const previous = docSignal.peek();
   const current = stateSignal.peek();
@@ -103,7 +123,7 @@ export function dispatch(intent: Intent): CanApplyResult {
 
   const action: Action = {
     ...intent,
-    seq: previous.log.length,
+    seq: nextSeq(previous.log),
     at: now(),
     actorId: ACTOR_HOST,
   };
@@ -174,4 +194,64 @@ export function createTournament(
   );
 
   return docSignal.peek();
+}
+
+/**
+ * Adopt a document that already exists — a restored autosave today, an imported file in
+ * plan 01-10.
+ *
+ * The state is re-folded from scratch rather than trusted, because the log is the truth
+ * and the folded state is only ever a cache of it. A document from a schema this build
+ * does not recognise is refused rather than half-loaded: `apply` tolerates action types
+ * it has never heard of, but a whole document shape it does not understand is a
+ * different question, and answering it optimistically is how a good save gets replaced
+ * by a broken one.
+ */
+export function adoptTournament(doc: TournamentDoc): boolean {
+  if (doc.schemaVersion !== SCHEMA_VERSION) return false;
+
+  docSignal.value = doc;
+  stateSignal.value = fold(doc);
+  return true;
+}
+
+/**
+ * Unwind the most recent pick — SHEL-06 / D-10.
+ *
+ * This is the second write path in the file and it is deliberately not a `dispatch`.
+ * `dispatch` appends; undo removes, which is the one operation an append-only log
+ * cannot express as an append. The equivalence that makes the removal safe was
+ * established and asserted by plan 01-06 (`tests/core/reduce.test.ts`: folding a log
+ * prefix equals the state before the removed action), and `src/core/undo.ts` is where
+ * the removal itself lives, pure and testable without any of this.
+ *
+ * The state is re-folded rather than advanced incrementally. `apply` moves forward only
+ * — there is no `unapply` and there must not be one, because a second transition
+ * function is a second thing that can disagree with the first.
+ *
+ * `resolveSpeciesName` is injected rather than looked up here. The store holds the
+ * tournament document, and a display name is not in it: species names belong to the
+ * roster snapshot, which the UI already has in hand. Caching a copy in this module
+ * would be a second piece of state living outside the document, which is exactly what
+ * D-10 rejects redo for.
+ *
+ * Returns whether anything was undone, so a caller can stay silent when there was not.
+ */
+export function undo(resolveSpeciesName?: (monId: string) => string): boolean {
+  const previous = docSignal.peek();
+  if (previous === null || !canUndo(previous)) return false;
+
+  const removed = lastPickAction(previous);
+  if (removed === null) return false;
+
+  const next = undoLast(previous);
+  docSignal.value = next;
+  stateSignal.value = fold(next);
+
+  // Verbatim from the UI-SPEC copywriting table. The board reverting is the primary
+  // feedback; this is what makes the same event reach someone not watching the screen.
+  const species = resolveSpeciesName?.(removed.monId) ?? removed.monId;
+  announce(`Undid Round ${removed.round} — ${species} is back in the pool.`);
+
+  return true;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import {
   loadRoster,
@@ -19,6 +19,7 @@ import { createTournament, dispatch, draftState, getState } from './store';
 import { BoardGrid } from './ui/components/BoardGrid';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid } from './ui/components/PoolGrid';
+import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
 
 type LoadState =
@@ -132,6 +133,16 @@ export function App() {
   const turn = state === null ? null : selectCurrentTurn(state);
   const complete = state !== null && selectIsComplete(state);
 
+  // Undo's live-region announcement names the species that came back. The store holds
+  // the document and the document holds ids, so the display name has to arrive from
+  // here, where the roster snapshot already is. Falling back to the id keeps the
+  // announcement honest rather than empty if a restored document ever references a
+  // species the current regulation dropped.
+  const resolveSpeciesName = useCallback(
+    (monId: string) => entryById.get(monId)?.name ?? monId,
+    [entryById],
+  );
+
   return (
     <div class="app-shell">
       <LiveRegion />
@@ -144,11 +155,20 @@ export function App() {
 
       {load.status === 'ready' && state !== null && (
         <>
-          <TurnBanner
-            round={turn === null ? null : turn.round}
-            playerName={turn === null ? null : selectPlayerName(state, turn.playerId)}
-            complete={complete}
-          />
+          {/*
+            TopBar and TurnBanner are both specified as sticky at the top of the
+            viewport, so they stick as one block rather than fighting over the same
+            pixel. See TopBar.css.
+          */}
+          <div class="sticky-head">
+            <TopBar resolveSpeciesName={resolveSpeciesName} />
+
+            <TurnBanner
+              round={turn === null ? null : turn.round}
+              playerName={turn === null ? null : selectPlayerName(state, turn.playerId)}
+              complete={complete}
+            />
+          </div>
 
           <BoardGrid
             players={state.config.players}

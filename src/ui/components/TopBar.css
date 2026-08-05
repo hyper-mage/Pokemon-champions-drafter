@@ -1,0 +1,68 @@
+/*
+ * TopBar — the sticky control bar, and the sticky stack it and TurnBanner share.
+ *
+ * Consumes tokens only; declares no raw colour and no raw length the token table
+ * covers. The one deliberate absence is any destructive or accent styling: the UI-SPEC
+ * reserves the accent for three things and the danger colour for two, and undo is none
+ * of them. Undo reads as routine because it is routine — see TopBar.tsx.
+ */
+
+/*
+ * Both TopBar and TurnBanner are specified as `position: sticky; top: 0`, which is two
+ * elements competing for the same pixel: whichever has the higher z-index wins and the
+ * other pins invisibly beneath it. Sticking the pair as one block resolves that without
+ * either component having to know the other's height, which a `top: 76px` offset would
+ * have required and which would then have been wrong the moment the bar gained a second
+ * button.
+ *
+ * `display: flow-root` is load-bearing rather than decorative: it stops TurnBanner's
+ * bottom margin collapsing out of this element, which would otherwise leave a
+ * transparent strip below the pinned block for the pool to scroll through.
+ */
+.sticky-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flow-root;
+  background: var(--color-bg);
+}
+
+.top-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-3) 0;
+}
+
+/*
+ * Secondary styling, per the UI-SPEC: transparent fill, hairline outline in the strong
+ * border colour, plain text label. The draft screen has no accent-filled button at all
+ * — picking is the action and the pool cells are the target.
+ */
+.top-bar__button {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.top-bar__button:hover:not(:disabled) {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * Colour is never the only signal: the native `disabled` attribute and
+ * `aria-disabled="true"` carry the state for assistive technology and for the pointer,
+ * and the opacity is the visual echo rather than the mechanism. The label does not
+ * change — `Undo last pick` still describes exactly what the control would do.
+ */
+.top-bar__button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
