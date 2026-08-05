@@ -1,0 +1,20 @@
+# Line-ending policy.
+#
+# Five consecutive plans in phase 01 hit the same Windows symptom: a regenerated
+# file reports as modified while being byte-identical, and every `git add` emits
+# "LF will be replaced by CRLF" warnings. Declaring the policy here makes the
+# repository's stored form explicit instead of leaving it to each machine's
+# core.autocrlf setting.
+#
+# Everything git detects as text is stored with LF. Working-tree line endings are
+# left to the platform; only the committed form is normalised.
+* text=auto eol=lf
+
+# Generated data snapshots. These are compared byte-for-byte by the roster and
+# sprite build scripts to prove regeneration is idempotent, so their stored form
+# must be stable.
+*.json text eol=lf
+*.mjs  text eol=lf
+
+# Binary assets — the committed sprite set. Never transform these.
+*.png binary
