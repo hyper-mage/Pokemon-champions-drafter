@@ -54,12 +54,12 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — Live GitHub Pages URL deployed by a workflow that gates on purity and tests (SHEL-01, SHEL-02) — Task 3 outstanding: `github-pages` environment branch policy allows only `master`, blocking deploys from `main`
+- [x] 01-02-PLAN.md — Live GitHub Pages URL deployed by a workflow that gates on purity and tests (SHEL-01, SHEL-02) — Task 3 outstanding: `github-pages` environment branch policy allows only `master`, blocking deploys from `main`
 - [x] 01-03-PLAN.md — Committed regulation-stamped Champions roster snapshot, fail-loud regeneration script, hostile-species fixture test, and the 207-vs-208 re-diff (ROST-01, 03–10, 12)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-04-PLAN.md — Committed PokeAPI sprite set with measured native dimensions, placeholder, spriteMissing flags, and the PokeAPI LICENCE.txt resolution (ROST-11)
+- [x] 01-04-PLAN.md — Committed PokeAPI sprite set with measured native dimensions, placeholder, spriteMissing flags, and the PokeAPI LICENCE.txt resolution (ROST-11)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 3/11 | In Progress|  |
+| 1. Draft Skeleton on a Real URL | 4/11 | In Progress|  |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
