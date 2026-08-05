@@ -1,0 +1,31 @@
+/*
+ * PoolGrid — the pool block.
+ *
+ * auto-fill rather than auto-fit: auto-fill keeps empty tracks, so a heavily filtered
+ * pool in Phase 2 leaves its remaining cells at their normal size instead of
+ * stretching two survivors across the whole row.
+ *
+ * The grid reflows on its own at any width, which is what carries the 200%-zoom
+ * requirement — there is no fixed-width child to force the page to scroll sideways.
+ */
+
+.pool__header {
+  margin-bottom: var(--space-3);
+}
+
+.pool__title {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+.pool__count {
+  margin: var(--space-1) 0 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.pool__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--cell-min), 1fr));
+  gap: var(--space-2);
+}

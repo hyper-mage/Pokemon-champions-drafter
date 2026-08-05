@@ -21,7 +21,23 @@
  *
  * Zero dependencies. Node 18+.
  *
+ * Two modes, sharing one scanner:
+ *
+ *   core    (default)  Scans `src/core` for ambient state and for imports from the
+ *                      impure edge. This is SHEL-04.
+ *
+ *   markup  (--nohtml) Scans ALL of `src` for the raw-HTML sinks. This is T-01-04.
+ *                      Preact escapes text children by default, so roster display
+ *                      names reach the DOM as inert text — but "by default" is a
+ *                      property of how the code is written, and one
+ *                      dangerouslySetInnerHTML would quietly undo it. This mode turns
+ *                      the guarantee from assumed into enforced. It deliberately does
+ *                      NOT apply the ambient-state list: `fetch`, `document` and
+ *                      `window` are exactly what `src/adapters` and `src/ui` exist to
+ *                      use.
+ *
  * Usage:  node scripts/check-pure-core.mjs [directory]
+ *         node scripts/check-pure-core.mjs --nohtml [directory]
  * Exit:   0 = clean, 1 = violations found (or the directory does not exist)
  */
 
@@ -29,7 +45,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, posix, sep } from 'node:path';
 import process from 'node:process';
 
-const DEFAULT_DIR = 'src/core';
+const DEFAULT_CORE_DIR = 'src/core';
+const DEFAULT_MARKUP_DIR = 'src';
 const SOURCE_EXTENSIONS = ['.ts', '.tsx'];
 
 /**
@@ -61,6 +78,23 @@ const FORBIDDEN_IDENTIFIERS = [
   { token: 'process', pattern: /\bprocess\b/g },
   { token: 'dangerouslySetInnerHTML', pattern: /\bdangerouslySetInnerHTML\b/g },
   { token: 'innerHTML', pattern: /\binnerHTML\b/g },
+];
+
+/**
+ * Raw-HTML sinks (T-01-04). Applied across ALL of `src`, not only the core.
+ *
+ * Roster display names come from a committed snapshot and are rendered as text
+ * children, which Preact escapes. These are the assignments that would silently turn
+ * that text back into markup. The list covers the whole class, not only the two names
+ * the threat register happens to cite: `outerHTML` and `insertAdjacentHTML` open
+ * exactly the same hole through a ref, and leaving them out would make the gate look
+ * complete while missing the two most obvious ways around it.
+ */
+const MARKUP_IDENTIFIERS = [
+  { token: 'dangerouslySetInnerHTML', pattern: /\bdangerouslySetInnerHTML\b/g },
+  { token: 'innerHTML', pattern: /\binnerHTML\b/g },
+  { token: 'outerHTML', pattern: /\bouterHTML\b/g },
+  { token: 'insertAdjacentHTML', pattern: /\binsertAdjacentHTML\b/g },
 ];
 
 /** Module-specifier extractors. Run against source with strings intact, comments blanked. */
@@ -341,19 +375,30 @@ function classifySpecifier(specifier) {
   return null;
 }
 
-function findViolations(relativePath, source) {
+function findViolations(relativePath, source, mode) {
   const { code, stripped } = scanSource(source);
   const lineStarts = buildLineIndex(source);
   const violations = [];
 
-  for (const { token, pattern } of FORBIDDEN_IDENTIFIERS) {
+  const identifiers = mode === 'markup' ? MARKUP_IDENTIFIERS : FORBIDDEN_IDENTIFIERS;
+  const identifierReason = mode === 'markup' ? 'raw HTML sink' : 'ambient state';
+
+  for (const { token, pattern } of identifiers) {
     pattern.lastIndex = 0;
     let match;
     while ((match = pattern.exec(stripped)) !== null) {
       const { line, column } = locationOf(lineStarts, match.index);
-      violations.push({ path: relativePath, line, column, token, reason: 'ambient state' });
+      violations.push({ path: relativePath, line, column, token, reason: identifierReason });
       if (match[0].length === 0) pattern.lastIndex++;
     }
+  }
+
+  // Layering is a core-only concern. `src/ui` importing `src/adapters` is the design.
+  if (mode === 'markup') {
+    violations.sort(
+      (a, b) => a.line - b.line || a.column - b.column || a.token.localeCompare(b.token),
+    );
+    return violations;
   }
 
   for (const pattern of IMPORT_PATTERNS) {
@@ -407,8 +452,41 @@ function collectSourceFiles(directory) {
 // Entry point
 // ---------------------------------------------------------------------------
 
+/**
+ * Parse argv into a mode and a target directory.
+ *
+ * An unrecognised flag is fatal rather than ignored: a typo'd flag that silently fell
+ * back to core mode would report `check:nohtml` as passing while checking the wrong
+ * list, which is the same self-invalidating failure the whole script exists to avoid.
+ */
+function parseArguments(argv) {
+  let mode = 'core';
+  const positional = [];
+
+  for (const argument of argv.slice(2)) {
+    if (argument === '--nohtml' || argument === '--markup') {
+      mode = 'markup';
+      continue;
+    }
+    if (argument === '--core') {
+      mode = 'core';
+      continue;
+    }
+    if (argument.startsWith('--')) {
+      console.error(`check:pure — unknown flag: ${argument}`);
+      console.error('Usage: node scripts/check-pure-core.mjs [--nohtml] [directory]');
+      process.exit(1);
+    }
+    positional.push(argument);
+  }
+
+  const fallback = mode === 'markup' ? DEFAULT_MARKUP_DIR : DEFAULT_CORE_DIR;
+  return { mode, target: positional[0] ?? fallback };
+}
+
 function main() {
-  const target = process.argv[2] ?? DEFAULT_DIR;
+  const { mode, target } = parseArguments(process.argv);
+  const label = mode === 'markup' ? 'check:nohtml' : 'check:pure';
 
   let stats;
   try {
@@ -416,19 +494,19 @@ function main() {
   } catch {
     // A typo'd path that silently passed would be exactly the self-invalidating gate
     // this script exists to avoid. Fail loudly instead.
-    console.error(`check:pure — target directory not found: ${toPosixPath(target)}`);
+    console.error(`${label} — target directory not found: ${toPosixPath(target)}`);
     process.exit(1);
   }
 
   if (!stats.isDirectory()) {
-    console.error(`check:pure — target is not a directory: ${toPosixPath(target)}`);
+    console.error(`${label} — target is not a directory: ${toPosixPath(target)}`);
     process.exit(1);
   }
 
   const files = collectSourceFiles(target);
   if (files.length === 0) {
     console.log(
-      `check:pure — no .ts or .tsx files under ${toPosixPath(target)} yet; nothing to check`,
+      `${label} — no .ts or .tsx files under ${toPosixPath(target)} yet; nothing to check`,
     );
     process.exit(0);
   }
@@ -436,7 +514,7 @@ function main() {
   const violations = [];
   for (const file of files) {
     const source = readFileSync(file, 'utf8');
-    violations.push(...findViolations(toPosixPath(file), source));
+    violations.push(...findViolations(toPosixPath(file), source, mode));
   }
 
   if (violations.length > 0) {
@@ -447,17 +525,17 @@ function main() {
     }
     console.log('');
     console.log(
-      `check:pure — ${violations.length} violation(s) in ${files.length} file(s) under ${toPosixPath(target)}`,
+      `${label} — ${violations.length} violation(s) in ${files.length} file(s) under ${toPosixPath(target)}`,
     );
     console.log(
-      'The core must be a pure function of its arguments. Move the ambient value to an adapter and stamp it onto the action at dispatch time.',
+      mode === 'markup'
+        ? 'Roster display names reach the DOM as text children, which the renderer escapes. Render text, not markup — if a surface genuinely needs rich content, build it from elements.'
+        : 'The core must be a pure function of its arguments. Move the ambient value to an adapter and stamp it onto the action at dispatch time.',
     );
     process.exit(1);
   }
 
-  console.log(
-    `check:pure — 0 violations in ${files.length} file(s) under ${toPosixPath(target)}`,
-  );
+  console.log(`${label} — 0 violations in ${files.length} file(s) under ${toPosixPath(target)}`);
   process.exit(0);
 }
 

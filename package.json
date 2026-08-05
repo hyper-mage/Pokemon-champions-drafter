@@ -16,8 +16,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:pure": "node scripts/check-pure-core.mjs src/core",
+    "check:nohtml": "node scripts/check-pure-core.mjs --nohtml src",
     "check:pure:selftest": "node scripts/check-pure-core-selftest.mjs",
-    "verify": "npm run check:pure && npm run test && npm run build"
+    "verify": "npm run check:pure && npm run check:nohtml && npm run test && npm run build"
   },
   "dependencies": {
     "@preact/signals": "2.10.1",

@@ -17,3 +17,13 @@ export function shuffleSeed(): number {
 export function stampedInTemplate(): string {
   return `saved at ${Date.now()}`;
 }
+
+// Real raw-HTML sinks, for the --nohtml mode. A species name assigned this way is
+// markup, not text, and the escaping the renderer normally guarantees is gone.
+export function writeName(target: HTMLElement, speciesName: string): void {
+  target.innerHTML = speciesName;
+}
+
+export function replaceCell(target: HTMLElement, speciesName: string): void {
+  target.outerHTML = `<span>${speciesName}</span>`;
+}

@@ -1,8 +1,13 @@
 import { render } from 'preact';
 
-// Order matters and is load-bearing: tokens.css declares every custom property on
-// :root, app.css consumes them. Swapping these two lines leaves the shell styled
-// against undeclared variables.
+// tokens.css first, then app.css, then everything a component pulls in.
+//
+// Stated precisely rather than as folklore: custom properties resolve at used-value
+// time, so a var() consumed by a rule that happens to be emitted earlier still picks
+// up the :root declaration. Order is enforced here for the two things it does decide
+// — which declaration wins when two rules have equal specificity, and where Vite
+// places each file in the single bundled stylesheet — and so the entry point reads as
+// the definition of the cascade rather than leaving it to module-graph accident.
 import './ui/tokens.css';
 import './ui/app.css';
 
