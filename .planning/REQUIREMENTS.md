@@ -29,13 +29,13 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **SHEL-03**: App works with no network after first load
 - [x] **SHEL-04**: Draft, rules, and tournament logic are pure — no DOM, clock, randomness, network, or storage access — enforced by a CI check
 - [x] **SHEL-05**: Tournament state is one serializable JSON document driven by an append-only action log and a pure reducer
-- [ ] **SHEL-06**: Host can undo the last action at any point during the draft
+- [x] **SHEL-06**: Host can undo the last action at any point during the draft
 - [x] **SHEL-07**: Any randomness the tool uses is seeded, with the seed stored in state, so a reloaded tournament reproduces the same outcome
 
 ### Persistence
 
-- [ ] **PERS-01**: Tournament state autosaves and survives page refresh and browser close
-- [ ] **PERS-02**: A storage canary probe at config time warns the host when browser storage is unavailable or restricted
+- [x] **PERS-01**: Tournament state autosaves and survives page refresh and browser close
+- [x] **PERS-02**: A storage canary probe at config time warns the host when browser storage is unavailable or restricted
 - [ ] **PERS-03**: Two tabs of the same tournament cannot silently overwrite each other
 - [ ] **PERS-04**: Host can export the full tournament as a JSON file at any time
 - [ ] **PERS-05**: Host can import a tournament JSON file to restore it or move it to another machine
@@ -205,10 +205,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SHEL-03 | Phase 1 | Pending |
 | SHEL-04 | Phase 1 | Complete |
 | SHEL-05 | Phase 1 | Complete |
-| SHEL-06 | Phase 1 | Pending |
+| SHEL-06 | Phase 1 | Complete |
 | SHEL-07 | Phase 1 | Complete |
-| PERS-01 | Phase 1 | Pending |
-| PERS-02 | Phase 1 | Pending |
+| PERS-01 | Phase 1 | Complete |
+| PERS-02 | Phase 1 | Complete |
 | PERS-03 | Phase 1 | Pending |
 | PERS-04 | Phase 1 | Pending |
 | PERS-05 | Phase 1 | Pending |

@@ -71,7 +71,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 01-07-PLAN.md — Unlimited undo, localStorage autosave with a pagehide flush, and the blocking storage canary (SHEL-06, PERS-01, PERS-02)
+- [x] 01-07-PLAN.md — Unlimited undo, localStorage autosave with a pagehide flush, and the blocking storage canary (SHEL-06, PERS-01, PERS-02)
 - [ ] 01-08-PLAN.md — toShowdownPaste with the blank-line separator and Mega stone form, plus the hand-verified export spike against both targets (EXPO-01…05)
 
 **Wave 7** *(blocked on Wave 6 completion)*
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 6/11 | In Progress|  |
+| 1. Draft Skeleton on a Real URL | 7/11 | In Progress|  |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |

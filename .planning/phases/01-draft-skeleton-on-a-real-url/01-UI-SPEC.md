@@ -354,7 +354,8 @@ Applies to every surface. Non-negotiable for this phase and inherited by all lat
 
 - One column, `max-width: 1600px`, centred, `--space-4` page padding.
 - Vertical order: read-only banner (conditional) → sticky `TopBar` → `TurnBanner` → `BoardGrid` → `PoolGrid`.
-- `TopBar` and `TurnBanner` are `position: sticky; top: 0` so undo and whose-turn stay on screen while the pool scrolls. This is the shared-screen requirement in miniature.
+- `TopBar` and `TurnBanner` stay on screen together while the pool scrolls, so undo and whose-turn are always visible. This is the shared-screen requirement in miniature.
+- **Mechanism:** both live inside a single `.sticky-head` wrapper that carries `position: sticky; top: 0`. They are *not* each given `top: 0` individually — two siblings both pinned to `top: 0` would stack on top of each other and hide one. The wrapper also needs `display: flow-root` to stop margin collapse from leaking a gap above the pinned block. (Corrected during 01-07; the original wording specified an arrangement that cannot render.)
 
 ### Pure-core boundary (SHEL-04) — a UI rule too
 
