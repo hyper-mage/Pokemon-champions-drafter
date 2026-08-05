@@ -202,6 +202,7 @@ Buttons name a verb and its object. Nothing is labelled `OK`, `Submit`, `Yes`, `
 | Read-only banner | `Another tab is drafting this tournament. This tab is read-only.` |
 | Read-only banner, stale lock | `The tab that was drafting has stopped responding.` |
 | Read-only banner CTA | `Take over drafting here` |
+| Takeover confirmed (live region) | `You are now drafting on this tab.` |
 | Checkpoint prompt heading | `Draft complete — save a copy?` |
 | Checkpoint prompt body | `Download the tournament JSON so you can reopen it on another machine, or after this browser clears its storage.` |
 | Checkpoint prompt CTA | `Download tournament JSON` |
