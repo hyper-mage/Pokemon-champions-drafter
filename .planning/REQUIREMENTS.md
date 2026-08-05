@@ -19,13 +19,13 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **ROST-08**: The draftable unit is the base species; Mega-capability is a flag on it, not a separate pool row
 - [ ] **ROST-09**: Cosmetic formes, battle-only formes, and `isNonstandard: "Future"` entries are excluded from the draftable set
 - [ ] **ROST-10**: Genuinely distinct alternate formes — regional forms, Rotom appliances, Tauros-Paldea — remain draftable
-- [ ] **ROST-11**: Every roster entry resolves to a sprite, with a visible fallback for species that have no art
+- [x] **ROST-11**: Every roster entry resolves to a sprite, with a visible fallback for species that have no art
 - [ ] **ROST-12**: A fixture test covers the known-hostile species set: Meganium, Floette-Eternal, Meowstic-M-Mega, Castform-Sunny, Kommo-o, Mr. Rime, Farfetch'd, Charizard and Raichu Mega X/Y, Vivillon, Alcremie, Aegislash-Blade
 
 ### App Shell & State
 
-- [ ] **SHEL-01**: App is reachable at a GitHub Pages URL requiring no install, account, or payment
-- [ ] **SHEL-02**: Deployment runs from a GitHub Actions workflow on push to the default branch
+- [x] **SHEL-01**: App is reachable at a GitHub Pages URL requiring no install, account, or payment
+- [x] **SHEL-02**: Deployment runs from a GitHub Actions workflow on push to the default branch
 - [ ] **SHEL-03**: App works with no network after first load
 - [ ] **SHEL-04**: Draft, rules, and tournament logic are pure — no DOM, clock, randomness, network, or storage access — enforced by a CI check
 - [ ] **SHEL-05**: Tournament state is one serializable JSON document driven by an append-only action log and a pure reducer
@@ -198,10 +198,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ROST-08 | Phase 1 | Pending |
 | ROST-09 | Phase 1 | Pending |
 | ROST-10 | Phase 1 | Pending |
-| ROST-11 | Phase 1 | Pending |
+| ROST-11 | Phase 1 | Complete |
 | ROST-12 | Phase 1 | Pending |
-| SHEL-01 | Phase 1 | Pending |
-| SHEL-02 | Phase 1 | Pending |
+| SHEL-01 | Phase 1 | Complete |
+| SHEL-02 | Phase 1 | Complete |
 | SHEL-03 | Phase 1 | Pending |
 | SHEL-04 | Phase 1 | Pending |
 | SHEL-05 | Phase 1 | Pending |
