@@ -22,7 +22,7 @@ import committedSnapshot from '../../public/data/roster.mb.json';
 import committedSpriteMeta from '../../public/data/sprite-meta.json';
 import type { SpriteMeta } from '../../src/adapters/roster-source';
 import type { MegaForme, RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
-import { resolveSpriteFile } from '../../src/ui/components/MonCard';
+import { resolveSpriteFile } from '../../src/ui/sprite-src';
 
 const snapshot = committedSnapshot as unknown as RosterSnapshot;
 const spriteMeta = committedSpriteMeta as unknown as SpriteMeta;

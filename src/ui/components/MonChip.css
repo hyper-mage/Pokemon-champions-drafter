@@ -1,0 +1,36 @@
+/*
+ * MonChip — a drafted species inside a board cell.
+ *
+ * Consumes tokens only; declares no raw colour and no raw length the token table
+ * covers. Nothing here is interactive, so there is no hover, no focus and no cursor
+ * rule: the chip is a readout, and styling it like a control would promise an
+ * interaction that does not exist.
+ */
+
+.mon-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-1);
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  /* min-width: 0 lets the name ellipsis actually engage inside a grid track. */
+  min-width: 0;
+}
+
+.mon-chip__sprite {
+  display: block;
+  flex: none;
+  width: var(--sprite-sm);
+  height: var(--sprite-sm);
+}
+
+.mon-chip__name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--text-label);
+}

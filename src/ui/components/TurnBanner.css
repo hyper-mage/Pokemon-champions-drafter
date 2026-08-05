@@ -1,0 +1,32 @@
+/*
+ * TurnBanner — sticky, so whose-turn stays on screen while the pool scrolls.
+ *
+ * That stickiness is the shared-screen requirement in miniature: the host scrolls a
+ * 235-cell grid looking for a species called out across the table, and the one thing
+ * that must never scroll away is which player they are picking for.
+ *
+ * Consumes tokens only; declares no raw colour. The UI-SPEC's "4px left rule" is
+ * exactly --space-1, so the rule width is a token rather than a repeated literal.
+ */
+
+.turn-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border-left: var(--space-1) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: var(--text-display);
+}
+
+/*
+ * The active player's name is one of exactly three sanctioned uses of the accent.
+ * Colour is never the only signal: the sentence itself names the player and the round,
+ * so the banner reads identically with no colour perception at all.
+ */
+.turn-banner__player {
+  color: var(--color-accent);
+}
