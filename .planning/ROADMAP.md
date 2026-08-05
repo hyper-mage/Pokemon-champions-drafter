@@ -67,7 +67,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01-06-PLAN.md — Append-only log, pure reducer, selectors, seeded RNG, click-to-pick, turn banner, and the draft board (SHEL-04, SHEL-05, SHEL-07)
+- [x] 01-06-PLAN.md — Append-only log, pure reducer, selectors, seeded RNG, click-to-pick, turn banner, and the draft board (SHEL-04, SHEL-05, SHEL-07)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 5/11 | In Progress|  |
+| 1. Draft Skeleton on a Real URL | 6/11 | In Progress|  |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |

@@ -27,10 +27,10 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **SHEL-01**: App is reachable at a GitHub Pages URL requiring no install, account, or payment
 - [x] **SHEL-02**: Deployment runs from a GitHub Actions workflow on push to the default branch
 - [ ] **SHEL-03**: App works with no network after first load
-- [ ] **SHEL-04**: Draft, rules, and tournament logic are pure — no DOM, clock, randomness, network, or storage access — enforced by a CI check
-- [ ] **SHEL-05**: Tournament state is one serializable JSON document driven by an append-only action log and a pure reducer
+- [x] **SHEL-04**: Draft, rules, and tournament logic are pure — no DOM, clock, randomness, network, or storage access — enforced by a CI check
+- [x] **SHEL-05**: Tournament state is one serializable JSON document driven by an append-only action log and a pure reducer
 - [ ] **SHEL-06**: Host can undo the last action at any point during the draft
-- [ ] **SHEL-07**: Any randomness the tool uses is seeded, with the seed stored in state, so a reloaded tournament reproduces the same outcome
+- [x] **SHEL-07**: Any randomness the tool uses is seeded, with the seed stored in state, so a reloaded tournament reproduces the same outcome
 
 ### Persistence
 
@@ -203,10 +203,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SHEL-01 | Phase 1 | Complete |
 | SHEL-02 | Phase 1 | Complete |
 | SHEL-03 | Phase 1 | Pending |
-| SHEL-04 | Phase 1 | Pending |
-| SHEL-05 | Phase 1 | Pending |
+| SHEL-04 | Phase 1 | Complete |
+| SHEL-05 | Phase 1 | Complete |
 | SHEL-06 | Phase 1 | Pending |
-| SHEL-07 | Phase 1 | Pending |
+| SHEL-07 | Phase 1 | Complete |
 | PERS-01 | Phase 1 | Pending |
 | PERS-02 | Phase 1 | Pending |
 | PERS-03 | Phase 1 | Pending |
