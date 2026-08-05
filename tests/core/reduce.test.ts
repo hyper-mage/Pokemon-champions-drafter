@@ -483,19 +483,28 @@ describe('the tournament document', () => {
         return;
       }
       if (kind !== 'object') return;
-      if (value instanceof Date || value instanceof Map || value instanceof Set) {
-        offenders.push(`${path}: ${value.constructor.name}`);
+
+      if (value instanceof Date) {
+        offenders.push(`${path}: Date`);
         return;
       }
-      if (Array.isArray(value)) {
-        value.forEach((item, index) => walk(item, `${path}[${index}]`));
+      if (value instanceof Map || value instanceof Set) {
+        offenders.push(`${path}: Map or Set`);
         return;
       }
-      if (Object.getPrototypeOf(value) !== Object.prototype) {
-        offenders.push(`${path}: ${value.constructor?.name ?? 'exotic prototype'}`);
+
+      const branch = value as Record<string, unknown>;
+      if (Array.isArray(branch)) {
+        (branch as unknown as unknown[]).forEach((item, index) =>
+          walk(item, `${path}[${index}]`),
+        );
         return;
       }
-      for (const [key, child] of Object.entries(value)) walk(child, `${path}.${key}`);
+      if (Object.getPrototypeOf(branch) !== Object.prototype) {
+        offenders.push(`${path}: class instance or exotic prototype`);
+        return;
+      }
+      for (const [key, child] of Object.entries(branch)) walk(child, `${path}.${key}`);
     };
 
     walk(doc, 'doc');
