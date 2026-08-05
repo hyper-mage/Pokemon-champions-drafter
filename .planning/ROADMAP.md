@@ -54,7 +54,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [x] 01-02-PLAN.md — Live GitHub Pages URL deployed by a workflow that gates on purity and tests (SHEL-01, SHEL-02) — Task 3 outstanding: `github-pages` environment branch policy allows only `master`, blocking deploys from `main`
+- [ ] 01-02-PLAN.md — Live GitHub Pages URL deployed by a workflow that gates on purity and tests (SHEL-01, SHEL-02) — Task 3 outstanding: `github-pages` environment branch policy allows only `master`, blocking deploys from `main`. NOTE: `roadmap.update-plan-progress` re-checks this box automatically because 01-02-SUMMARY.md exists; it counts summary files, not real completion. Leave unchecked until the live URL returns 200.
 - [x] 01-03-PLAN.md — Committed regulation-stamped Champions roster snapshot, fail-loud regeneration script, hostile-species fixture test, and the 207-vs-208 re-diff (ROST-01, 03–10, 12)
 
 **Wave 3** *(blocked on Wave 2 completion)*
