@@ -63,7 +63,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 01-05-PLAN.md — Token system from the UI Design Contract, app shell, and the pool grid rendering the real roster with art (ROST-02, ROST-11)
+- [x] 01-05-PLAN.md — Token system from the UI Design Contract, app shell, and the pool grid rendering the real roster with art (ROST-02, ROST-11)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 4/11 | In Progress|  |
+| 1. Draft Skeleton on a Real URL | 5/11 | In Progress|  |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
