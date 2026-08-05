@@ -36,7 +36,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **PERS-01**: Tournament state autosaves and survives page refresh and browser close
 - [x] **PERS-02**: A storage canary probe at config time warns the host when browser storage is unavailable or restricted
-- [ ] **PERS-03**: Two tabs of the same tournament cannot silently overwrite each other
+- [x] **PERS-03**: Two tabs of the same tournament cannot silently overwrite each other
 - [ ] **PERS-04**: Host can export the full tournament as a JSON file at any time
 - [ ] **PERS-05**: Host can import a tournament JSON file to restore it or move it to another machine
 - [ ] **PERS-06**: A JSON checkpoint is offered automatically at hard milestones, so a lost draft is always recoverable
@@ -209,7 +209,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SHEL-07 | Phase 1 | Complete |
 | PERS-01 | Phase 1 | Complete |
 | PERS-02 | Phase 1 | Complete |
-| PERS-03 | Phase 1 | Pending |
+| PERS-03 | Phase 1 | Complete |
 | PERS-04 | Phase 1 | Pending |
 | PERS-05 | Phase 1 | Pending |
 | PERS-06 | Phase 1 | Pending |

@@ -76,7 +76,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 01-09-PLAN.md — BroadcastChannel write-ownership lock with heartbeat, stale recovery, and the read-only tab surface (PERS-03)
+- [x] 01-09-PLAN.md — BroadcastChannel write-ownership lock with heartbeat, stale recovery, and the read-only tab surface (PERS-03)
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 7/11 | In Progress|  |
+| 1. Draft Skeleton on a Real URL | 8/11 | In Progress|  |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
