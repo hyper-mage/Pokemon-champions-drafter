@@ -1,0 +1,58 @@
+/*
+ * ReadOnlyBanner.css — PERS-03 / D-12, UI-SPEC section 4(b).
+ *
+ * A full-width bar above the top bar. It is NOT sticky and must not become sticky: the
+ * sticky block below it is the draft's working surface, and a read-only tab is not
+ * working. Stealing a second band of viewport from a tab that exists to be watched
+ * would be the wrong trade.
+ *
+ * Declares no raw colour and no raw length. Every value comes from tokens.css.
+ */
+
+.read-only-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border-bottom: var(--hairline-w) solid var(--color-hairline);
+}
+
+.read-only-banner__text {
+  margin: 0;
+  font: var(--text-body);
+  /*
+   * Full text colour, not --color-text-muted. Muting this sentence would say "minor
+   * aside" when it is the reason the rest of the page does not respond to clicks.
+   */
+  color: var(--color-text);
+}
+
+/*
+ * Accent use 3 of 3: the primary action of this state.
+ *
+ * The draft screen normally has no accent-filled button at all — the accent marks who is
+ * on the clock, and picking is done by clicking pool cells. A read-only tab has neither:
+ * there is no on-the-clock indicator to compete with because this tab is not running the
+ * draft, and there are no pool cells to click because the region is inert. So the accent
+ * is unclaimed here, and this is the only thing on screen that can be pressed.
+ */
+.read-only-banner__action {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.read-only-banner__action:hover {
+  /* The accent does not change on hover; the border carries the affordance instead. */
+  border-color: var(--color-text);
+}

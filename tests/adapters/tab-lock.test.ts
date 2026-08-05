@@ -634,6 +634,76 @@ describe('reloading on promotion', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Keeping a read-only tab live
+// ---------------------------------------------------------------------------
+
+describe('the saved nudge', () => {
+  it('tells a secondary to re-read after the owner writes', () => {
+    const bus = makeBus();
+    const a = boot(createTabLock({ tabId: 'a', channel: bus.connect() }));
+
+    const onRemoteSave = vi.fn();
+    boot(createTabLock({ tabId: 'b', channel: bus.connect(), onRemoteSave }));
+
+    a.notifySaved();
+
+    // Without this the second tab is frozen at whatever the board looked like when it
+    // opened, which a host glancing at the spare screen would read as the live state.
+    expect(onRemoteSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not sent by a tab that does not own the lock', () => {
+    const bus = makeBus();
+    boot(createTabLock({ tabId: 'a', channel: bus.connect() }));
+
+    const onRemoteSave = vi.fn();
+    const b = boot(createTabLock({ tabId: 'b', channel: bus.connect(), onRemoteSave }));
+
+    // A secondary cannot have written — `save()` refused it — so announcing a write
+    // would be announcing something that did not happen.
+    b.notifySaved();
+    expect(onRemoteSave).not.toHaveBeenCalled();
+  });
+
+  it('counts as proof of life, so it clears a stale flag', () => {
+    const bus = makeBus();
+    const aChannel = bus.connect();
+    const a = boot(createTabLock({ tabId: 'a', channel: aChannel }));
+    const b = boot(createTabLock({ tabId: 'b', channel: bus.connect() }));
+
+    aChannel.setMuted(true);
+    vi.advanceTimersByTime(STALE_THRESHOLD_MS);
+    expect(b.state().stale).toBe(true);
+
+    // A tab that just wrote the tournament is alive by definition. Leaving the stale
+    // sentence up while the owner is demonstrably drafting would invite the host to take
+    // over a tab that never stopped working.
+    aChannel.setMuted(false);
+    a.notifySaved();
+
+    expect(b.state().stale).toBe(false);
+    expect(b.isOwner()).toBe(false);
+  });
+
+  it('reaches a secondary through the real save path', () => {
+    const bus = makeBus();
+
+    // This tab owns the lock, so `save()` is allowed through...
+    claimOwnership({ channel: bus.connect() });
+    vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+
+    const onRemoteSave = vi.fn();
+    boot(createTabLock({ tabId: 'zzz-watcher', channel: bus.connect(), onRemoteSave }));
+
+    expect(save(makeDoc())).toBe(true);
+
+    // ...and the write itself, not a separate call the UI has to remember to make, is
+    // what tells the watching tab to look again.
+    expect(onRemoteSave).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The numbers the plan names
 // ---------------------------------------------------------------------------
 

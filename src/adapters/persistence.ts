@@ -31,7 +31,7 @@ import { computed, signal, type ReadonlySignal } from '@preact/signals';
 
 import { SCHEMA_VERSION, type TournamentDoc } from '../core/model';
 import { now } from './clock';
-import { isOwner } from './tab-lock';
+import { isOwner, notifySaved } from './tab-lock';
 
 /** One key, one tournament. Namespaced so a future key cannot collide with this one. */
 const STORAGE_KEY = 'champions-drafter:tournament';
@@ -174,6 +174,12 @@ export function save(doc: TournamentDoc): boolean {
 
   generation = record.generation;
   blocked.value = false;
+
+  // After the write, never before. A secondary told to re-read before the bytes landed
+  // would read the previous generation and conclude it was already current, and the
+  // nudge would be wasted precisely on the write it was announcing.
+  notifySaved();
+
   return true;
 }
 

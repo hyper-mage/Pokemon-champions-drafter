@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import {
   load as loadSavedTournament,
+  loadIfNewer,
   probeStorage,
   savingBlocked,
   startAutosave,
@@ -12,6 +13,7 @@ import {
   ROSTER_LOAD_FAILURE_MESSAGE,
   type RosterBundle,
 } from './adapters/roster-source';
+import { claimOwnership, disposeTabLock } from './adapters/tab-lock';
 import { pickMade } from './core/actions';
 import type { RosterEntry } from './core/roster/types';
 import {
@@ -34,9 +36,11 @@ import {
 import { BoardGrid } from './ui/components/BoardGrid';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid } from './ui/components/PoolGrid';
+import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
 import { StorageBlocked } from './ui/screens/StorageBlocked';
+import { useOwnership } from './ui/use-ownership';
 
 type LoadState =
   | { status: 'loading' }
@@ -169,6 +173,41 @@ export function App() {
     [],
   );
 
+  /**
+   * Engage the tab lock — PERS-03 / D-12.
+   *
+   * Runs once, independently of the roster load, because ownership is a property of the
+   * browsing context rather than of the draft: a tab that is still fetching the snapshot
+   * is already a tab that must not write.
+   *
+   * `adoptWhateverIsNewer` is passed as BOTH callbacks because promotion and a remote
+   * save want exactly the same thing — take the stored document if it is ahead of ours.
+   * On promotion it is the T-01-40 mitigation and it runs while `isOwner()` is still
+   * false, so no autosave can race in front of it with this tab's stale copy. On a
+   * remote save it is what keeps a read-only board live rather than frozen at the moment
+   * the tab opened.
+   */
+  useEffect(() => {
+    const adoptWhateverIsNewer = (): void => {
+      const newer = loadIfNewer();
+      if (newer !== null) adoptTournament(newer);
+    };
+
+    claimOwnership({
+      onPromote: adoptWhateverIsNewer,
+      onRemoteSave: adoptWhateverIsNewer,
+    });
+
+    return disposeTabLock;
+  }, []);
+
+  const ownership = useOwnership();
+
+  // Read-only is a whole-tab condition, so it outranks the draft's own emptiness: the
+  // banner shows even while the roster is still loading, because the answer to "why is
+  // nothing happening in this tab" must not wait on a fetch.
+  const readOnly = ownership.readOnly;
+
   const state = draftState.value;
 
   const entryById = useMemo(
@@ -213,6 +252,14 @@ export function App() {
       <h1 class="app-shell__title">Champions Draft</h1>
 
       {/*
+        Above the top bar, and above the storage warning's own gate: the two are
+        independent conditions and a tab can genuinely be both read-only and unable to
+        save. Suppressing this one would answer the smaller question and leave the
+        larger one — why does nothing in this tab respond — unanswered.
+      */}
+      <ReadOnlyBanner ownership={ownership} />
+
+      {/*
         Nothing but the warning until it is acknowledged. Not the pool, not the board,
         not even the loading line — the one thing the host must do first is read this.
       */}
@@ -233,7 +280,15 @@ export function App() {
       )}
 
       {!storageBlockedAtBoot && load.status === 'ready' && state !== null && (
-        <>
+        /*
+          One attribute disables pointer, keyboard, and focus across the entire draft
+          region, and it is Baseline-supported. The hand-rolled alternative —
+          `pointer-events: none` plus `disabled` on each control — leaks in exactly the
+          way that matters: a Tab key still walks into the pool, and a keyboard user
+          reaches a cell that will silently discard their pick.
+          `undefined` rather than `false` so Preact removes the attribute outright.
+        */
+        <div class="draft-region" inert={readOnly ? true : undefined}>
           {/*
             TopBar and TurnBanner are both specified as sticky at the top of the
             viewport, so they stick as one block rather than fighting over the same
@@ -264,7 +319,7 @@ export function App() {
             spriteMeta={load.bundle.spriteMeta}
             onPick={handlePick}
           />
-        </>
+        </div>
       )}
     </div>
   );

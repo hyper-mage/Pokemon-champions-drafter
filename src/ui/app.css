@@ -50,6 +50,21 @@ body {
 }
 
 /*
+ * The draft region — everything a read-only tab must not be able to touch.
+ *
+ * It exists to carry one attribute, `inert`, so the wrapper is deliberately styleless:
+ * no transform, no filter, no containment. Any of those would create a containing block
+ * and break the `position: sticky` head nested inside it.
+ *
+ * There is no `[inert]` rule here and there must not be one. The UI-SPEC gives the
+ * read-only state no colour signal at all — dimming the pool would say "disabled
+ * forever" when the truth is "another tab is driving, and you can take it".
+ */
+.draft-region {
+  display: block;
+}
+
+/*
  * The accent focus ring, applied once, globally.
  *
  * Suppressing the outline is forbidden anywhere in this project unless an
