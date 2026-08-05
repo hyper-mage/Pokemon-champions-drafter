@@ -47,10 +47,25 @@ const STORAGE_KEY = 'champions-drafter:tournament';
 interface Port {
   handler: ((message: LockMessage) => void) | null;
   open: boolean;
+  muted: boolean;
+}
+
+/**
+ * A channel that can also be struck dumb.
+ *
+ * `close()` models a tab that is gone; `setMuted(true)` models one that is still there and
+ * has stopped speaking — a main thread blocked on a long task, or a background tab whose
+ * timers the browser has throttled. The distinction matters because the two must look
+ * identical to a *secondary*, which is the whole basis of stale detection: a secondary
+ * cannot tell a dead owner from a wedged one, so it must treat silence itself as the
+ * signal and then take the words back when the owner speaks again.
+ */
+interface TestChannel extends LockChannel {
+  setMuted(muted: boolean): void;
 }
 
 interface Bus {
-  connect(): LockChannel;
+  connect(): TestChannel;
   /** Deliver everything queued while in `manual` mode. */
   flush(): void;
 }
@@ -74,18 +89,25 @@ function makeBus(delivery: 'sync' | 'manual' = 'sync'): Bus {
   }
 
   return {
-    connect(): LockChannel {
-      const port: Port = { handler: null, open: true };
+    connect(): TestChannel {
+      const port: Port = { handler: null, open: true, muted: false };
       ports.push(port);
 
       return {
         postMessage(message: LockMessage): void {
-          if (!port.open) return;
+          // A muted port still runs its own timers — the owner's heartbeat interval keeps
+          // firing — but nothing it sends reaches the bus. That is precisely the shape of
+          // a blocked main thread, and it is what makes the owner *look* dead without
+          // being dead.
+          if (!port.open || port.muted) return;
           if (delivery === 'sync') deliver(port, message);
           else queue.push({ from: port, message });
         },
         listen(handler: (message: LockMessage) => void): void {
           port.handler = handler;
+        },
+        setMuted(muted: boolean): void {
+          port.muted = muted;
         },
         close(): void {
           port.open = false;
@@ -370,16 +392,30 @@ describe('stale lock', () => {
 
   it('clears the stale flag if the owner comes back', () => {
     const bus = makeBus();
-    const a = boot(createTabLock({ tabId: 'a', channel: bus.connect() }));
+    const aChannel = bus.connect();
+    const a = boot(createTabLock({ tabId: 'a', channel: aChannel }));
     const b = boot(createTabLock({ tabId: 'b', channel: bus.connect() }));
 
-    // A main thread blocked for ten seconds is a slow tab, not a dead one.
+    // The owner's main thread wedges. Its heartbeat interval still fires; none of it
+    // reaches the bus. To `b` this is indistinguishable from a tab that has died, and
+    // that is the point — `b` must not need to tell the difference to react.
+    aChannel.setMuted(true);
     vi.advanceTimersByTime(STALE_THRESHOLD_MS);
     expect(b.state().stale).toBe(true);
 
+    // ...and then the tab comes back. A blocked main thread is a slow tab, not a dead
+    // one, so a single heartbeat has to be enough to withdraw the accusation. Without
+    // this, a tab that stuttered once would wear the stale banner until it was reloaded,
+    // and the host would be invited to take over a tournament nobody had actually left.
+    aChannel.setMuted(false);
     vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
     expect(b.state().stale).toBe(false);
+
+    // Recovery is not a handoff: `b` withdrew the stale flag, not the lock. Ownership
+    // never moved, because ownership only ever moves on a click.
     expect(a.isOwner()).toBe(true);
+    expect(b.isOwner()).toBe(false);
+    expect(b.state().status).toBe('secondary');
   });
 
   it('lets the surviving tab claim by clicking, with everything intact', () => {
@@ -594,6 +630,76 @@ describe('reloading on promotion', () => {
 
   it('adopts nothing when there is no saved tournament', () => {
     expect(loadIfNewer()).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keeping a read-only tab live
+// ---------------------------------------------------------------------------
+
+describe('the saved nudge', () => {
+  it('tells a secondary to re-read after the owner writes', () => {
+    const bus = makeBus();
+    const a = boot(createTabLock({ tabId: 'a', channel: bus.connect() }));
+
+    const onRemoteSave = vi.fn();
+    boot(createTabLock({ tabId: 'b', channel: bus.connect(), onRemoteSave }));
+
+    a.notifySaved();
+
+    // Without this the second tab is frozen at whatever the board looked like when it
+    // opened, which a host glancing at the spare screen would read as the live state.
+    expect(onRemoteSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not sent by a tab that does not own the lock', () => {
+    const bus = makeBus();
+    boot(createTabLock({ tabId: 'a', channel: bus.connect() }));
+
+    const onRemoteSave = vi.fn();
+    const b = boot(createTabLock({ tabId: 'b', channel: bus.connect(), onRemoteSave }));
+
+    // A secondary cannot have written — `save()` refused it — so announcing a write
+    // would be announcing something that did not happen.
+    b.notifySaved();
+    expect(onRemoteSave).not.toHaveBeenCalled();
+  });
+
+  it('counts as proof of life, so it clears a stale flag', () => {
+    const bus = makeBus();
+    const aChannel = bus.connect();
+    const a = boot(createTabLock({ tabId: 'a', channel: aChannel }));
+    const b = boot(createTabLock({ tabId: 'b', channel: bus.connect() }));
+
+    aChannel.setMuted(true);
+    vi.advanceTimersByTime(STALE_THRESHOLD_MS);
+    expect(b.state().stale).toBe(true);
+
+    // A tab that just wrote the tournament is alive by definition. Leaving the stale
+    // sentence up while the owner is demonstrably drafting would invite the host to take
+    // over a tab that never stopped working.
+    aChannel.setMuted(false);
+    a.notifySaved();
+
+    expect(b.state().stale).toBe(false);
+    expect(b.isOwner()).toBe(false);
+  });
+
+  it('reaches a secondary through the real save path', () => {
+    const bus = makeBus();
+
+    // This tab owns the lock, so `save()` is allowed through...
+    claimOwnership({ channel: bus.connect() });
+    vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+
+    const onRemoteSave = vi.fn();
+    boot(createTabLock({ tabId: 'zzz-watcher', channel: bus.connect(), onRemoteSave }));
+
+    expect(save(makeDoc())).toBe(true);
+
+    // ...and the write itself, not a separate call the UI has to remember to make, is
+    // what tells the watching tab to look again.
+    expect(onRemoteSave).toHaveBeenCalledTimes(1);
   });
 });
 

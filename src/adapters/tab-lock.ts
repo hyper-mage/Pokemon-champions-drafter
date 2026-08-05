@@ -85,7 +85,16 @@ export type LockMessageType =
   /** Is anyone holding ownership? */
   | 'ping'
   /** Yes, I am. */
-  | 'pong';
+  | 'pong'
+  /**
+   * I just wrote the tournament. Re-read it if what you hold is older.
+   *
+   * Deliberately carries no generation of its own. The comparison already exists in
+   * `persistence.loadIfNewer()`, and a number travelling on the channel would be a second
+   * copy of it that could disagree with the stored record. This is a nudge, not a datum:
+   * the receiver goes and looks.
+   */
+  | 'saved';
 
 export interface LockMessage {
   readonly type: LockMessageType;
@@ -146,6 +155,14 @@ export interface TabLockOptions {
   onPromote?: () => void;
   /** Called once when there is no `BroadcastChannel` to open. */
   onDegraded?: () => void;
+  /**
+   * The owning tab wrote. Only ever called on a secondary.
+   *
+   * Without this a read-only tab is frozen at whatever the draft looked like when it
+   * opened, which reads as "this tab is broken" rather than "this tab is watching" — and
+   * a host glancing at the second screen would be reading a stale board.
+   */
+  onRemoteSave?: () => void;
 }
 
 export interface TabLock {
@@ -157,6 +174,8 @@ export interface TabLock {
   onChange(listener: (state: OwnershipState) => void): () => void;
   isOwner(): boolean;
   state(): OwnershipState;
+  /** Tell secondaries the stored document moved. No-op unless this tab owns the lock. */
+  notifySaved(): void;
   /** Announce departure and stop heartbeating. For `pagehide`. */
   release(): void;
   /** Stop every timer and close the channel. For unmount, and for tests. */
@@ -414,6 +433,14 @@ export function createTabLock(options: TabLockOptions = {}): TabLock {
         if (status === 'owner') return;
         noteOwnerGone();
         return;
+
+      case 'saved':
+        // Proof of life as well as a nudge: a tab that just wrote is unambiguously
+        // alive, so this clears a stale flag for the same reason a heartbeat does.
+        if (status === 'owner') return;
+        noteOwnerAlive();
+        options.onRemoteSave?.();
+        return;
     }
   }
 
@@ -453,6 +480,11 @@ export function createTabLock(options: TabLockOptions = {}): TabLock {
     // owner is one channel delivery wide rather than one round trip.
     post('takeover');
     becomeOwner(null);
+  }
+
+  function notifySaved(): void {
+    if (status !== 'owner') return;
+    post('saved');
   }
 
   function release(): void {
@@ -495,6 +527,7 @@ export function createTabLock(options: TabLockOptions = {}): TabLock {
     },
     isOwner: () => status === 'idle' || status === 'owner',
     state: snapshot,
+    notifySaved,
     release,
     dispose,
   };
@@ -540,6 +573,8 @@ function installLifecycle(): void {
 export interface ClaimOptions {
   /** Reload the persisted document before this tab is allowed to write. */
   onPromote?: () => void;
+  /** The owner wrote; re-read storage so a read-only view keeps up. */
+  onRemoteSave?: () => void;
   /** Test seam. Omit in the application; the real channel is opened for you. */
   channel?: LockChannel | null;
 }
@@ -556,6 +591,7 @@ export function claimOwnership(options: ClaimOptions = {}): void {
 
   lock = createTabLock({
     ...(options.onPromote === undefined ? {} : { onPromote: options.onPromote }),
+    ...(options.onRemoteSave === undefined ? {} : { onRemoteSave: options.onRemoteSave }),
     ...(options.channel === undefined ? {} : { channel: options.channel }),
     onDegraded: reportDegraded,
   });
@@ -584,6 +620,16 @@ export function onOwnershipChange(listener: (state: OwnershipState) => void): ()
 /** Whether this tab may write. Consulted by `persistence.save` on every write. */
 export function isOwner(): boolean {
   return lock === null ? true : lock.isOwner();
+}
+
+/**
+ * Announce that the stored tournament moved. Called by `persistence.save` after a write.
+ *
+ * A no-op when no lock is engaged, which keeps the pre-lock behaviour intact: a build
+ * that never calls `claimOwnership` has no secondaries to tell.
+ */
+export function notifySaved(): void {
+  lock?.notifySaved();
 }
 
 /** The current ownership state, for a component's initial render. */
