@@ -1,0 +1,111 @@
+/*
+ * BoardGrid — players as rows, rounds as columns.
+ *
+ * Consumes tokens only; declares no raw colour. The two raw lengths here (the label
+ * column width and the scroll floor) are not values the token table covers — they are
+ * this one layout's geometry, specified as such in the UI Design Contract.
+ */
+
+.board {
+  margin: 0 0 var(--space-6);
+}
+
+.board__title {
+  margin: 0 0 var(--space-3);
+  font: var(--text-heading);
+}
+
+.board__empty {
+  margin: 0 0 var(--space-4);
+}
+
+.board__empty-heading {
+  margin: 0 0 var(--space-1);
+  font: var(--text-heading);
+}
+
+.board__empty-body {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--color-text-muted);
+}
+
+.board__scroll {
+  overflow-x: auto;
+}
+
+.board__grid {
+  display: grid;
+  grid-template-columns: 160px repeat(6, minmax(0, 1fr));
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+/* Sits above the label column, opposite the round headers. Deliberately empty. */
+.board__corner {
+  min-height: var(--space-4);
+}
+
+.board__round {
+  align-self: end;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.board__label {
+  align-self: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--text-heading);
+}
+
+.board__cell {
+  /* A chip is --sprite-sm tall plus its padding; the cell must never crop it. */
+  min-height: calc(var(--sprite-sm) + var(--space-3));
+  min-width: 0;
+  border-radius: var(--radius);
+}
+
+/*
+ * Empty future slot. Dashed rather than solid is the non-colour signal: the board still
+ * reads correctly with no colour perception at all.
+ */
+.board__cell--empty {
+  border: var(--hairline-w) dashed var(--color-border-strong);
+  background: transparent;
+}
+
+/* Keeps a filled cell the same size as an empty one, so the grid rhythm never shifts. */
+.board__cell--filled {
+  border: var(--hairline-w) solid transparent;
+}
+
+/*
+ * The single cell about to be filled. One of exactly three sanctioned uses of the
+ * accent. The tint is decorative — the border carries the signal, and the turn banner
+ * states the same fact in words.
+ */
+.board__cell--next {
+  border: var(--border-w) solid var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+/*
+ * Below 720px the board scrolls sideways and the label column pins, so the host can
+ * always see which row they are reading. This is the documented exception to the
+ * no-horizontal-scroll rule, and the mechanism that carries eight players in Phase 2.
+ */
+@media (max-width: 720px) {
+  .board__grid {
+    min-width: 720px;
+  }
+
+  .board__corner,
+  .board__label {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--color-bg);
+  }
+}

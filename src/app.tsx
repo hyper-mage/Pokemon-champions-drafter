@@ -11,9 +11,12 @@ import {
   selectAvailablePool,
   selectCurrentTurn,
   selectIsComplete,
+  selectPickCount,
   selectPlayerName,
+  selectTeams,
 } from './core/selectors';
 import { createTournament, dispatch, draftState, getState } from './store';
+import { BoardGrid } from './ui/components/BoardGrid';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid } from './ui/components/PoolGrid';
 import { TurnBanner } from './ui/components/TurnBanner';
@@ -145,6 +148,16 @@ export function App() {
             round={turn === null ? null : turn.round}
             playerName={turn === null ? null : selectPlayerName(state, turn.playerId)}
             complete={complete}
+          />
+
+          <BoardGrid
+            players={state.config.players}
+            rounds={state.config.rounds}
+            teams={selectTeams(state)}
+            currentTurn={turn}
+            entryById={entryById}
+            spriteMeta={load.bundle.spriteMeta}
+            pickCount={selectPickCount(state)}
           />
 
           <PoolGrid
