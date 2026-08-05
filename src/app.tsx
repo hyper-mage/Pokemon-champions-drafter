@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
+import {
+  load as loadSavedTournament,
+  probeStorage,
+  savingBlocked,
+  startAutosave,
+  type ProbeResult,
+} from './adapters/persistence';
 import {
   loadRoster,
   ROSTER_LOAD_FAILURE_MESSAGE,
@@ -15,11 +22,21 @@ import {
   selectPlayerName,
   selectTeams,
 } from './core/selectors';
-import { createTournament, dispatch, draftState, getState } from './store';
+import {
+  adoptTournament,
+  createTournament,
+  dispatch,
+  draftState,
+  getDoc,
+  getState,
+  subscribe,
+} from './store';
 import { BoardGrid } from './ui/components/BoardGrid';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid } from './ui/components/PoolGrid';
+import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
+import { StorageBlocked } from './ui/screens/StorageBlocked';
 
 type LoadState =
   | { status: 'loading' }
@@ -75,6 +92,18 @@ function handlePick(entry: RosterEntry): void {
 export function App() {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
 
+  // The canary runs during the very first render, before a single pool cell exists.
+  // That timing is the requirement, not an optimization (D-13): a host who learns at
+  // pick twelve that nothing was ever saved has been told too late to act on it.
+  //
+  // A state initializer rather than an effect, because an effect runs *after* the first
+  // paint and the draft would flash up behind the warning.
+  const [probe] = useState<ProbeResult>(() => probeStorage());
+  const [probeAcknowledged, setProbeAcknowledged] = useState(false);
+  const [writeFailureAcknowledged, setWriteFailureAcknowledged] = useState(false);
+
+  const storageOk = probe.ok;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -103,15 +132,42 @@ export function App() {
     [load],
   );
 
-  // Creating a tournament twice would emit a second pool/built, which canApply rejects
+  // Booting a tournament twice would emit a second pool/built, which canApply rejects
   // — but it would also discard the picks already made, so the guard is a ref rather
   // than a reliance on the reducer refusing.
-  const createdRef = useRef(false);
+  const bootedRef = useRef(false);
+  const stopAutosaveRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
-    if (load.status !== 'ready' || createdRef.current) return;
-    createdRef.current = true;
-    createTournament(load.bundle.snapshot, entries);
-  }, [load, entries]);
+    if (load.status !== 'ready' || bootedRef.current) return;
+    bootedRef.current = true;
+
+    // Restore before creating, never after: createTournament would emit its own
+    // pool/built and the restored log would have nowhere to go. A saved document that
+    // this build cannot read is treated exactly like no saved document at all.
+    const restored = storageOk ? loadSavedTournament() : null;
+    if (restored === null || !adoptTournament(restored)) {
+      createTournament(load.bundle.snapshot, entries);
+    }
+
+    // No autosave when the canary already proved writes do not land. Scheduling them
+    // anyway would spend the whole draft failing quietly at 300ms intervals, which is
+    // the silent-retry behaviour the warning screen exists to replace.
+    if (storageOk) {
+      stopAutosaveRef.current = startAutosave({ subscribe, getDoc });
+    }
+  }, [load, entries, storageOk]);
+
+  // Stopping autosave is an unmount concern and only an unmount concern. Tying it to
+  // the effect above would let a dependency change tear the listeners down and then
+  // decline to rebuild them, because the boot guard has already fired.
+  useEffect(
+    () => () => {
+      stopAutosaveRef.current?.();
+      stopAutosaveRef.current = null;
+    },
+    [],
+  );
 
   const state = draftState.value;
 
@@ -132,23 +188,66 @@ export function App() {
   const turn = state === null ? null : selectCurrentTurn(state);
   const complete = state !== null && selectIsComplete(state);
 
+  // Undo's live-region announcement names the species that came back. The store holds
+  // the document and the document holds ids, so the display name has to arrive from
+  // here, where the roster snapshot already is. Falling back to the id keeps the
+  // announcement honest rather than empty if a restored document ever references a
+  // species the current regulation dropped.
+  const resolveSpeciesName = useCallback(
+    (monId: string) => entryById.get(monId)?.name ?? monId,
+    [entryById],
+  );
+
+  // Two separate acknowledgements because they are two separate events. The canary
+  // failing means nothing was ever going to be saved; a write failing mid-draft means
+  // saves were working and have stopped. The host deserves to be told the second time
+  // even though they clicked through the first — but only once per event, or a full
+  // quota turns into a warning on every pick.
+  const storageBlockedAtBoot = !storageOk && !probeAcknowledged;
+  const storageBlockedMidDraft = storageOk && savingBlocked.value && !writeFailureAcknowledged;
+
   return (
     <div class="app-shell">
       <LiveRegion />
 
       <h1 class="app-shell__title">Champions Draft</h1>
 
-      {load.status === 'loading' && <p class="app-shell__status">Loading the pool…</p>}
+      {/*
+        Nothing but the warning until it is acknowledged. Not the pool, not the board,
+        not even the loading line — the one thing the host must do first is read this.
+      */}
+      {storageBlockedAtBoot && (
+        <StorageBlocked onAcknowledge={() => setProbeAcknowledged(true)} />
+      )}
 
-      {load.status === 'failed' && <p class="app-shell__status">{load.message}</p>}
+      {!storageBlockedAtBoot && storageBlockedMidDraft && (
+        <StorageBlocked onAcknowledge={() => setWriteFailureAcknowledged(true)} />
+      )}
 
-      {load.status === 'ready' && state !== null && (
+      {!storageBlockedAtBoot && load.status === 'loading' && (
+        <p class="app-shell__status">Loading the pool…</p>
+      )}
+
+      {!storageBlockedAtBoot && load.status === 'failed' && (
+        <p class="app-shell__status">{load.message}</p>
+      )}
+
+      {!storageBlockedAtBoot && load.status === 'ready' && state !== null && (
         <>
-          <TurnBanner
-            round={turn === null ? null : turn.round}
-            playerName={turn === null ? null : selectPlayerName(state, turn.playerId)}
-            complete={complete}
-          />
+          {/*
+            TopBar and TurnBanner are both specified as sticky at the top of the
+            viewport, so they stick as one block rather than fighting over the same
+            pixel. See TopBar.css.
+          */}
+          <div class="sticky-head">
+            <TopBar resolveSpeciesName={resolveSpeciesName} />
+
+            <TurnBanner
+              round={turn === null ? null : turn.round}
+              playerName={turn === null ? null : selectPlayerName(state, turn.playerId)}
+              complete={complete}
+            />
+          </div>
 
           <BoardGrid
             players={state.config.players}
