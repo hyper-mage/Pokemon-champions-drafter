@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import {
+  load as loadSavedTournament,
+  startAutosave,
+} from './adapters/persistence';
+import {
   loadRoster,
   ROSTER_LOAD_FAILURE_MESSAGE,
   type RosterBundle,
@@ -15,7 +19,15 @@ import {
   selectPlayerName,
   selectTeams,
 } from './core/selectors';
-import { createTournament, dispatch, draftState, getState } from './store';
+import {
+  adoptTournament,
+  createTournament,
+  dispatch,
+  draftState,
+  getDoc,
+  getState,
+  subscribe,
+} from './store';
 import { BoardGrid } from './ui/components/BoardGrid';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid } from './ui/components/PoolGrid';
@@ -104,15 +116,37 @@ export function App() {
     [load],
   );
 
-  // Creating a tournament twice would emit a second pool/built, which canApply rejects
+  // Booting a tournament twice would emit a second pool/built, which canApply rejects
   // — but it would also discard the picks already made, so the guard is a ref rather
   // than a reliance on the reducer refusing.
-  const createdRef = useRef(false);
+  const bootedRef = useRef(false);
+  const stopAutosaveRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
-    if (load.status !== 'ready' || createdRef.current) return;
-    createdRef.current = true;
-    createTournament(load.bundle.snapshot, entries);
+    if (load.status !== 'ready' || bootedRef.current) return;
+    bootedRef.current = true;
+
+    // Restore before creating, never after: createTournament would emit its own
+    // pool/built and the restored log would have nowhere to go. A saved document that
+    // this build cannot read is treated exactly like no saved document at all.
+    const restored = loadSavedTournament();
+    if (restored === null || !adoptTournament(restored)) {
+      createTournament(load.bundle.snapshot, entries);
+    }
+
+    stopAutosaveRef.current = startAutosave({ subscribe, getDoc });
   }, [load, entries]);
+
+  // Stopping autosave is an unmount concern and only an unmount concern. Tying it to
+  // the effect above would let a dependency change tear the listeners down and then
+  // decline to rebuild them, because the boot guard has already fired.
+  useEffect(
+    () => () => {
+      stopAutosaveRef.current?.();
+      stopAutosaveRef.current = null;
+    },
+    [],
+  );
 
   const state = draftState.value;
 
