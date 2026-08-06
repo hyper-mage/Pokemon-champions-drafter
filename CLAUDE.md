@@ -198,13 +198,105 @@ It is for the author and their friends running casual draft tournaments, typical
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+Established during Phase 1. These describe the repository as it is, not an aspiration.
+
+**Dependencies.** Runtime `dependencies` is exactly `preact` and `@preact/signals`, both
+exact-pinned (no `^`, no `~`). A third runtime dependency is a constraint violation, not a
+trade-off — argue it out before adding one. `devDependencies` carry build, test, and data
+generation only, and never reach the bundle.
+
+**The purity boundary.** `src/core/` is pure: no DOM, clock, randomness, network, storage,
+or timers, and no imports from `src/adapters/`, `src/ui/`, `preact`, or `@preact/signals`.
+`npm run check:pure` fails the build on any violation, and `npm run check:pure:selftest`
+proves the checker itself still detects one. `npm run check:nohtml` forbids `innerHTML` and
+`dangerouslySetInnerHTML` anywhere under `src/`. Both gates run in CI before the deploy job.
+
+**Identity.** `id` for every comparison, key, and set membership; `name` for rendering and
+export only. Never compare display names, never derive structure from a name string, never
+`split('-')` a species name — `Tauros-Paldea-Aqua` and `Mr. Rime` both punish it.
+
+**Sprites.** Filenames come from `spriteMeta.byRosterId[entry.id].file`. Do not construct
+`${spriteId}.png`: it resolves for zero of the 235 entries, and the 404s are silent.
+
+**`seq`.** Allocated `max(seq) + 1`, never `log.length`, so removing an entry mid-log cannot
+reissue an id that is still in use. It is strictly increasing but **may have gaps** — code
+that assumes contiguity will reject files this app wrote itself.
+
+**Serializability.** The tournament document must survive `JSON.stringify` → `JSON.parse`
+unchanged. No `Set`, `Map`, `Date`, or class instance is ever persisted. Undo, autosave, and
+JSON export all depend on this.
+
+**Export.** Showdown pastes separate records with a **blank line**. Single newlines import
+one Pokémon and silently drop the rest. Assert on exact string equality, never `includes`.
+
+**Styling.** Plain CSS driven by the custom properties in `src/ui/tokens.css`. No raw hex
+and no raw px for anything the token table covers. One stylesheet per component, beside it.
+
+**Copy.** Second person, present tense, no exclamation marks, no emoji. Errors state the
+problem and the next action. Buttons name a verb and its object; nothing is labelled `OK`,
+`Submit`, `Yes`, or `Cancel` alone.
+
+**Tests.** `tests/core/**` mirrors `src/core/**` and runs with zero mocks — that is the
+observable payoff of the purity rule. The default environment is `node`, so core cannot
+reach a DOM by accident; a UI test opts in with `// @vitest-environment happy-dom` as the
+**first line** of the file. `announce` is a module-level signal that outlives any render, so
+a test touching the live region resets it in `beforeEach`.
+
+**Commands.** `npm run verify` is the single gate — `check:pure`, `check:nohtml`, `test`,
+`build`. Run it before every commit. `npm run build:data` regenerates the roster snapshots
+and sprites; it is deliberate, never automatic.
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
+**Three layers.** `src/core/` is pure logic. `src/adapters/` owns everything ambient —
+clock, id and seed generation, `localStorage`, file I/O, the tab-ownership lock, roster
+loading. `src/ui/` renders. The dependency arrow only ever points inward: core knows about
+neither of the others. `npm run check:pure` enforces this on every push rather than
+trusting review.
+
+**One document.** The tournament is a single serializable JSON object:
+`{ schemaVersion, id, createdAt, config, rng, log }`. The `log` is append-only; corrections
+are compensating actions, never edits. Everything visible is a fold of that log, and the
+folded state is a cache of the log — never the truth.
+
+**One write path.** `dispatch` in `src/store.ts` is the only place that stamps an envelope
+and appends. No component mutates the document. This is the sync seam: adding sync means
+`dispatch` gains a `broadcast(action)` and a sibling `receive(remoteAction)`, and nothing
+else in the codebase changes. Undo is the deliberate second write path — removal is the one
+operation an append-only log cannot express as an append — and it re-folds rather than
+reversing, because a second transition function is a second thing that can disagree with
+the first.
+
+**Nothing derived is stored.** Remaining pool, turn order, team rosters, standings all live
+in `src/core/selectors.ts` and are computed from the fold.
+
+**Ambient values are stamped at the edge.** Every action carries `seq`, `at`, and `actorId`,
+captured before the reducer sees them. A reducer never reads the clock or rolls a die.
+
+**Externally derived results are materialized into the log.** `pool/built` carries the
+actual ids plus `rosterVersion` and `checksum`, not an instruction to rebuild. Champions
+regulations rotate roughly every 2.5 months; a document recording only "build a pool" would
+reopen next regulation as a different tournament.
+
+**Offline.** `public/sw.js` is a hand-written cache-first service worker;
+`scripts/build-sw-manifest.mjs` injects the real precache manifest from the actual build
+output after `vite build`. The cache version hashes file **content**, not just the URL list
+— everything under `public/` keeps a stable filename forever, so a URL-list hash would
+strand returning visitors on an old roster with no recovery path. Never add
+`vite-plugin-pwa`.
+
+### Deviations from `.planning/research/ARCHITECTURE.md`
+
+Recorded because that document says otherwise and is still on disk:
+
+- **Generated data lives in `public/data/`, not a repository-root `data/`.** Vite copies
+  `public/` verbatim into the build, which keeps the roster a separately cacheable asset
+  that the service worker precaches and that is never bundled into JS.
+- **Sprites are individual PokeAPI PNGs under `public/sprites/`,** not Showdown's
+  `pokemonicons-sheet.png`. D-02 resolved that contradiction: the sheet's 40×30 icons are
+  too small, and its id-to-offset map drifts on regulation rotation.
 <!-- GSD:architecture-end -->
 
 <!-- GSD:skills-start source:skills/ -->
