@@ -121,11 +121,11 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Export
 
-- [ ] **EXPO-01**: Each drafted team exports as a species-only paste — no EVs, natures, or movesets
-- [ ] **EXPO-02**: A drafted Mega slot exports as `Species @ StoneItemName`
-- [ ] **EXPO-03**: Entries are separated by blank lines, since single-newline separation silently imports only the first Pokémon
+- [x] **EXPO-01**: Each drafted team exports as a species-only paste — no EVs, natures, or movesets
+- [x] **EXPO-02**: A drafted Mega slot exports as `Species @ StoneItemName`
+- [x] **EXPO-03**: Entries are separated by blank lines, since single-newline separation silently imports only the first Pokémon
 - [ ] **EXPO-04**: Export imports into play.pokemonshowdown.com and passes its team validator, including Mega-containing teams
-- [ ] **EXPO-05**: Export imports into pokebase.app
+- [x] **EXPO-05**: Export imports into pokebase.app
 - [ ] **EXPO-06**: Export is reachable per player from the completed draft view
 
 ### Roster Refresh
@@ -273,11 +273,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TOUR-07 | Phase 5 | Pending |
 | TOUR-08 | Phase 5 | Pending |
 | TOUR-09 | Phase 5 | Pending |
-| EXPO-01 | Phase 1 | Pending |
-| EXPO-02 | Phase 1 | Pending |
-| EXPO-03 | Phase 1 | Pending |
+| EXPO-01 | Phase 1 | Complete |
+| EXPO-02 | Phase 1 | Complete |
+| EXPO-03 | Phase 1 | Complete |
 | EXPO-04 | Phase 1 | Pending |
-| EXPO-05 | Phase 1 | Pending |
+| EXPO-05 | Phase 1 | Complete |
 | EXPO-06 | Phase 1 | Pending |
 | REFR-01 | Phase 5 | Pending |
 | REFR-02 | Phase 5 | Pending |

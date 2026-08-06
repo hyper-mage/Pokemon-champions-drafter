@@ -393,7 +393,7 @@ No component in `src/ui/` may own a game rule. Whose turn it is, which round is 
 | Committed individual PokeAPI PNGs, single generic placeholder, `spriteMissing` flag | CONTEXT.md D-02, D-03, D-04, D-05 |
 | **96×96 sprite pixel dimension — CONFIRMED by measurement, 2026-08-04** | `scripts/build-sprites.mjs` (plan 01-04) read the IHDR chunk of all 311 committed PNGs: `dimensionHistogram: { "96x96": 311 }`, `outliers: []`. Recorded in `public/data/sprite-meta.json` and in `.planning/phases/01-draft-skeleton-on-a-real-url/01-04-SUMMARY.md`. The working assumption happened to be right; it is no longer an assumption. |
 | Blank-line record separator is the likeliest export bug | `CLAUDE.md` §Export Formats (verified) |
-| `pokebase.app → New/Import Team` entry label | `CLAUDE.md` §Export Formats (verified) |
+| `pokebase.app → New/Import Team` entry label | `CLAUDE.md` §Export Formats (**static analysis of shipped JS — not observed in the live UI**) |
 | No virtualization; `content-visibility` is the only hatch | `CLAUDE.md` §Supporting Libraries |
 | Board orientation, legibility posture, "host is a scribe with an undo button" | `.planning/research/FEATURES.md` |
 | Pure-core boundary as a UI rule | `.planning/REQUIREMENTS.md` SHEL-04; `.planning/research/ARCHITECTURE.md` |
