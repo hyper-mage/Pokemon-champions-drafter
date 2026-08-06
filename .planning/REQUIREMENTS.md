@@ -10,7 +10,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Roster Data
 
 - [x] **ROST-01**: Pool is restricted to Pokémon legal in the current Champions ranked Regulation Set
-- [ ] **ROST-02**: A committed roster snapshot ships in the repo and the app works fully offline with it
+- [x] **ROST-02**: A committed roster snapshot ships in the repo and the app works fully offline with it
 - [x] **ROST-03**: A repo script regenerates the snapshot from Pokémon Showdown's `champions` mod, pinned to an exact, verifiable upstream version — the `pokemon-showdown` npm package at an exact version plus its tarball integrity hash. (Originally worded "pinned to a commit SHA". The build consumes the npm devDependency and never checks out the git repo, so a repo SHA would be decorative metadata nothing verifies, while the sha512 integrity hash covers the exact bytes the snapshot was generated from. Amended after 01-03 shipped `upstreamRef` rather than a SHA.)
 - [x] **ROST-04**: The regeneration script fails loudly when species or Mega counts drift unexpectedly, rather than silently committing a different regulation
 - [x] **ROST-05**: Every snapshot carries regulation, validFrom, validUntil, `upstreamRef`, generatedAt, counts, and checksum. (Field originally named `upstreamCommit`; renamed to match what the pin actually is — `npm:pokemon-showdown@0.11.11 (sha512-…)` — since the source is an npm package, not a git commit.)
@@ -26,7 +26,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **SHEL-01**: App is reachable at a GitHub Pages URL requiring no install, account, or payment
 - [x] **SHEL-02**: Deployment runs from a GitHub Actions workflow on push to the default branch
-- [ ] **SHEL-03**: App works with no network after first load
+- [x] **SHEL-03**: App works with no network after first load
 - [x] **SHEL-04**: Draft, rules, and tournament logic are pure — no DOM, clock, randomness, network, or storage access — enforced by a CI check
 - [x] **SHEL-05**: Tournament state is one serializable JSON document driven by an append-only action log and a pure reducer
 - [x] **SHEL-06**: Host can undo the last action at any point during the draft
@@ -189,7 +189,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | ROST-01 | Phase 1 | Complete |
-| ROST-02 | Phase 1 | Pending |
+| ROST-02 | Phase 1 | Complete |
 | ROST-03 | Phase 1 | Complete |
 | ROST-04 | Phase 1 | Complete |
 | ROST-05 | Phase 1 | Complete |
@@ -202,7 +202,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ROST-12 | Phase 1 | Complete |
 | SHEL-01 | Phase 1 | Complete |
 | SHEL-02 | Phase 1 | Complete |
-| SHEL-03 | Phase 1 | Pending |
+| SHEL-03 | Phase 1 | Complete |
 | SHEL-04 | Phase 1 | Complete |
 | SHEL-05 | Phase 1 | Complete |
 | SHEL-06 | Phase 1 | Complete |
