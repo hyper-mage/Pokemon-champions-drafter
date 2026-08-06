@@ -19,3 +19,39 @@ if (root === null) {
 }
 
 render(<App />, root);
+
+// SHEL-03. Registration lives here rather than in a component because it must
+// happen exactly once per document and has nothing to do with rendering.
+//
+// PROD-only: `public/sw.js` ships with un-substituted tokens and is only made
+// valid by `scripts/build-sw-manifest.mjs`, so a dev-server registration would
+// install a worker that throws on evaluation.
+//
+// On `load` rather than immediately, so the first paint is never competing with
+// ~320 cache writes.
+//
+// Explicit `scope` (T-01-11): this is a GitHub Pages *project* site. A worker
+// registered at the origin root would control every other project on
+// `hyper-mage.github.io` — the platform refuses it, and it would be wrong if it
+// did not. `BASE_URL` carries its trailing slash, so this scopes to exactly
+// `/Pokemon-champions-drafter/`.
+//
+// `updateViaCache: 'none'` forces the update check for the worker script itself
+// to hit the network. Pages serves `Cache-Control: max-age=600`; without this the
+// browser may answer the update check from the HTTP cache, which is the one thing
+// that could keep a redeploy from ever reaching a returning visitor (D-15).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  addEventListener('load', () => {
+    void navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, {
+        scope: import.meta.env.BASE_URL,
+        updateViaCache: 'none',
+      })
+      .catch((error: unknown) => {
+        // Offline is an enhancement layered over a working app. A refused
+        // registration — private browsing, a disabled worker, an install that
+        // lost one of its ~320 requests — must never take the draft down with it.
+        console.warn('Service worker registration failed; the app still works online.', error);
+      });
+  });
+}

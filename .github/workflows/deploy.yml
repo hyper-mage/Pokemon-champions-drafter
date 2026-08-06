@@ -63,9 +63,19 @@ jobs:
 
       # `build` runs `typecheck` first (both tsconfig.json and tsconfig.node.json),
       # so there is no separate lint/typecheck job to keep in sync.
+      #
+      # SHEL-03: `build` also ends with `scripts/build-sw-manifest.mjs`, which
+      # rewrites `dist/sw.js` with the real precache manifest and the content-derived
+      # cache version. It is deliberately inside `npm run build` rather than a
+      # separate step here, so that `npm run verify` locally and this workflow can
+      # never disagree about what a build produces. The script exits non-zero if the
+      # manifest falls below 300 entries, which fails the deploy rather than
+      # publishing a worker that believes it is offline-complete and is not.
       - name: Build
         run: npm run build
 
+      # Uploads `dist` — the same directory the manifest script just rewrote, so the
+      # published `sw.js` is the injected one and never the token-bearing source.
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
