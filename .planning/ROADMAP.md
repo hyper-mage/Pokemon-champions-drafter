@@ -80,7 +80,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 01-10-PLAN.md — JSON download and import with a prototype-pollution-safe guard, the replace-draft confirmation, the completion checkpoint, and per-player export panels (PERS-04…07, EXPO-06)
+- [x] 01-10-PLAN.md — JSON download and import with a prototype-pollution-safe guard, the replace-draft confirmation, the completion checkpoint, and per-player export panels (PERS-04…07, EXPO-06)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 9/11 | In Progress|  |
+| 1. Draft Skeleton on a Real URL | 10/11 | In Progress|  |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |

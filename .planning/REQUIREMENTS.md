@@ -9,18 +9,18 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Roster Data
 
-- [ ] **ROST-01**: Pool is restricted to Pokémon legal in the current Champions ranked Regulation Set
+- [x] **ROST-01**: Pool is restricted to Pokémon legal in the current Champions ranked Regulation Set
 - [ ] **ROST-02**: A committed roster snapshot ships in the repo and the app works fully offline with it
 - [ ] **ROST-03**: A repo script regenerates the snapshot from Pokémon Showdown's `champions` mod, pinned to a commit SHA
-- [ ] **ROST-04**: The regeneration script fails loudly when species or Mega counts drift unexpectedly, rather than silently committing a different regulation
+- [x] **ROST-04**: The regeneration script fails loudly when species or Mega counts drift unexpectedly, rather than silently committing a different regulation
 - [ ] **ROST-05**: Every snapshot carries regulation, validFrom, validUntil, upstreamCommit, generatedAt, counts, and checksum
-- [ ] **ROST-06**: The prior regulation's frozen snapshot is retained, so completed tournaments stay meaningful after a rotation
-- [ ] **ROST-07**: Roster records Mega-capability per base species and each Mega forme's stone item name
-- [ ] **ROST-08**: The draftable unit is the base species; Mega-capability is a flag on it, not a separate pool row
-- [ ] **ROST-09**: Cosmetic formes, battle-only formes, and `isNonstandard: "Future"` entries are excluded from the draftable set
-- [ ] **ROST-10**: Genuinely distinct alternate formes — regional forms, Rotom appliances, Tauros-Paldea — remain draftable
+- [x] **ROST-06**: The prior regulation's frozen snapshot is retained, so completed tournaments stay meaningful after a rotation
+- [x] **ROST-07**: Roster records Mega-capability per base species and each Mega forme's stone item name
+- [x] **ROST-08**: The draftable unit is the base species; Mega-capability is a flag on it, not a separate pool row
+- [x] **ROST-09**: Cosmetic formes, battle-only formes, and `isNonstandard: "Future"` entries are excluded from the draftable set
+- [x] **ROST-10**: Genuinely distinct alternate formes — regional forms, Rotom appliances, Tauros-Paldea — remain draftable
 - [x] **ROST-11**: Every roster entry resolves to a sprite, with a visible fallback for species that have no art
-- [ ] **ROST-12**: A fixture test covers the known-hostile species set: Meganium, Floette-Eternal, Meowstic-M-Mega, Castform-Sunny, Kommo-o, Mr. Rime, Farfetch'd, Charizard and Raichu Mega X/Y, Vivillon, Alcremie, Aegislash-Blade
+- [x] **ROST-12**: A fixture test covers the known-hostile species set: Meganium, Floette-Eternal, Meowstic-M-Mega, Castform-Sunny, Kommo-o, Mr. Rime, Farfetch'd, Charizard and Raichu Mega X/Y, Vivillon, Alcremie, Aegislash-Blade
 
 ### App Shell & State
 
@@ -37,10 +37,10 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **PERS-01**: Tournament state autosaves and survives page refresh and browser close
 - [x] **PERS-02**: A storage canary probe at config time warns the host when browser storage is unavailable or restricted
 - [x] **PERS-03**: Two tabs of the same tournament cannot silently overwrite each other
-- [ ] **PERS-04**: Host can export the full tournament as a JSON file at any time
-- [ ] **PERS-05**: Host can import a tournament JSON file to restore it or move it to another machine
-- [ ] **PERS-06**: A JSON checkpoint is offered automatically at hard milestones, so a lost draft is always recoverable
-- [ ] **PERS-07**: Exported tournaments carry a schema version and import cleanly across app versions
+- [x] **PERS-04**: Host can export the full tournament as a JSON file at any time
+- [x] **PERS-05**: Host can import a tournament JSON file to restore it or move it to another machine
+- [x] **PERS-06**: A JSON checkpoint is offered automatically at hard milestones, so a lost draft is always recoverable
+- [x] **PERS-07**: Exported tournaments carry a schema version and import cleanly across app versions
 - [ ] **PERS-08**: Completed tournaments remain viewable after the draft ends
 - [ ] **PERS-09**: A draft recap is rendered directly from the action log
 
@@ -126,7 +126,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **EXPO-03**: Entries are separated by blank lines, since single-newline separation silently imports only the first Pokémon
 - [ ] **EXPO-04**: Export imports into play.pokemonshowdown.com and passes its team validator, including Mega-containing teams
 - [x] **EXPO-05**: Export imports into pokebase.app
-- [ ] **EXPO-06**: Export is reachable per player from the completed draft view
+- [x] **EXPO-06**: Export is reachable per player from the completed draft view
 
 ### Roster Refresh
 
@@ -188,18 +188,18 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ROST-01 | Phase 1 | Pending |
+| ROST-01 | Phase 1 | Complete |
 | ROST-02 | Phase 1 | Pending |
 | ROST-03 | Phase 1 | Pending |
-| ROST-04 | Phase 1 | Pending |
+| ROST-04 | Phase 1 | Complete |
 | ROST-05 | Phase 1 | Pending |
-| ROST-06 | Phase 1 | Pending |
-| ROST-07 | Phase 1 | Pending |
-| ROST-08 | Phase 1 | Pending |
-| ROST-09 | Phase 1 | Pending |
-| ROST-10 | Phase 1 | Pending |
+| ROST-06 | Phase 1 | Complete |
+| ROST-07 | Phase 1 | Complete |
+| ROST-08 | Phase 1 | Complete |
+| ROST-09 | Phase 1 | Complete |
+| ROST-10 | Phase 1 | Complete |
 | ROST-11 | Phase 1 | Complete |
-| ROST-12 | Phase 1 | Pending |
+| ROST-12 | Phase 1 | Complete |
 | SHEL-01 | Phase 1 | Complete |
 | SHEL-02 | Phase 1 | Complete |
 | SHEL-03 | Phase 1 | Pending |
@@ -210,10 +210,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PERS-01 | Phase 1 | Complete |
 | PERS-02 | Phase 1 | Complete |
 | PERS-03 | Phase 1 | Complete |
-| PERS-04 | Phase 1 | Pending |
-| PERS-05 | Phase 1 | Pending |
-| PERS-06 | Phase 1 | Pending |
-| PERS-07 | Phase 1 | Pending |
+| PERS-04 | Phase 1 | Complete |
+| PERS-05 | Phase 1 | Complete |
+| PERS-06 | Phase 1 | Complete |
+| PERS-07 | Phase 1 | Complete |
 | PERS-08 | Phase 5 | Pending |
 | PERS-09 | Phase 5 | Pending |
 | DRFT-01 | Phase 2 | Pending |
@@ -278,7 +278,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | EXPO-03 | Phase 1 | Complete |
 | EXPO-04 | Phase 1 | Pending |
 | EXPO-05 | Phase 1 | Complete |
-| EXPO-06 | Phase 1 | Pending |
+| EXPO-06 | Phase 1 | Complete |
 | REFR-01 | Phase 5 | Pending |
 | REFR-02 | Phase 5 | Pending |
 | REFR-03 | Phase 5 | Pending |

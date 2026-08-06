@@ -203,6 +203,18 @@ Buttons name a verb and its object. Nothing is labelled `OK`, `Submit`, `Yes`, `
 | Read-only banner, stale lock | `The tab that was drafting has stopped responding.` |
 | Read-only banner CTA | `Take over drafting here` |
 | Takeover confirmed (live region) | `You are now drafting on this tab.` |
+| Team paste copied (live region) | `{playerName} team paste copied.` |
+| Team paste copy failed (live region) | `{playerName} team paste not copied — select the text below.` |
+
+**Why the two copy strings name the player instead of saying `Copied`.** `LiveRegion`
+re-announces by replacing its text, and a screen reader stays silent when the replacement
+is byte-identical to what is already there. Its own docstring records this and notes it was
+left unfixed because no surface in phase 1 repeated a message. The completed-draft screen is
+the first that does — the host copies each team in turn — so a bare `Copied` would be spoken
+for the first player and swallowed for every player after. Interpolating the player name
+makes consecutive announcements differ, which is the fix that needs no change to
+`LiveRegion`. If these are ever shortened to a constant string, `LiveRegion` must first gain
+a clear-then-set (two-frame) reset, or the repeat announcements go silent again.
 | Checkpoint prompt heading | `Draft complete — save a copy?` |
 | Checkpoint prompt body | `Download the tournament JSON so you can reopen it on another machine, or after this browser clears its storage.` |
 | Checkpoint prompt CTA | `Download tournament JSON` |
