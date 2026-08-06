@@ -101,6 +101,10 @@ Everything below cites a line. Nothing below is a style preference.
 
 ### CR-01: An imported file with a large `rounds` permanently bricks the app
 
+**Status:** Fixed. `MAX_ROUNDS`, `MAX_PLAYERS` and `MAX_POOL_IDS` refuse the counts in the
+guard, `copyStringArray` takes a required bound, and `app.tsx` persists an imported
+document from a post-commit effect instead of ahead of the render.
+
 **File:** `src/core/import-guard.ts:203`, `src/core/selectors.ts:67`, `src/ui/components/BoardGrid.tsx:55`
 **Issue:**
 `buildConfig` accepts any positive safe integer for `rounds`:
@@ -169,6 +173,11 @@ strings.
 
 ### CR-02: `Ctrl+Z` bypasses `inert` in a read-only tab and clobbers the owner's draft
 
+**Status:** Fixed. `store.undo()` refuses without `isOwner()`, so the guarantee sits on the
+write path rather than one caller deep; `TopBar` gates the keystroke as well so a secondary
+does not swallow the browser's own Ctrl+Z. `dispatch` is deliberately not gated — see the
+comment on `undo` for why the 250 ms claim window makes that a certain outage.
+
 **File:** `src/ui/components/TopBar.tsx:107-125`, `src/store.ts:240-257`, `src/app.tsx:446`
 **Issue:**
 `app.tsx:446` makes the whole draft region `inert` when the tab is a secondary, which correctly
@@ -225,6 +234,10 @@ export function undo(resolveSpeciesName?: (monId: string) => string): boolean {
 ---
 
 ### CR-03: `release()` during the claim window deadlocks the tab into permanent, silent read-only
+
+**Status:** Fixed. `release()` resolves a `claiming` tab back to `idle` before the owner
+check, so `pageshow` can re-run the protocol. The stale-watch half of this line — a
+bfcache-restored *secondary* losing its stale timer — is WR-10 and is untouched.
 
 **File:** `src/adapters/tab-lock.ts:490-506`, `src/adapters/tab-lock.ts:447-473`, `src/adapters/tab-lock.ts:553-571`
 **Issue:**

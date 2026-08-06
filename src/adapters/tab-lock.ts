@@ -488,6 +488,32 @@ export function createTabLock(options: TabLockOptions = {}): TabLock {
   }
 
   function release(): void {
+    // A departure inside the claim window is resolved, never abandoned.
+    //
+    // `installLifecycle` wires this to `pagehide`, so navigating away within
+    // CLAIM_WINDOW_MS of load reaches here while `status === 'claiming'`. Cancelling the
+    // timer and falling through to the owner check below left the tab wedged in
+    // `claiming` with nothing pending to move it on, and `claim()` refuses to re-run
+    // unless the status is `idle` — so the bfcache restore path could not recover it
+    // either. The resulting state was the worst combination on offer: `isOwner()` false,
+    // so every autosave and the `pagehide` flush were silently refused; `readOnly` false,
+    // so no banner and no takeover button; and `savingBlocked` never raised, because a
+    // refusal on ownership deliberately does not raise it. The host drafts a whole
+    // tournament into a tab that looks writable and keeps none of it.
+    //
+    // Back to `idle` — the pre-lock state — so `pageshow` can re-run the protocol and so
+    // `isOwner()` answers the way it does before any lock is engaged in the meantime. The
+    // module header names deadlock as a worse outcome than the race it prevents; this is
+    // that deadlock, and this is the line that refuses it.
+    if (status === 'claiming') {
+      cancelClaimWindow();
+      stopStaleWatch();
+
+      status = 'idle';
+      emittedStatus = null;
+      return;
+    }
+
     cancelClaimWindow();
     stopStaleWatch();
 

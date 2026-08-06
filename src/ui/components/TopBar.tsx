@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'preact/hooks';
 
+import { isOwner } from '../../adapters/tab-lock';
 import { canUndo } from '../../core/undo';
 import { tournamentDoc, undo } from '../../store';
 
@@ -113,6 +114,16 @@ export function TopBar({
       if (event.shiftKey) return;
       if (event.key !== 'z' && event.key !== 'Z') return;
       if (isTextEntry(event.target)) return;
+
+      // This listener is on `document`, which is OUTSIDE the `inert` draft region. `inert`
+      // governs focus and pointer/keyboard targeting inside a subtree; it does not stop a
+      // document-level handler from firing when the event target is `<body>`. So the
+      // attribute that disables the `Undo last pick` button beside this shortcut does not
+      // disable the shortcut, and a read-only tab could undo the owner's pick from the
+      // keyboard. `store.undo()` refuses this too and that refusal is the guarantee; this
+      // one is here so a secondary tab does not swallow the browser's own Ctrl+Z with the
+      // `preventDefault` below.
+      if (!isOwner()) return;
 
       event.preventDefault();
       handleUndo();
