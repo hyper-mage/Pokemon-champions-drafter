@@ -28,11 +28,26 @@
 }
 
 .top-bar {
+  padding: var(--space-3) 0;
+}
+
+.top-bar__controls {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
-  padding: var(--space-3) 0;
+}
+
+/*
+ * The import-failure sentence. Muted rather than red: a refused import destroyed nothing,
+ * and --color-danger is reserved for the two surfaces that genuinely signal data loss.
+ * The message is the signal; the colour is not carrying any of it.
+ */
+.top-bar__message {
+  margin: var(--space-2) 0 0;
+  max-width: 60ch;
+  color: var(--color-text-muted);
+  font: var(--text-label);
 }
 
 /*
