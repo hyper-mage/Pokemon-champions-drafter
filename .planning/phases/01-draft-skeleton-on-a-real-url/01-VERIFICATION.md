@@ -1,14 +1,17 @@
 ---
 phase: 01-draft-skeleton-on-a-real-url
 verified: 2026-08-06T21:15:00Z
-status: human_needed
+status: passed
 score: 5/5 roadmap success criteria verified; 31/32 requirements confirmed complete (1 correctly Pending)
 overrides_applied: 0
 re_verification: false
 human_verification:
   - test: "Confirm the live GitHub Pages URL is serving commit b1d26bc or later"
     expected: "index.html references a build produced after the CR-01/CR-02/CR-03 fixes landed (asset hashes will differ from index-RKy-BDIb.js / the eaad495 build)"
-    why_human: "The GitHub Actions run history (read via the public API) shows no workflow run for any commit after eaad495 (2026-08-06T01:37:10Z), including 29bad97, c03b119, 83bfd06, 3a2b2df, f1cf73f, and the final merge b1d26bc, even after ~90s of polling following the push. The code fixes are verified present and correct in the repository and pass npm run verify, but as of this verification the deployed site was still serving the pre-fix build."
+    why_human: "The GitHub Actions run history (read via the public API) showed no workflow run for any commit after eaad495 (2026-08-06T01:37:10Z), including 29bad97, c03b119, 83bfd06, 3a2b2df, f1cf73f, and the final merge b1d26bc, even after ~90s of polling following the push. The code fixes were verified present and correct in the repository and passed npm run verify, but at verification time the deployed site was still serving the pre-fix build."
+    resolved: true
+    resolution: "RESOLVED 2026-08-06T21:30Z. The finding was correct and was not propagation lag — no run existed for b1d26bc ~20 minutes after the push, and .github/workflows/deploy.yml carries no paths filter that could have excluded it, so the push event was simply dropped. The user re-triggered via workflow_dispatch; the originally-dropped push event also surfaced late, producing two queued runs for the same commit (harmless — concurrency group `pages` with cancel-in-progress: false serialises them, and both deploy identical content). Confirmed serving assets/index-mVeM9zcg.js, matching a local build of b1d26bc, with sw.js VERSION 11893913a92c. The pre-fix index-RKy-BDIb.js is gone."
+    verified_by: "orchestrator, by fetching the live URL directly rather than inferring from a green deploy job — this phase had already produced a deploy that reported success while the URL 404'd"
 ---
 
 # Phase 1: Draft Skeleton on a Real URL — Verification Report
