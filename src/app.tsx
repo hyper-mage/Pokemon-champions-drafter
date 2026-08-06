@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
+import { downloadJson, readJsonFile, tournamentFilename } from './adapters/file-io';
 import {
   load as loadSavedTournament,
   loadIfNewer,
   probeStorage,
+  save as saveTournament,
   savingBlocked,
   startAutosave,
   type ProbeResult,
@@ -15,6 +17,8 @@ import {
 } from './adapters/roster-source';
 import { claimOwnership, disposeTabLock } from './adapters/tab-lock';
 import { pickMade } from './core/actions';
+import { parseTournamentFile } from './core/import-guard';
+import type { TournamentDoc } from './core/model';
 import type { RosterEntry } from './core/roster/types';
 import {
   selectAvailablePool,
@@ -34,6 +38,7 @@ import {
   subscribe,
 } from './store';
 import { BoardGrid } from './ui/components/BoardGrid';
+import { ImportConfirmDialog } from './ui/components/ImportConfirmDialog';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid } from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
@@ -46,6 +51,51 @@ type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; bundle: RosterBundle }
   | { status: 'failed'; message: string };
+
+/**
+ * Where an import has got to.
+ *
+ * `confirm` holds the already-validated document rather than the file it came from. That
+ * ordering is the T-01-45 mitigation made structural: by the time this state exists the
+ * file has been read, size-gated, parsed, rebuilt from an allow-list and version-checked,
+ * so the only question the dialog asks is the one the host can actually answer. A file
+ * that fails never gets as far as a confirmation, and a cancelled confirmation drops a
+ * document that was never installed anywhere.
+ */
+type ImportFlow =
+  | { status: 'idle' }
+  | { status: 'failed'; message: string }
+  | { status: 'confirm'; doc: TournamentDoc };
+
+/**
+ * Verbatim from the approved UI-SPEC copywriting table.
+ *
+ * Two sentences for five rejection reasons, which is deliberate rather than lazy. The
+ * host can act on exactly one distinction: "this is not one of my tournament files" —
+ * where the answer is to choose a different file — versus "this IS one, from a newer
+ * build" — where the answer is to reload. Reporting `tooLarge` separately from `notJson`
+ * would be reporting the guard's internals, and neither leads anywhere different.
+ */
+const IMPORT_WRONG_SHAPE =
+  'That file is not a Champions Drafter tournament. Choose a .json file this app exported.';
+const IMPORT_NEWER_SCHEMA =
+  'This tournament was saved by a newer version of the app. Reload the page and try again.';
+
+/**
+ * What the live region says after a successful import.
+ *
+ * NOT in the UI-SPEC copywriting table — the table covers both failure sentences and the
+ * confirmation dialog, but has no row for the success announcement, and a successful
+ * import replaces the whole board without moving focus. A sighted host sees the change;
+ * without this a screen-reader user gets silence at the one moment the entire screen
+ * changed underneath them. Flagged to the orchestrator as a UI-SPEC amendment rather than
+ * edited into the spec here, which plan 01-08 currently owns.
+ */
+function importAnnouncement(pickCount: number): string {
+  if (pickCount === 0) return 'Tournament imported — no picks yet.';
+  if (pickCount === 1) return 'Tournament imported — 1 pick restored.';
+  return `Tournament imported — ${pickCount} picks restored.`;
+}
 
 /**
  * Pokedex order, and deterministic.
@@ -105,6 +155,7 @@ export function App() {
   const [probe] = useState<ProbeResult>(() => probeStorage());
   const [probeAcknowledged, setProbeAcknowledged] = useState(false);
   const [writeFailureAcknowledged, setWriteFailureAcknowledged] = useState(false);
+  const [importFlow, setImportFlow] = useState<ImportFlow>({ status: 'idle' });
 
   const storageOk = probe.ok;
 
@@ -237,6 +288,103 @@ export function App() {
     [entryById],
   );
 
+  // -------------------------------------------------------------------------
+  // PERS-04 / PERS-05 — the tournament as a file
+  // -------------------------------------------------------------------------
+
+  /**
+   * Write the document out. No confirmation, because there is nothing to confirm.
+   *
+   * Reads the document through `getDoc()` rather than through the render-time signal, so
+   * what lands in the file is what the store holds at the moment of the click rather than
+   * what this component last rendered.
+   */
+  const handleDownload = useCallback(() => {
+    const current = getDoc();
+    if (current === null) return;
+
+    downloadJson(tournamentFilename(current), current);
+  }, []);
+
+  /**
+   * Install a validated document, and tell the host it happened.
+   *
+   * The immediate `save` is not redundant against the autosave: the autosave is on a
+   * 300ms trailing debounce, and an import is precisely the moment where the window
+   * between "the screen changed" and "the change is on disk" should be zero. It is gated
+   * on the canary for the same reason the autosave is — a browser that already proved it
+   * will not keep anything gets no further attempts to fail at.
+   */
+  const adoptImported = useCallback(
+    (imported: TournamentDoc) => {
+      if (!adoptTournament(imported)) {
+        setImportFlow({ status: 'failed', message: IMPORT_WRONG_SHAPE });
+        return;
+      }
+
+      if (storageOk) saveTournament(imported);
+
+      const restored = getState();
+      announce(importAnnouncement(restored === null ? 0 : selectPickCount(restored)));
+      setImportFlow({ status: 'idle' });
+    },
+    [storageOk],
+  );
+
+  /**
+   * Read, validate, then decide whether anything is at stake.
+   *
+   * Nothing here mutates the store. Every failure path returns having touched only this
+   * component's own message state, which is what makes "a refused import leaves the draft
+   * untouched" a property of the control flow rather than a promise (T-01-45).
+   */
+  const handleImportFile = useCallback(
+    (file: File) => {
+      // Clear the previous failure first. Leaving a stale sentence on screen while the
+      // next file is being read would have the host reading an answer to the last
+      // question.
+      setImportFlow({ status: 'idle' });
+
+      void readJsonFile(file).then((read) => {
+        if (!read.ok) {
+          // `tooLarge` and `unreadable` both land here. Neither is a distinction the host
+          // can act on differently: the answer to both is a different file.
+          setImportFlow({ status: 'failed', message: IMPORT_WRONG_SHAPE });
+          announce(IMPORT_WRONG_SHAPE);
+          return;
+        }
+
+        const result = parseTournamentFile(read.text, read.byteLength);
+
+        if (!result.ok) {
+          const message =
+            result.reason === 'newerSchema' ? IMPORT_NEWER_SCHEMA : IMPORT_WRONG_SHAPE;
+          setImportFlow({ status: 'failed', message });
+          announce(message);
+          return;
+        }
+
+        // An empty draft has nothing to lose, so asking would be ceremony. A
+        // confirmation that fires when nothing is at stake is how hosts learn to click
+        // through the one that matters.
+        const current = getState();
+        if (current === null || selectPickCount(current) === 0) {
+          adoptImported(result.doc);
+          return;
+        }
+
+        setImportFlow({ status: 'confirm', doc: result.doc });
+      });
+    },
+    [adoptImported],
+  );
+
+  const cancelImport = useCallback(() => {
+    // The validated document goes out of scope unused. It was never installed anywhere,
+    // so there is nothing to roll back.
+    setImportFlow({ status: 'idle' });
+  }, []);
+
   // Two separate acknowledgements because they are two separate events. The canary
   // failing means nothing was ever going to be saved; a write failing mid-draft means
   // saves were working and have stopped. The host deserves to be told the second time
@@ -295,7 +443,12 @@ export function App() {
             pixel. See TopBar.css.
           */}
           <div class="sticky-head">
-            <TopBar resolveSpeciesName={resolveSpeciesName} />
+            <TopBar
+              resolveSpeciesName={resolveSpeciesName}
+              onDownload={handleDownload}
+              onImportFile={handleImportFile}
+              importError={importFlow.status === 'failed' ? importFlow.message : null}
+            />
 
             <TurnBanner
               round={turn === null ? null : turn.round}
@@ -320,6 +473,21 @@ export function App() {
             onPick={handlePick}
           />
         </div>
+      )}
+
+      {/*
+        OUTSIDE the draft region, and that placement is load-bearing rather than tidy.
+        `inert` applies to a subtree, so a modal rendered inside it in a read-only tab
+        would render, trap focus, and refuse every click — a dialog nobody can dismiss.
+        Rendered here it is unaffected by the attribute, and the pick count it quotes is
+        the CURRENT draft's, which is the thing about to be lost.
+      */}
+      {importFlow.status === 'confirm' && state !== null && (
+        <ImportConfirmDialog
+          pickCount={selectPickCount(state)}
+          onConfirm={() => adoptImported(importFlow.doc)}
+          onCancel={cancelImport}
+        />
       )}
     </div>
   );
