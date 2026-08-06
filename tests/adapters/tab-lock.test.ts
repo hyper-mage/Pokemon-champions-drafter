@@ -479,6 +479,57 @@ describe('released on pagehide', () => {
     // not a takeover.
     expect(b.isOwner()).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // Leaving DURING the claim window — CR-03
+  // -------------------------------------------------------------------------
+
+  it('lets a tab that left inside its own claim window claim again on restore', () => {
+    const bus = makeBus();
+    const a = createTabLock({ tabId: 'a', channel: bus.connect() });
+
+    // `pagehide` a tenth of a second after load: navigate away, then press Back. The
+    // window is 250ms and this is inside it.
+    a.claim();
+    expect(a.state().status).toBe('claiming');
+    a.release();
+
+    // The recovery is driven rather than inspected. `pageshow` calls `claim()` on a
+    // bfcache restore, and `claim()` refuses unless the status is idle — so if `release()`
+    // abandoned the window instead of resolving it, this second protocol run does nothing
+    // and the tab never owns anything again.
+    a.claim();
+    vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+
+    expect(a.isOwner()).toBe(true);
+
+    // And it is a real owner rather than a tab reporting one: the next tab to boot hears
+    // it on the channel and stands down.
+    const b = boot(createTabLock({ tabId: 'b', channel: bus.connect() }));
+    expect(b.isOwner()).toBe(false);
+    expect(b.state().readOnly).toBe(true);
+  });
+
+  it('never leaves a tab unable to write with nothing on screen to explain it', () => {
+    const bus = makeBus();
+    const a = createTabLock({ tabId: 'a', channel: bus.connect() });
+
+    a.claim();
+    a.release();
+
+    // Long enough that any timer which was going to resolve the window has had ten
+    // chances. Nothing is pending; the state below is the state the host is left in.
+    vi.advanceTimersByTime(STALE_THRESHOLD_MS * 10);
+
+    // The deadlock's exact signature, as an invariant rather than as a status check:
+    // `owner` false means every autosave and the pagehide flush are refused, and
+    // `readOnly` false means `ReadOnlyBanner` renders nothing and the takeover button
+    // never appears. `savingBlocked` is not raised either, because a refusal on ownership
+    // deliberately does not raise it. A tab may be writable, or it may be told it is not.
+    // It may never be neither.
+    const state = a.state();
+    expect(state.owner || state.readOnly).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

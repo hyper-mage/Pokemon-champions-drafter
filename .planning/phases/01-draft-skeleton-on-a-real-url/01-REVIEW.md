@@ -235,6 +235,10 @@ export function undo(resolveSpeciesName?: (monId: string) => string): boolean {
 
 ### CR-03: `release()` during the claim window deadlocks the tab into permanent, silent read-only
 
+**Status:** Fixed. `release()` resolves a `claiming` tab back to `idle` before the owner
+check, so `pageshow` can re-run the protocol. The stale-watch half of this line — a
+bfcache-restored *secondary* losing its stale timer — is WR-10 and is untouched.
+
 **File:** `src/adapters/tab-lock.ts:490-506`, `src/adapters/tab-lock.ts:447-473`, `src/adapters/tab-lock.ts:553-571`
 **Issue:**
 `release()` tears down the claim timer before it checks whether this tab is the owner:
