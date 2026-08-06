@@ -1,0 +1,80 @@
+/*
+ * ExportPanel — one per player, and the only surface in the project using --font-mono.
+ *
+ * Consumes tokens only; declares no raw colour and no raw length the token table covers.
+ */
+
+.export-panel {
+  margin-bottom: var(--space-5);
+}
+
+.export-panel__heading {
+  margin: 0 0 var(--space-2);
+  font: var(--text-heading);
+}
+
+/*
+ * Accent use 2 of 3: the primary action of the current screen. The UI-SPEC notes that it
+ * repeats once per player panel because it is the same action, not a second one.
+ */
+.export-panel__copy {
+  min-height: var(--target-min);
+  margin-bottom: var(--space-2);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+/*
+ * The fill does not change on success and does not change on hover. The label already
+ * carries the outcome, and a button that turns a different colour to say "done" is a
+ * button whose meaning is colour-only.
+ */
+.export-panel__copy:hover {
+  background: var(--color-accent);
+}
+
+/*
+ * The paste block.
+ *
+ * `white-space: pre` is a correctness requirement, not a style choice. EXPO-03's record
+ * separator is a BLANK LINE, and Showdown silently imports only the first Pokemon from
+ * newline-separated input — so anything that collapses whitespace here would hide the
+ * one defect the host is proof-reading for. The two `white-space` values that collapse
+ * runs of blank lines are therefore both forbidden on this element, and this file is
+ * checked for their absence — which is why neither is spelled out anywhere in it.
+ *
+ * The font declaration is two lines by the convention tokens.css sets out: the shorthand
+ * carries weight, size and line-height, and the family is swapped on the line after. That
+ * keeps --text-body's 18px and 1.5 line-height, which is what makes the blank line
+ * obvious at a glance, while --font-mono adds no size of its own.
+ */
+.export-panel__paste {
+  margin: 0;
+  padding: var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  font: var(--text-body);
+  font-family: var(--font-mono);
+  white-space: pre;
+  /* Long forme names — `Tauros-Paldea-Aqua @ ...` — scroll rather than wrap, because a
+     wrapped line would look like a record break in a format where line breaks are data. */
+  overflow-x: auto;
+}
+
+.export-panel__paste:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.export-panel__helper {
+  margin: var(--space-2) 0 0;
+  max-width: 60ch;
+  color: var(--color-text-muted);
+  font: var(--text-label);
+}

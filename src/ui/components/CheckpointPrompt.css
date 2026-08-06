@@ -1,0 +1,73 @@
+/*
+ * CheckpointPrompt — the non-modal save offer at draft complete.
+ *
+ * Consumes tokens only; declares no raw colour and no raw length the token table covers.
+ *
+ * It sits on --color-surface with no border and no left accent stripe, which is what
+ * separates it visually from the two dialog surfaces: this is an offer the host may
+ * ignore, not a warning they must acknowledge. The only strong signal it carries is the
+ * accent fill on its CTA, which the UI-SPEC allows as "the primary action of the current
+ * screen".
+ */
+
+.checkpoint-prompt {
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.checkpoint-prompt__heading {
+  margin: 0 0 var(--space-2);
+  font: var(--text-heading);
+}
+
+.checkpoint-prompt__body {
+  margin: 0;
+  max-width: 60ch;
+  font: var(--text-body);
+}
+
+.checkpoint-prompt__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+/* Accent use 2 of 3: the primary action of the current screen. */
+.checkpoint-prompt__cta {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+.checkpoint-prompt__cta:hover {
+  /* The accent does not shift on hover; the border already carries the affordance. */
+  background: var(--color-accent);
+}
+
+/*
+ * Text-only. No border and no fill, so it reads as the lesser of the two without being
+ * hidden — the target area is still --target-min tall, because "the option I did not
+ * want you to take" is not a reason to make it hard to hit.
+ */
+.checkpoint-prompt__dismiss {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+.checkpoint-prompt__dismiss:hover {
+  color: var(--color-text);
+}

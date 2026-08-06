@@ -44,6 +44,7 @@ import { PoolGrid } from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
+import { CompletedDraft } from './ui/screens/CompletedDraft';
 import { StorageBlocked } from './ui/screens/StorageBlocked';
 import { useOwnership } from './ui/use-ownership';
 
@@ -156,6 +157,12 @@ export function App() {
   const [probeAcknowledged, setProbeAcknowledged] = useState(false);
   const [writeFailureAcknowledged, setWriteFailureAcknowledged] = useState(false);
   const [importFlow, setImportFlow] = useState<ImportFlow>({ status: 'idle' });
+
+  // Dismissal lasts the session, which is what "for the session" means here: component
+  // state dies with the page, so reopening the tournament tomorrow offers the checkpoint
+  // again. Persisting the dismissal would mean a host who clicked `Not now` once is never
+  // reminded again, on the one milestone the phase has.
+  const [checkpointDismissed, setCheckpointDismissed] = useState(false);
 
   const storageOk = probe.ok;
 
@@ -467,11 +474,29 @@ export function App() {
             pickCount={selectPickCount(state)}
           />
 
-          <PoolGrid
-            entries={availableEntries}
-            spriteMeta={load.bundle.spriteMeta}
-            onPick={handlePick}
-          />
+          {/*
+            The completed-draft screen takes the POOL's place and nothing else. TopBar
+            and BoardGrid above stay mounted, so `Undo last pick` is still one click away
+            — a host who spots a wrong final pick on this screen must be able to unwind
+            it, and the board remains the completed record.
+          */}
+          {complete ? (
+            <CompletedDraft
+              players={state.config.players}
+              teams={selectTeams(state)}
+              entryById={entryById}
+              checkpointReached={complete}
+              checkpointDismissed={checkpointDismissed}
+              onDownload={handleDownload}
+              onDismissCheckpoint={() => setCheckpointDismissed(true)}
+            />
+          ) : (
+            <PoolGrid
+              entries={availableEntries}
+              spriteMeta={load.bundle.spriteMeta}
+              onPick={handlePick}
+            />
+          )}
         </div>
       )}
 
