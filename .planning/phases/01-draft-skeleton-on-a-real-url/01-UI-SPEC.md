@@ -216,13 +216,13 @@ Buttons name a verb and its object. Nothing is labelled `OK`, `Submit`, `Yes`, `
 | Export copy button | `Copy team paste` |
 | Export copy, succeeded | `Copied` (2000ms, then reverts) |
 | Export copy, failed | `Copy failed — select the text below` (4000ms, then reverts) |
-| Export helper text | `Paste into Pokémon Showdown → Teambuilder → import, or pokebase.app → New/Import Team.` |
+| Export helper text | `Paste this into the team import field on Pokémon Showdown or pokebase.app.` |
 
 **Copy rules for this phase:**
 - Second person, present tense, no exclamation marks, no emoji.
 - Errors state the problem *and* the next action. Never a bare "Something went wrong".
 - Never blame the user; the storage warning blames the browser, which is accurate.
-- `pokebase.app → New/Import Team` is the verified real entry-point label (`CLAUDE.md` §Export Formats). The Showdown half of the helper string must be confirmed verbatim during the roadmap-mandated export spike and corrected here if it differs.
+- The export helper text **names no third-party menu path on purpose.** It previously read `Paste into Pokémon Showdown → Teambuilder → import, or pokebase.app → New/Import Team.` Neither arrow-path was ever read off a running site: the Showdown half was a guess, and while `New/Import Team` and `Team paste to import` are real strings recovered from pokebase's shipped JS (`CLAUDE.md` §Export Formats), static analysis of a bundle is not an observation of the live UI, and both sites are free to relabel a button without telling us. The export spike (plan 01-08) settled the paste *format* against both targets but never captured the menu wording — see `docs/export-verification.md`, where those two rows remain PENDING. Rather than leave unverified third-party wording sitting in an approved contract, the string describes the destination generically. Every site involved has a team import field; only the route to it is uncertain. If someone later reads the real labels off both running UIs, this row may be made specific again.
 
 ---
 
