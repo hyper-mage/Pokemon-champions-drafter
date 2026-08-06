@@ -190,7 +190,19 @@ Pages link. Nothing here should be contorted to chase it.
 
 ## E. Deploy freshness — D-15
 
-`PENDING`
+**DEFERRED TO PHASE 2 — by decision, 2026-08-06.** This section needs a *second* deploy to
+exist, so it could not run during phase 1's close-out. Rather than push a throwaway commit
+to manufacture one, it rides the first real Phase 2 deploy.
+
+**This is carried debt, not a closed item.** Cache-first service workers characteristically
+fail on the second deploy rather than the first: the failure mode is a returning visitor
+pinned to a stale cache with no recovery path, which for this app means drafting against
+last regulation's roster. The mitigations are built and unit-tested — the cache version
+hashes file *content* so a same-URL data change still rotates the cache
+(`tests/build/sw-manifest.test.ts`), old caches are deleted in `activate`, and `sw.js` is
+neither precached nor served from the HTTP cache (`updateViaCache: 'none'`) — but none of
+that has been observed on hardware. **Run this section before Phase 2 ships anything a host
+would rely on.**
 
 The worker deliberately does **not** force itself active or seize open clients. A new build
 installs in the background and takes over on the next tab open. One stale session after a
