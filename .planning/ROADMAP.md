@@ -23,7 +23,7 @@ The project's success criterion: *"You and your friends run a real draft plus br
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Draft Skeleton on a Real URL** - Deployed, offline-capable two-player draft on the real Champions roster with undo, autosave, and working export
+- [x] **Phase 1: Draft Skeleton on a Real URL** - Deployed, offline-capable two-player draft on the real Champions roster with undo, autosave, and working export (completed 2026-08-06)
 - [ ] **Phase 2: Host-Configured Draft Night** - A real group drafts on one shared screen: config, N players, pool, host banlist, board, feasibility gate
 - [ ] **Phase 3: Compiled Rules, Priority Cards, Swaps** - Composition requirements compile into a typed round schedule; cards decide turn order, swaps respect slot constraints
 - [ ] **Phase 4: Blind and Snake Bans** - The ban ritual on one shared screen, with a real pass-the-device flow that cannot leak
@@ -84,7 +84,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 01-11-PLAN.md — Cache-first service worker precaching the whole inventory, plus the offline, `file://`, and phase close-out verification (SHEL-03, ROST-02)
+- [x] 01-11-PLAN.md — Cache-first service worker precaching the whole inventory, plus the offline, `file://`, and phase close-out verification (SHEL-03, ROST-02)
 
 **UI hint**: yes
 **Notes**: Research need LOW — the roster pipeline mechanics are already empirically verified; remaining work is execution against the fixture set. Two verification chores belong here and must not be skipped: (a) an export spike hand-verifying both targets with a Mega-containing team, since pokebase.app's acceptance of an `@ item` line specifically was inferred rather than tested; (b) a numeric re-diff resolving the 207-vs-208 base-species discrepancy and re-verifying the canonical 73 Mega-capable count against the fixture set. Also decide and test the module-vs-classic-script question by literally double-clicking `index.html`, and read PokeAPI's `LICENCE.txt` before shipping sprites. SHEL-04 (pure core) is verified by a CI check and SHEL-07 (seeded randomness) by reproducibility after reload rather than by a user-visible behavior — they are enabling constraints for everything downstream. The two hardcoded players are scaffolding, replaced in Phase 2. **Plan count revised from 3 to 11 at planning time**: 32 requirements plus greenfield scaffolding plus six mandated verification chores cannot fit three plans at the 2–3-task, ~50%-context ceiling. The plan chain 01-01 through 01-06 is the walking skeleton proper (see `SKELETON.md`); 01-07 through 01-11 layer the remaining acceptance requirements onto it.
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Draft Skeleton on a Real URL | 10/11 | In Progress|  |
+| 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 0/3 | Not started | - |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
