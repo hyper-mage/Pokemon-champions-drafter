@@ -18,6 +18,9 @@ import {
   isValidTournament,
   MAX_IMPORT_BYTES,
   MAX_LOG_ENTRIES,
+  MAX_PLAYERS,
+  MAX_POOL_IDS,
+  MAX_ROUNDS,
   parseTournamentFile,
 } from '../../src/core/import-guard';
 import { SCHEMA_VERSION, type TournamentDoc } from '../../src/core/model';
@@ -245,6 +248,119 @@ describe('bounds', () => {
     }));
 
     expect(rejection(parse(JSON.stringify(doc)))).toBe('wrongShape');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Counts — CR-01
+// ---------------------------------------------------------------------------
+
+/**
+ * A hostile file, as text, with the hostile value proved to be in it.
+ *
+ * Both halves matter. Serializing is how the file actually arrives, and the `toContain`
+ * is the guard against this file's own worst habit: a "hostile" fixture that quietly
+ * serialized clean and made the refusal below assert nothing. Text surgery rather than
+ * an extra key, because `JSON.parse` keeps the LAST of two identical keys — injecting
+ * `"rounds":4000000000` ahead of the real one would test the real one.
+ */
+function hostileText(doc: TournamentDoc, from: string, to: string): string {
+  const text = JSON.stringify(doc);
+  expect(text.includes(from), `fragment ${from} not in the fixture`).toBe(true);
+
+  const hostile = text.replace(from, to);
+  expect(hostile).toContain(to);
+  return hostile;
+}
+
+describe('counts', () => {
+  it('refuses a rounds count that renders as a multi-billion-element allocation', () => {
+    // Twenty bytes. It passes the 5 MB size gate and the 20000-entry log cap with room to
+    // spare, and `selectTeams` turns it into `Array.from({ length: rounds })` once per
+    // player during App's render — an out-of-memory abort from a file a friend sent.
+    const text = hostileText(validDoc(), '"rounds":2', '"rounds":4000000000');
+
+    expect(rejection(parse(text))).toBe('wrongShape');
+  });
+
+  it('refuses one round past the cap and accepts the cap itself', () => {
+    // Off-by-one in the defensive direction still refuses documents this app could
+    // legitimately produce, so both sides of the boundary are asserted.
+    expect(MAX_ROUNDS).toBe(24);
+
+    const over = hostileText(validDoc(), '"rounds":2', `"rounds":${String(MAX_ROUNDS + 1)}`);
+    expect(rejection(parse(over))).toBe('wrongShape');
+
+    const at = hostileText(validDoc(), '"rounds":2', `"rounds":${String(MAX_ROUNDS)}`);
+    expect(parse(at).ok).toBe(true);
+  });
+
+  it('refuses a rounds count of Number.MAX_SAFE_INTEGER', () => {
+    // The old check was `Number.isSafeInteger(value) && value > 0`, so this was the
+    // largest value it accepted rather than the first one it refused.
+    const text = hostileText(
+      validDoc(),
+      '"rounds":2',
+      `"rounds":${String(Number.MAX_SAFE_INTEGER)}`,
+    );
+
+    expect(rejection(parse(text))).toBe('wrongShape');
+  });
+
+  it('refuses more players than a room, and accepts a room', () => {
+    expect(MAX_PLAYERS).toBe(64);
+
+    const roster = (count: number) =>
+      Array.from({ length: count }, (_unused, index) => ({
+        id: `p${String(index)}`,
+        name: `Player ${String(index)}`,
+      }));
+
+    const over = validDoc();
+    over.config.players = roster(MAX_PLAYERS + 1);
+    const overText = JSON.stringify(over);
+    expect(overText).toContain(`"id":"p${String(MAX_PLAYERS)}"`);
+    expect(rejection(parse(overText))).toBe('wrongShape');
+
+    const at = validDoc();
+    at.config.players = roster(MAX_PLAYERS);
+    expect(parse(JSON.stringify(at)).ok).toBe(true);
+  });
+
+  it('refuses a pool larger than any roster this app will ever load', () => {
+    expect(MAX_POOL_IDS).toBe(5000);
+
+    // Within the 5 MB budget an unbounded `ids` is roughly 1.5 million strings, and
+    // `PoolGrid` renders one `MonCard` per id.
+    const doc = validDoc();
+    const built = doc.log[0];
+    if (built === undefined || built.type !== 'pool/built') {
+      throw new Error('fixture no longer starts with pool/built');
+    }
+    built.ids = Array.from(
+      { length: MAX_POOL_IDS + 1 },
+      (_unused, index) => `mon-${String(index)}`,
+    );
+
+    const text = JSON.stringify(doc);
+    expect(text).toContain(`"mon-${String(MAX_POOL_IDS)}"`);
+    expect(rejection(parse(text))).toBe('wrongShape');
+  });
+
+  it('refuses a starting order longer than the player cap', () => {
+    const doc = validDoc();
+    const started = doc.log[1];
+    if (started === undefined || started.type !== 'draft/started') {
+      throw new Error('fixture no longer carries draft/started second');
+    }
+    started.order = Array.from(
+      { length: MAX_PLAYERS + 1 },
+      (_unused, index) => `p${String(index)}`,
+    );
+
+    const text = JSON.stringify(doc);
+    expect(text).toContain(`"p${String(MAX_PLAYERS)}"`);
+    expect(rejection(parse(text))).toBe('wrongShape');
   });
 });
 

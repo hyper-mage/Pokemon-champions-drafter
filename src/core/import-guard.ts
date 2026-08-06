@@ -34,6 +34,14 @@
  *      strictly increasing from zero, which is what makes `draft/pickUndone`'s targeting
  *      unambiguous (T-01-44).
  *
+ *      Every COUNT is bounded too, and separately, because the size gate does not
+ *      constrain a count: `"rounds": 4000000000` is twenty bytes and passes it. Counts
+ *      reach the renderer as allocations — `rounds` becomes a slot array per player,
+ *      `players` becomes board rows, `pool/built.ids` becomes cells — so an unbounded
+ *      count is an out-of-memory abort inside `App`'s render, which the host meets as a
+ *      blank page rather than as a refusal. See {@link MAX_ROUNDS}, {@link MAX_PLAYERS}
+ *      and {@link MAX_POOL_IDS}.
+ *
  * ---------------------------------------------------------------------------
  * Refuse, do not repair
  * ---------------------------------------------------------------------------
@@ -71,6 +79,42 @@ export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
  * rejected-anyway log can never become the denial of service.
  */
 export const MAX_LOG_ENTRIES = 20000;
+
+/**
+ * The round cap — 24.
+ *
+ * `config.rounds` is not a number that is merely stored. `selectTeams` turns it directly
+ * into `Array.from({ length: rounds })` ONCE PER PLAYER, and `BoardGrid` does the same for
+ * its header row, both during render. A twenty-byte field — `"rounds": 4000000000` — is
+ * therefore an out-of-memory abort wearing a small number's clothes, and neither the 5 MB
+ * size gate nor the log cap constrains it, because it is one small number.
+ *
+ * Phase 1 drafts six. Twelve is already past anything PROJECT.md describes, and this
+ * leaves room for the post-draft swap rounds on top of that. The cap is on the untrusted
+ * boundary, not on the application: nothing here decides what a tournament may be, only
+ * what an imported file may claim one was.
+ */
+export const MAX_ROUNDS = 24;
+
+/**
+ * The player cap — 64.
+ *
+ * PROJECT.md sizes this at 4–8 players and asks that higher counts not break, which is a
+ * requirement about the draft engine rather than a licence for a file to declare a million
+ * players. Sixty-four is more than a room, and `MAX_PLAYERS * MAX_ROUNDS` is 1536 board
+ * cells — a big grid, not an allocation failure.
+ */
+export const MAX_PLAYERS = 64;
+
+/**
+ * The pool cap — 5000 ids.
+ *
+ * A pool is drawn from the roster, and the committed snapshot is 235 rows. Within the 5 MB
+ * budget an unbounded `pool/built.ids` is roughly 1.5 million strings, every one of which
+ * `PoolGrid` renders as a `MonCard`. Twenty times the current roster absorbs every
+ * regulation rotation this project will ever see and still refuses that file.
+ */
+export const MAX_POOL_IDS = 5000;
 
 /**
  * The three keys that turn a data structure into a code path.
@@ -151,9 +195,17 @@ function isPositiveInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
-/** A fresh array of strings, or null. The copy is the point: no aliasing into state. */
-function copyStringArray(value: unknown): string[] | null {
+/**
+ * A fresh array of strings, or null. The copy is the point: no aliasing into state.
+ *
+ * `limit` is required rather than optional. Every string array in this document is
+ * rendered — pool ids become cells, the starting order becomes turns — so an unbounded one
+ * is an unbounded render, and making the caller name its bound means a new array field
+ * cannot arrive without someone deciding what its bound is.
+ */
+function copyStringArray(value: unknown, limit: number): string[] | null {
   if (!Array.isArray(value)) return null;
+  if (value.length > limit) return null;
 
   const copied: string[] = [];
   for (const item of value) {
@@ -169,6 +221,7 @@ function copyStringArray(value: unknown): string[] | null {
 
 function buildPlayers(value: unknown): PlayerConfig[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
+  if (value.length > MAX_PLAYERS) return null;
 
   const players: PlayerConfig[] = [];
   for (const raw of value) {
@@ -199,8 +252,12 @@ function buildConfig(value: unknown): TournamentConfig | null {
   const players = buildPlayers(raw['players']);
   if (players === null) return null;
 
+  // Refused, not clamped. Clamping 4000000000 down to 24 would load a document that
+  // claims to be a tournament nobody played, under a board the host would have no reason
+  // to distrust — and this file's whole posture is that repairing untrusted input is worse
+  // than refusing it.
   const rounds = raw['rounds'];
-  if (!isPositiveInteger(rounds)) return null;
+  if (!isPositiveInteger(rounds) || rounds > MAX_ROUNDS) return null;
 
   const formatLabel = raw['formatLabel'];
   const rosterVersion = raw['rosterVersion'];
@@ -247,7 +304,7 @@ function buildLogEntry(value: unknown): Action | null {
 
   switch (type) {
     case 'pool/built': {
-      const ids = copyStringArray(raw['ids']);
+      const ids = copyStringArray(raw['ids'], MAX_POOL_IDS);
       const rosterVersion = raw['rosterVersion'];
       const checksum = raw['checksum'];
       if (ids === null || typeof rosterVersion !== 'string' || typeof checksum !== 'string') {
@@ -257,7 +314,10 @@ function buildLogEntry(value: unknown): Action | null {
     }
 
     case 'draft/started': {
-      const order = copyStringArray(raw['order']);
+      // Bounded by the player cap rather than by `config.players`. Checking it against the
+      // configured roster would be referential integrity, which this function deliberately
+      // does not do — every entry is typed in isolation. A bound is not an integrity check.
+      const order = copyStringArray(raw['order'], MAX_PLAYERS);
       if (order === null) return null;
       return { type: 'draft/started', order, ...envelope };
     }

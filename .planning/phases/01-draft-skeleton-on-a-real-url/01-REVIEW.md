@@ -101,6 +101,10 @@ Everything below cites a line. Nothing below is a style preference.
 
 ### CR-01: An imported file with a large `rounds` permanently bricks the app
 
+**Status:** Fixed. `MAX_ROUNDS`, `MAX_PLAYERS` and `MAX_POOL_IDS` refuse the counts in the
+guard, `copyStringArray` takes a required bound, and `app.tsx` persists an imported
+document from a post-commit effect instead of ahead of the render.
+
 **File:** `src/core/import-guard.ts:203`, `src/core/selectors.ts:67`, `src/ui/components/BoardGrid.tsx:55`
 **Issue:**
 `buildConfig` accepts any positive safe integer for `rounds`:

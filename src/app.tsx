@@ -158,6 +158,11 @@ export function App() {
   const [writeFailureAcknowledged, setWriteFailureAcknowledged] = useState(false);
   const [importFlow, setImportFlow] = useState<ImportFlow>({ status: 'idle' });
 
+  // An imported document waiting to be written, held between the adoption and the commit
+  // of the render it caused. Never a document that has only been validated: it is set
+  // after `adoptTournament` succeeds and consumed by the effect further down.
+  const [importedToPersist, setImportedToPersist] = useState<TournamentDoc | null>(null);
+
   // Dismissal lasts the session, which is what "for the session" means here: component
   // state dies with the page, so reopening the tournament tomorrow offers the checkpoint
   // again. Persisting the dismissal would mean a host who clicked `Not now` once is never
@@ -316,27 +321,55 @@ export function App() {
   /**
    * Install a validated document, and tell the host it happened.
    *
-   * The immediate `save` is not redundant against the autosave: the autosave is on a
-   * 300ms trailing debounce, and an import is precisely the moment where the window
-   * between "the screen changed" and "the change is on disk" should be zero. It is gated
-   * on the canary for the same reason the autosave is — a browser that already proved it
-   * will not keep anything gets no further attempts to fail at.
+   * The write is deliberately NOT performed here. Ordering it before the render was the
+   * mechanism that turned one bad file into a permanent brick: an imported document that
+   * the render cannot survive had already been written to `localStorage` by the time the
+   * render threw, so every subsequent reload restored it, threw again, and never reached
+   * `TopBar` — leaving the app's own `Import JSON…` recovery unreachable and site data the
+   * only way out. Handing the document to the effect below instead means the write happens
+   * after a render has committed with it on screen, so a document that cannot be displayed
+   * is also a document that was never kept.
    */
-  const adoptImported = useCallback(
-    (imported: TournamentDoc) => {
-      if (!adoptTournament(imported)) {
-        setImportFlow({ status: 'failed', message: IMPORT_WRONG_SHAPE });
-        return;
-      }
+  const adoptImported = useCallback((imported: TournamentDoc) => {
+    if (!adoptTournament(imported)) {
+      setImportFlow({ status: 'failed', message: IMPORT_WRONG_SHAPE });
+      return;
+    }
 
-      if (storageOk) saveTournament(imported);
+    setImportedToPersist(imported);
 
-      const restored = getState();
-      announce(importAnnouncement(restored === null ? 0 : selectPickCount(restored)));
-      setImportFlow({ status: 'idle' });
-    },
-    [storageOk],
-  );
+    const restored = getState();
+    announce(importAnnouncement(restored === null ? 0 : selectPickCount(restored)));
+    setImportFlow({ status: 'idle' });
+  }, []);
+
+  /**
+   * Persist a freshly imported document, once, after the render that displayed it.
+   *
+   * An effect rather than a call inside `adoptImported`, and the timing is the entire
+   * point: Preact flushes effects on commit, so a render that throws never gets here.
+   *
+   * Still immediate rather than left to the autosave, for the reason the direct call had:
+   * the autosave is on a 300ms trailing debounce and an import is exactly the moment where
+   * the window between "the screen changed" and "the change is on disk" should be as small
+   * as it can be. Gated on the canary for the same reason the autosave is — a browser that
+   * already proved it will not keep anything gets no further attempts to fail at.
+   *
+   * What this does NOT do, stated rather than left to be discovered: the debounced autosave
+   * is a separate subscriber and schedules its own write the moment the document changes,
+   * so it can still persist a document 300ms later that the render did not survive. The
+   * guarantee against that lives in `import-guard.ts`, which refuses the counts that make a
+   * document unrenderable in the first place. This ordering is the second line, not the
+   * first.
+   */
+  useEffect(() => {
+    if (importedToPersist === null) return;
+
+    // Cleared first. A `save` that throws must not leave this effect re-entering on the
+    // same document for the rest of the session.
+    setImportedToPersist(null);
+    if (storageOk) saveTournament(importedToPersist);
+  }, [importedToPersist, storageOk]);
 
   /**
    * Read, validate, then decide whether anything is at stake.
