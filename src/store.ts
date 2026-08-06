@@ -24,6 +24,7 @@ import { computed, effect, signal, type ReadonlySignal } from '@preact/signals';
 
 import { now } from './adapters/clock';
 import { newId, newSeed } from './adapters/id';
+import { isOwner } from './adapters/tab-lock';
 import { draftStarted, poolBuilt, type Action, type Intent } from './core/actions';
 import {
   initialState,
@@ -236,8 +237,44 @@ export function adoptTournament(doc: TournamentDoc): boolean {
  * D-10 rejects redo for.
  *
  * Returns whether anything was undone, so a caller can stay silent when there was not.
+ *
+ * ## The ownership gate — PERS-03 / T-01-40
+ *
+ * A tab that does not hold write ownership may not undo, and the check lives HERE rather
+ * than only in the keyboard handler that exposed it. `app.tsx` marks the whole draft
+ * region `inert` in a secondary tab, which correctly kills the `Undo last pick` button,
+ * every pool cell and the tab order — but `TopBar` registers `Ctrl+Z` on `document`, which
+ * is outside that subtree, and `inert` governs targeting inside a subtree rather than
+ * document-level listeners. So the keystroke reached this function.
+ *
+ * The consequence was not a refused write; it was a delayed clobber. `persistence.save()`
+ * declines on the spot, so nothing is corrupted immediately, but the secondary keeps a
+ * locally-undone document. On `Take over drafting here`, `loadIfNewer()` compares
+ * generations, finds them equal if the owner has not saved since this tab last read, and
+ * returns null — so the secondary keeps its own log and its next autosave writes the
+ * owner's pick out of existence. That is exactly the T-01-40 clobber the lock exists to
+ * prevent, arriving through the keyboard.
+ *
+ * `TopBar` gates the keystroke too, so a read-only tab does not swallow the browser's own
+ * Ctrl+Z with a `preventDefault`. This line is the guarantee; that one is the manners.
+ *
+ * ## Why `dispatch` is NOT gated the same way
+ *
+ * Asked and answered rather than overlooked. `isOwner()` is false for the 250ms
+ * `CLAIM_WINDOW_MS` as well as in a secondary, and `createTournament` dispatches
+ * `pool/built` and `draft/started` during boot — inside that window whenever the roster
+ * snapshot comes from cache, which offline is every time. Gating `dispatch` would refuse
+ * those two and leave a document with an empty log, an unpickable pool and no turn banner,
+ * which is a certain outage traded for a rare race. The pick path needs no such gate
+ * anyway: `handlePick` is only ever reached from a pool cell, and pool cells are inside the
+ * `inert` region with no document-level listener of their own.
+ *
+ * Undo can afford the same window because the cost of losing it is one refused keystroke a
+ * quarter-second after load, on a draft that must already have a pick in it.
  */
 export function undo(resolveSpeciesName?: (monId: string) => string): boolean {
+  if (!isOwner()) return false;
+
   const previous = docSignal.peek();
   if (previous === null || !canUndo(previous)) return false;
 

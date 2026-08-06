@@ -173,6 +173,11 @@ strings.
 
 ### CR-02: `Ctrl+Z` bypasses `inert` in a read-only tab and clobbers the owner's draft
 
+**Status:** Fixed. `store.undo()` refuses without `isOwner()`, so the guarantee sits on the
+write path rather than one caller deep; `TopBar` gates the keystroke as well so a secondary
+does not swallow the browser's own Ctrl+Z. `dispatch` is deliberately not gated — see the
+comment on `undo` for why the 250 ms claim window makes that a certain outage.
+
 **File:** `src/ui/components/TopBar.tsx:107-125`, `src/store.ts:240-257`, `src/app.tsx:446`
 **Issue:**
 `app.tsx:446` makes the whole draft region `inert` when the tab is a secondary, which correctly
