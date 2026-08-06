@@ -11,9 +11,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **ROST-01**: Pool is restricted to Pokémon legal in the current Champions ranked Regulation Set
 - [ ] **ROST-02**: A committed roster snapshot ships in the repo and the app works fully offline with it
-- [ ] **ROST-03**: A repo script regenerates the snapshot from Pokémon Showdown's `champions` mod, pinned to a commit SHA
+- [x] **ROST-03**: A repo script regenerates the snapshot from Pokémon Showdown's `champions` mod, pinned to an exact, verifiable upstream version — the `pokemon-showdown` npm package at an exact version plus its tarball integrity hash. (Originally worded "pinned to a commit SHA". The build consumes the npm devDependency and never checks out the git repo, so a repo SHA would be decorative metadata nothing verifies, while the sha512 integrity hash covers the exact bytes the snapshot was generated from. Amended after 01-03 shipped `upstreamRef` rather than a SHA.)
 - [x] **ROST-04**: The regeneration script fails loudly when species or Mega counts drift unexpectedly, rather than silently committing a different regulation
-- [ ] **ROST-05**: Every snapshot carries regulation, validFrom, validUntil, upstreamCommit, generatedAt, counts, and checksum
+- [x] **ROST-05**: Every snapshot carries regulation, validFrom, validUntil, `upstreamRef`, generatedAt, counts, and checksum. (Field originally named `upstreamCommit`; renamed to match what the pin actually is — `npm:pokemon-showdown@0.11.11 (sha512-…)` — since the source is an npm package, not a git commit.)
 - [x] **ROST-06**: The prior regulation's frozen snapshot is retained, so completed tournaments stay meaningful after a rotation
 - [x] **ROST-07**: Roster records Mega-capability per base species and each Mega forme's stone item name
 - [x] **ROST-08**: The draftable unit is the base species; Mega-capability is a flag on it, not a separate pool row
@@ -190,9 +190,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 |-------------|-------|--------|
 | ROST-01 | Phase 1 | Complete |
 | ROST-02 | Phase 1 | Pending |
-| ROST-03 | Phase 1 | Pending |
+| ROST-03 | Phase 1 | Complete |
 | ROST-04 | Phase 1 | Complete |
-| ROST-05 | Phase 1 | Pending |
+| ROST-05 | Phase 1 | Complete |
 | ROST-06 | Phase 1 | Complete |
 | ROST-07 | Phase 1 | Complete |
 | ROST-08 | Phase 1 | Complete |
