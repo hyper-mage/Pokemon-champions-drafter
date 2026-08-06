@@ -29,6 +29,7 @@
 
 import { computed, signal, type ReadonlySignal } from '@preact/signals';
 
+import { isValidTournament } from '../core/import-guard';
 import { SCHEMA_VERSION, type TournamentDoc } from '../core/model';
 import { now } from './clock';
 import { isOwner, notifySaved } from './tab-lock';
@@ -192,37 +193,6 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Whether a parsed value is safe to fold.
- *
- * Stored bytes are untrusted input. They can be truncated by a write that died with the
- * tab, hand-edited in devtools, or written by a different build. The bar here is not
- * "is this a valid tournament" — that is plan 01-10's import guard, which this will be
- * replaced by — it is "will `fold` survive being handed this". Everything checked below
- * is something the fold path dereferences without asking first: a log entry that is
- * `null` crashes on `.type`, and a config with no `players` array crashes in
- * `initialState`.
- *
- * A corrupt record must never half-load. Returning null loses the autosave; loading half
- * of it loses the draft and looks like it worked.
- */
-function isRestorableDoc(value: unknown): value is TournamentDoc {
-  if (!isPlainRecord(value)) return false;
-  if (value['schemaVersion'] !== SCHEMA_VERSION) return false;
-
-  const config = value['config'];
-  if (!isPlainRecord(config)) return false;
-  if (typeof config['rounds'] !== 'number') return false;
-  if (!Array.isArray(config['players'])) return false;
-  if (!config['players'].every((player) => isPlainRecord(player))) return false;
-
-  if (!isPlainRecord(value['rng'])) return false;
-
-  const log = value['log'];
-  if (!Array.isArray(log)) return false;
-  return log.every((entry) => isPlainRecord(entry) && typeof entry['type'] === 'string');
-}
-
-/**
  * The stored document, or null when there is nothing usable to restore.
  *
  * Null for every failure mode without distinguishing between them, because the caller's
@@ -250,14 +220,32 @@ export function load(): TournamentDoc | null {
 
   if (!isPlainRecord(parsed)) return null;
   if (parsed['schemaVersion'] !== SCHEMA_VERSION) return null;
-  if (!isRestorableDoc(parsed['doc'])) return null;
+
+  // The same guard the imported-file path runs — T-01-05.
+  //
+  // A stored record and a hostile file are the same kind of input arriving by different
+  // routes: both can be truncated, hand-edited in devtools, or written by a build this
+  // one does not know. Before plan 01-10 this file carried a provisional check whose bar
+  // was only "will `fold` survive being handed this"; `isValidTournament` raises it to
+  // "is this a tournament", and — the part the local check could not do at all — rejects
+  // an object carrying `__proto__`, `constructor` or `prototype` as own properties.
+  // `JSON.parse` above runs without a reviver, so that structural check is the only thing
+  // between a poisoned localStorage entry and the store.
+  const stored = parsed['doc'];
+  if (!isValidTournament(stored)) return null;
 
   // Continue the sequence rather than restarting it, so a reload cannot make this tab
   // look older than the record it just read.
   const storedGeneration = parsed['generation'];
   generation = Number.isSafeInteger(storedGeneration) ? (storedGeneration as number) : 0;
 
-  return parsed['doc'];
+  // `isValidTournament` is a predicate, so this is the parsed object itself rather than a
+  // rebuilt copy — narrowed, not reconstructed. The distinction is worth stating: a
+  // stored record that passes carries its own unknown fields into the store and back out
+  // on the next save, whereas the FILE path returns a document rebuilt field by field and
+  // drops them. Both refuse the poison keys, which is the part that matters; the file
+  // path is stricter because its input arrived from outside this browser.
+  return stored;
 }
 
 /**

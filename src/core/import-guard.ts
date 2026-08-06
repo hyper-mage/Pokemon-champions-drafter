@@ -1,0 +1,434 @@
+/**
+ * import-guard.ts — the one untrusted-input boundary in the application.
+ *
+ * Everything else this app reads, it wrote. This file reads a JSON file the host was
+ * handed by someone else, and a record out of `localStorage` that could have been
+ * truncated by a tab that died mid-write, hand-edited in devtools, or written by a
+ * different build. Both sources get the same treatment, through the same code, because
+ * two guards with one job is two guards that can disagree.
+ *
+ * Hand-rolled rather than delegated to a schema library, and that is a constraint rather
+ * than a preference: PROJECT.md fixes the runtime dependency list at exactly two, and
+ * validation cannot be a devDependency because it runs in the browser. CLAUDE.md's
+ * Supporting Libraries table calls a ~40-line hand-written guard "entirely defensible"
+ * for a schema this size, and it is the option that keeps the count at two.
+ *
+ * ---------------------------------------------------------------------------
+ * Four defences, in the order they run
+ * ---------------------------------------------------------------------------
+ *
+ *   1. Size gate, BEFORE parsing. A tournament is tens of KB. Anything past 5 MB is
+ *      corrupt or hostile, and the point of refusing first is that the memory is never
+ *      spent (T-01-03).
+ *
+ *   2. A parse-boundary reviver that drops `__proto__`, `constructor` and `prototype`.
+ *      A reviver returning undefined omits the key outright, so the poisoned value never
+ *      exists as a property even transiently (T-01-01).
+ *
+ *   3. An allow-list rebuild. The returned tournament is constructed field by field from
+ *      named properties of the parsed value. Nothing is merged, spread, bulk-copied or
+ *      cloned wholesale into it, so a field this file does not name cannot reach state —
+ *      not because it was filtered out, but because nothing ever picked it up.
+ *
+ *   4. Bounds and ordering. At most 20000 log entries; every entry typed; `seq` values
+ *      strictly increasing from zero, which is what makes `draft/pickUndone`'s targeting
+ *      unambiguous (T-01-44).
+ *
+ * ---------------------------------------------------------------------------
+ * Refuse, do not repair
+ * ---------------------------------------------------------------------------
+ *
+ * Every failure path returns a reason and no tournament. There is deliberately no
+ * "fix it up and load what we can": a partially repaired draft looks loaded, and the
+ * host discovers what went missing at the point they needed it. The one honest answer to
+ * a file that does not match is to say so and leave the draft in progress untouched
+ * (T-01-45). The caller maps `reason` to the two specified sentences and does nothing
+ * else with it.
+ *
+ * Pure, like everything under `src/core`: no clock, no randomness, no storage, no DOM.
+ * The byte length is passed in by the adapter that read the file, because measuring it
+ * would mean reaching for an ambient API from inside the core.
+ */
+
+import type { Action } from './actions';
+import { migrate } from './migrate';
+import type { PlayerConfig, TournamentConfig, TournamentDoc } from './model';
+
+/**
+ * The size gate — 5 MB.
+ *
+ * Two orders of magnitude above the largest plausible tournament (a complete eight-player
+ * draft is a few hundred log entries) and comfortably under the ~5 MB `localStorage`
+ * origin cap, so a file that passes this gate is a file that could have been saved.
+ */
+export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+
+/**
+ * The log cap — 20000 entries.
+ *
+ * A twelve-round eight-player draft with bans, card plays and a bracket is low hundreds.
+ * Twenty thousand is unreachable by legitimate play and low enough that folding a
+ * rejected-anyway log can never become the denial of service.
+ */
+export const MAX_LOG_ENTRIES = 20000;
+
+/**
+ * The three keys that turn a data structure into a code path.
+ *
+ * `JSON.parse` itself does not invoke setters — it uses a data-property definition, so
+ * parsing alone cannot pollute. The danger is everything that happens next: a recursive
+ * merge, a bulk field copy, or an index assignment into an existing object will happily
+ * walk one of these into `Object.prototype` and change the behaviour of every object in
+ * the process. This file performs none of those operations, and drops the keys anyway,
+ * because "the current implementation happens not to" is not a security property.
+ */
+const POISON_KEYS = ['__proto__', 'constructor', 'prototype'] as const;
+
+export type ImportRejectionReason =
+  /** Bigger than the size gate. Never parsed. */
+  | 'tooLarge'
+  /** Not JSON. */
+  | 'notJson'
+  /** JSON, but not a tournament this build recognises. */
+  | 'wrongShape'
+  /** A tournament from a newer build. */
+  | 'newerSchema'
+  /** A schema version this build has never supported. */
+  | 'unknownSchema';
+
+export type ImportResult =
+  | { ok: true; doc: TournamentDoc }
+  | { ok: false; reason: ImportRejectionReason };
+
+// ---------------------------------------------------------------------------
+// Primitives
+// ---------------------------------------------------------------------------
+
+/**
+ * A JSON object, and specifically not an array.
+ *
+ * Arrays pass `typeof === 'object'` and would then satisfy every property check by
+ * having none of the properties, so excluding them explicitly is load-bearing.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Whether an object carries one of the poison keys as its OWN property.
+ *
+ * Checked with the prototype's own `hasOwnProperty` rather than the method on the value,
+ * because the value's own `hasOwnProperty` may itself be attacker-supplied — which is
+ * exactly the class of trick this function is looking for.
+ */
+function hasPoisonKey(value: Record<string, unknown>): boolean {
+  for (const key of POISON_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) return true;
+  }
+  return false;
+}
+
+/** A plain object that is also clean. Every descent into the parsed value goes through here. */
+function safeObject(value: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(value)) return null;
+  if (hasPoisonKey(value)) return null;
+  return value;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+/** A fresh array of strings, or null. The copy is the point: no aliasing into state. */
+function copyStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+
+  const copied: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') return null;
+    copied.push(item);
+  }
+  return copied;
+}
+
+// ---------------------------------------------------------------------------
+// The allow-list rebuild
+// ---------------------------------------------------------------------------
+
+function buildPlayers(value: unknown): PlayerConfig[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+
+  const players: PlayerConfig[] = [];
+  for (const raw of value) {
+    const entry = safeObject(raw);
+    if (entry === null) return null;
+
+    const id = entry['id'];
+    const name = entry['name'];
+    if (!isNonEmptyString(id) || typeof name !== 'string') return null;
+
+    // Two named fields, written out. A player carrying a third field loses it here, which
+    // is the intended outcome rather than a limitation.
+    players.push({ id, name });
+  }
+
+  // Ids are the key everything else in the document references. Duplicates would make
+  // `selectTeams` and `selectCurrentTurn` disagree about who is who.
+  const ids = new Set(players.map((player) => player.id));
+  if (ids.size !== players.length) return null;
+
+  return players;
+}
+
+function buildConfig(value: unknown): TournamentConfig | null {
+  const raw = safeObject(value);
+  if (raw === null) return null;
+
+  const players = buildPlayers(raw['players']);
+  if (players === null) return null;
+
+  const rounds = raw['rounds'];
+  if (!isPositiveInteger(rounds)) return null;
+
+  const formatLabel = raw['formatLabel'];
+  const rosterVersion = raw['rosterVersion'];
+  const rosterChecksum = raw['rosterChecksum'];
+  if (
+    typeof formatLabel !== 'string' ||
+    typeof rosterVersion !== 'string' ||
+    typeof rosterChecksum !== 'string'
+  ) {
+    return null;
+  }
+
+  return { formatLabel, players, rounds, rosterVersion, rosterChecksum };
+}
+
+/**
+ * One log entry: the envelope every action has, plus the payload its type declares.
+ *
+ * Known types are rebuilt field by field. An UNKNOWN type keeps its envelope and loses
+ * its payload, which is a deliberate and slightly uncomfortable trade. `apply` is
+ * required to fold an action type this build has never heard of without crashing (sync
+ * rule 11), so dropping such entries entirely would be wrong — it would renumber nothing
+ * but would silently shorten a newer client's history. Keeping the payload would mean
+ * copying arbitrary attacker-shaped structure into state, which is the one thing this
+ * file exists to prevent. So the event is preserved as having happened, and what it said
+ * is not. Re-exporting such a document loses those payloads; that is stated here rather
+ * than discovered later.
+ */
+function buildLogEntry(value: unknown): Action | null {
+  const raw = safeObject(value);
+  if (raw === null) return null;
+
+  const type = raw['type'];
+  const seq = raw['seq'];
+  const at = raw['at'];
+  const actorId = raw['actorId'];
+
+  if (typeof type !== 'string') return null;
+  if (!isNonNegativeInteger(seq)) return null;
+  if (!isFiniteNumber(at)) return null;
+  if (typeof actorId !== 'string') return null;
+
+  const envelope = { seq, at, actorId };
+
+  switch (type) {
+    case 'pool/built': {
+      const ids = copyStringArray(raw['ids']);
+      const rosterVersion = raw['rosterVersion'];
+      const checksum = raw['checksum'];
+      if (ids === null || typeof rosterVersion !== 'string' || typeof checksum !== 'string') {
+        return null;
+      }
+      return { type: 'pool/built', ids, rosterVersion, checksum, ...envelope };
+    }
+
+    case 'draft/started': {
+      const order = copyStringArray(raw['order']);
+      if (order === null) return null;
+      return { type: 'draft/started', order, ...envelope };
+    }
+
+    case 'draft/pickMade': {
+      const playerId = raw['playerId'];
+      const monId = raw['monId'];
+      const round = raw['round'];
+      const pickIndex = raw['pickIndex'];
+      if (typeof playerId !== 'string' || typeof monId !== 'string') return null;
+      if (!isPositiveInteger(round) || !isNonNegativeInteger(pickIndex)) return null;
+      return { type: 'draft/pickMade', playerId, monId, round, pickIndex, ...envelope };
+    }
+
+    case 'draft/pickUndone': {
+      const targetSeq = raw['targetSeq'];
+      if (!isNonNegativeInteger(targetSeq)) return null;
+      return { type: 'draft/pickUndone', targetSeq, ...envelope };
+    }
+
+    default:
+      // Envelope only. The cast is honest about what is happening: `TournamentDoc.log` is
+      // typed as actions this build understands, and this is an action it does not.
+      // `apply` reaches its `default` branch and returns the state unchanged.
+      return { type, ...envelope } as unknown as Action;
+  }
+}
+
+/**
+ * The log, bounded, typed, and in an order the reducer can rely on.
+ *
+ * `seq` must start at zero and strictly increase. Uniqueness is the requirement that
+ * actually matters — `draft/pickUndone` names the pick it retracts BY seq, so two entries
+ * sharing one would retract an arbitrary one of the two — and monotonicity is what makes
+ * `store.ts`'s `max(seq) + 1` allocate a number the log has never used.
+ *
+ * Gaps are ALLOWED, and that is a considered departure from this plan's prose, which
+ * asked for "0, 1, 2, … with no gaps". `store.ts` allocates from `max(seq) + 1` rather
+ * than `log.length` for the express purpose of surviving a removal from the middle of the
+ * log, which Phase 2 performs the moment undo has card plays and bans to step over. A
+ * contiguity requirement would therefore make this application refuse a file it had
+ * written itself, which is a worse failure than the one it would be guarding against —
+ * and it would guard against nothing, because the reducer reads the log in array order
+ * and never treats a `seq` as an index.
+ */
+function buildLog(value: unknown): Action[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length > MAX_LOG_ENTRIES) return null;
+
+  const log: Action[] = [];
+  let previousSeq = -1;
+
+  for (const raw of value) {
+    const entry = buildLogEntry(raw);
+    if (entry === null) return null;
+
+    if (log.length === 0 && entry.seq !== 0) return null;
+    if (entry.seq <= previousSeq) return null;
+    previousSeq = entry.seq;
+
+    log.push(entry);
+  }
+
+  return log;
+}
+
+/**
+ * The whole tournament, rebuilt.
+ *
+ * Returns null for anything that is not one. The version question is NOT asked here —
+ * `parseTournamentFile` asks `migrate` separately, because "this is not a tournament" and
+ * "this is a tournament I cannot read" are different sentences on screen.
+ */
+function buildDoc(value: unknown): TournamentDoc | null {
+  const raw = safeObject(value);
+  if (raw === null) return null;
+
+  const schemaVersion = raw['schemaVersion'];
+  if (typeof schemaVersion !== 'number') return null;
+
+  const id = raw['id'];
+  if (!isNonEmptyString(id)) return null;
+
+  const createdAt = raw['createdAt'];
+  if (!isNonNegativeInteger(createdAt)) return null;
+
+  const config = buildConfig(raw['config']);
+  if (config === null) return null;
+
+  const rng = safeObject(raw['rng']);
+  if (rng === null) return null;
+  if (!isFiniteNumber(rng['seed']) || !isNonNegativeInteger(rng['cursor'])) return null;
+
+  const log = buildLog(raw['log']);
+  if (log === null) return null;
+
+  // Six named fields. This object literal IS the allow-list; there is no second place to
+  // keep it in sync with.
+  return {
+    schemaVersion,
+    id,
+    createdAt,
+    config,
+    rng: { seed: rng['seed'], cursor: rng['cursor'] },
+    log,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Entry points
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a already-parsed value is a tournament this build can fold.
+ *
+ * The predicate half of the guard, for `persistence.load()`. A stored record has already
+ * been through `JSON.parse` by the time it gets here, so the reviver below never saw it
+ * and the poison-key check inside `safeObject` is the only thing standing between a
+ * hand-edited `localStorage` entry and the same treatment a hostile file gets.
+ *
+ * Deliberately narrower than "would fold without throwing": it answers "is this a
+ * tournament", so a corrupt autosave is discarded rather than partially restored.
+ */
+export function isValidTournament(value: unknown): value is TournamentDoc {
+  const doc = buildDoc(value);
+  if (doc === null) return false;
+  return migrate(doc).ok;
+}
+
+/**
+ * Validate a file's text and hand back a tournament, or a reason and nothing.
+ *
+ * `byteLength` is measured by the adapter that read the file, before the text was ever
+ * in hand — the core may not measure it, and the whole value of the size gate is that it
+ * runs before the parse.
+ */
+export function parseTournamentFile(text: string, byteLength: number): ImportResult {
+  // 1. Size, first, and without looking at the text.
+  if (byteLength > MAX_IMPORT_BYTES) return { ok: false, reason: 'tooLarge' };
+
+  // 2. Parse, with the poison keys dropped at the boundary.
+  //
+  // The reviver both removes the key and records that it was there. Removal alone would
+  // be sanitising — the file would load, minus a payload the host never learns about —
+  // and this app's own exports never contain these keys, so their presence is positive
+  // evidence that the file is not one of ours.
+  let poisoned = false;
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(text, (key: string, item: unknown): unknown => {
+      if (POISON_KEYS.includes(key as (typeof POISON_KEYS)[number])) {
+        poisoned = true;
+        return undefined;
+      }
+      return item;
+    });
+  } catch {
+    return { ok: false, reason: 'notJson' };
+  }
+
+  if (poisoned) return { ok: false, reason: 'wrongShape' };
+
+  // 3. Rebuild from the allow-list.
+  const doc = buildDoc(parsed);
+  if (doc === null) return { ok: false, reason: 'wrongShape' };
+
+  // 4. Version, last, so a well-formed document from a newer build gets the sentence
+  //    about reloading rather than the one about choosing a different file.
+  const migrated = migrate(doc);
+  if (!migrated.ok) return { ok: false, reason: migrated.reason };
+
+  return { ok: true, doc: migrated.doc };
+}
