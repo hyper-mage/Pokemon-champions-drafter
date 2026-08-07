@@ -103,7 +103,7 @@ Plans:
   4. Anyone at the table finds a Pokémon by name or narrows the pool by type and Mega-capability, and reads its sprite, typing, and base stats from across the room at any of the three density settings.
   5. At every moment the shared screen shows whose turn it is, the full players × rounds board as pick history, and each player's team as it fills; every destructive action confirms before committing.
 
-**Plans**: 7 plans
+**Plans**: 8 plans
 
 Plans:
 - [ ] 02-01-PLAN.md — feasibility gate, constrained pool draw, shared pool predicates, roster tripwire
@@ -113,6 +113,7 @@ Plans:
 - [ ] 02-05-PLAN.md — Mega rules and Pool config groups, free numeric fields, the constrained draw
 - [ ] 02-06-PLAN.md — the shared draft screen: two panes, the N-player board, and every destructive confirm
 - [ ] 02-07-PLAN.md — the host banlist: typeahead and ban grid over one list, ban mode, and a pool the bans are absent from
+- [ ] 02-08-PLAN.md — the pool filter bar: name search, the type toolbar and its roving tabindex, and the Mega filter
 
 **UI hint**: yes
 **Notes**: This is the first phase that satisfies a draft-only night end to end. Research need MEDIUM-LOW, concentrated in the general feasibility arithmetic: pool-dry, worst-case ban starvation, and the ~34-player absolute ceiling (`players × 6 ≤ 207`). Mega-specific feasibility deliberately does NOT belong here — it needs the compiled schedule from Phase 3 to know how many Mega rounds exist. Pick order in this phase is a plain randomized rotating order; Phase 3 replaces it with priority cards. DRFT-09's "composing with the round's own restriction" is trivially satisfied here (no round restrictions exist yet) and becomes load-bearing in Phase 3. The legibility requirement (DRFT-14) is an acceptance criterion for the whole shared screen, not a polish item.
