@@ -1,10 +1,12 @@
 ---
 phase: 2
 slug: host-configured-draft-night
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-08-06
+verified: 2026-08-06
+verified_dimensions: 6/6
 extends: .planning/phases/01-draft-skeleton-on-a-real-url/01-UI-SPEC.md
 ---
 
@@ -268,13 +270,16 @@ for.
 
 | Token | Value | New usage in this phase |
 |-------|-------|------------------------|
-| `--text-body` | 400 18px / 1.5 | Config field values and inputs, button labels, dialog bodies, feasibility reason, landing subtitle |
+| `--text-body` | 400 18px / 1.5 | Config field values and inputs, button labels, dialog bodies, feasibility reason, landing subtitle, **board chip name in `board-full`** |
 | `--text-label` | 600 14px / 1.4 | Type pill text (both forms), stat labels and values, ban chip name, filter labels, pool count, round headers, helper text |
 | `--text-heading` | 600 24px / 1.25 | Pane headings, config `<legend>`s, dialog headings, board row label |
 | `--text-display` | 600 36px / 1.15 | Turn banner, the one `<h1>` per screen |
 
-The board row label stays at `--text-heading` (24px), comfortably above D-23's 18px floor —
-see §DRFT-14 as a Checkable Assertion.
+**Both kinds of board text clear D-23's 18px floor.** The board row label stays at
+`--text-heading` (24px). The board chip name — which exists only in `board-full` — renders at
+`--text-body` (18px), exactly at the floor rather than below it. These are the two strings the
+mandatory 3-metre check reads aloud, so neither may sit at `--text-label`. See §DRFT-14 as a
+Checkable Assertion.
 
 ---
 
@@ -561,7 +566,7 @@ by the same media query, not by a separate accommodation.
 | **`SegmentedControl`** | new | `fieldset` + `legend` + visually-hidden radios + styled labels. Six instances. |
 | **`SplitPanes`** | new | The two-pane shell, the three states, the restore strips |
 | **`FilterBar`** | new | Search field, type toolbar, match-all toggle, Mega segmented control, `Clear filters` |
-| **`ConfirmDialog`** | new | Consequence sentence + verb-object buttons, on top of `Dialog`. Six instances, copy as data. |
+| **`ConfirmDialog`** | new | Consequence sentence + verb-object buttons, on top of `Dialog`. Seven instances, copy as data (§11 gives every literal string). |
 | **`TypeaheadField`** | new | Combobox for ban entry |
 | **`BanChipList`** | new | Removable chips |
 | **`FeasibilityBar`** | new | Pinned `Start draft` + reason, `role="status"` |
@@ -744,8 +749,12 @@ Header: `Draft board` at `--text-heading` plus the expand button. Grid is Phase 
 176px label column and a derived round count.
 
 - **Split view: chips are sprite-only** (D-21). `MonChip` receives `showName={false}`.
-- **`board-full`: names render** at `--text-label`. This is what gives the expand control a job
-  beyond preference — it is the answer to "what is that one".
+- **`board-full`: names render** at **`--text-body` (18px)**, not `--text-label`. This is what
+  gives the expand control a job beyond preference — it is the answer to "what is that one".
+  18px is forced by D-23: board name text is the thing the mandatory 3-metre check reads aloud,
+  and `board-full` is the only state where a board name exists at all. 14px would make the
+  assertion and the physical check contradict each other. No new token — `--text-body` already
+  exists and the four-size scale is untouched.
 - **Known risk, accepted (D-21):** Charizard and Charizard-Mega-X share a base sprite in this
   pipeline, and the Rotom appliances read alike at 48px. A split-view board can be genuinely
   ambiguous. Expanding resolves it; that is the design, not a workaround.
@@ -835,27 +844,34 @@ Wrapping is why `--cell-h` became a `min-height`.
 
 ### 11. Confirmation dialogs (DRFT-13, D-36…D-39)
 
-**Six confirms. All six reuse `Dialog.tsx` through one `ConfirmDialog`** (D-38). Focus trapping,
-Escape handling and return-focus are already solved there; a second pattern is where
+**Seven confirms. All seven reuse `Dialog.tsx` through one `ConfirmDialog`** (D-38). Focus
+trapping, Escape handling and return-focus are already solved there; a second pattern is where
 accessibility bugs come from. `ImportConfirmDialog` is refactored onto `ConfirmDialog` so the
-count is one pattern and six sets of copy, not six components.
+count is one pattern and seven sets of copy, not seven components.
+
+D-36 names five actions and D-37 adds the round-boundary undo; `Remove a player` and `Clear the
+banlist` are listed separately below because their copy differs, which is why the table is seven
+rows against D-36's four bullets.
 
 Every one: consequence sentence stating what is lost **in numbers**, then two buttons that each
 name a verb and its object (D-39). Destructive/confirming button first, safe button second — so
 the safe one is the last thing focus reaches and the last thing read. **Escape maps to the safe
-button** in all six. Nothing is labelled `OK`, `Submit`, `Yes` or `Cancel` alone.
+button** in all seven. Nothing is labelled `OK`, `Submit`, `Yes` or `Cancel` alone.
 
 **Picking never confirms.** Phase 1 D-08 stands, and D-36 preserves it explicitly.
 
-| Action | Tone | Confirm button | Safe button |
-|--------|------|---------------|-------------|
-| Abandon draft / start a new tournament | `danger` | `Abandon draft` | `Keep drafting` |
-| Import JSON over a live draft | `danger` | `Replace draft` | `Keep current draft` |
-| Re-roll pool | `default` | `Draw a new pool` | `Keep this pool` |
-| Re-randomize starting order | `default` | `Roll a new order` | `Keep this order` |
-| Remove a player | `default` | `Remove {name}` | `Keep {name}` |
-| Clear the banlist | `default` | `Clear the banlist` | `Keep the bans` |
-| Undo across a round boundary | `default` | `Undo the pick` | `Keep the pick` |
+D-39 is an instance-level contract, not a pattern to be improvised against at build time. Every
+body string is given literally below; `{n}`, `{m}` and `{name}` are the only interpolations.
+
+| Action | Tone | Body copy | Confirm button | Safe button |
+|--------|------|-----------|---------------|-------------|
+| Abandon draft / start a new tournament | `danger` | `This discards {n} picks across {m} players. Nothing recovers it unless you have already downloaded the tournament JSON.` | `Abandon draft` | `Keep drafting` |
+| Import JSON over a live draft | `danger` | `This replaces the current draft — {n} picks across {m} players. Download the current tournament JSON first if you want to keep it.` | `Replace draft` | `Keep current draft` |
+| Re-roll pool | `default` | `This draws a new pool of {n} Pokémon. The pool everyone has been looking at is discarded.` | `Draw a new pool` | `Keep this pool` |
+| Re-randomize starting order | `default` | `This rolls a new order for all {m} players. The order on screen is discarded.` | `Roll a new order` | `Keep this order` |
+| Remove a player | `default` | `This removes {name} and re-numbers the {m} players below them. Their name is not kept.` | `Remove {name}` | `Keep {name}` |
+| Clear the banlist | `default` | `This clears all {n} bans at once. Every banned Pokémon returns to the pool.` | `Clear the banlist` | `Keep the bans` |
+| Undo across a round boundary | `default` | `This undoes {name}'s pick from round {r}, and the draft is currently on round {c}. Picks made after it are undone too — {n} in total.` | `Undo the pick` | `Keep the pick` |
 
 The `default`-tone dialogs put accent fill on the confirming button (accent reserved use 2 — the
 primary action of the current screen, and a modal is the current screen). The `danger`-tone
@@ -1041,18 +1057,30 @@ screen, not a polish item".
 | # | Assertion | Measured where |
 |---|-----------|---------------|
 | 1 | Board row label text renders at ≥ 18px | `--text-heading` = 24px on `.board__label` |
-| 2 | Board chip sprite renders at ≥ 48px | `--sprite-sm` = 48px, at every pane state |
-| 3 | Pool card sprite renders at ≥ 48px at every density, and ≥ 96px at `standard` and `full` | `--sprite-lg` per §Density Contract |
-| 4 | No text on any surface renders below 14px at any density | `--text-label` is the floor and the type scale is density-invariant (Amendment 1) |
-| 5 | The full 8-player board fits the split board pane with no internal vertical scroll at 1920 × 1080 | 656px needed against ~851px available (§Two-Pane Geometry) |
-| 6 | No board name text ellipsises in `board-full` at 1920px | 215px of name width against a 20-character longest roster name |
-| 7 | Every interactive element measures ≥ 44px in both axes | `--target-min`, §Accessibility |
+| 2 | **Board chip name text renders at ≥ 18px wherever a board name exists** | `--text-body` = 18px on the `board-full` chip name; in `split` no board name is rendered at all, so nothing is below the floor |
+| 3 | Board chip sprite renders at ≥ 48px | `--sprite-sm` = 48px, at every pane state |
+| 4 | Pool card sprite renders at ≥ 48px at every density, and ≥ 96px at `standard` and `full` | `--sprite-lg` per §Density Contract |
+| 5 | No text on any surface renders below 14px at any density | `--text-label` is the floor and the type scale is density-invariant (Amendment 1) |
+| 6 | The full 8-player board fits the split board pane with no internal vertical scroll at 1920 × 1080 | 656px needed against ~851px available (§Two-Pane Geometry) |
+| 7 | No board name text ellipsises in `board-full` at 1920px | ~180px needed (20-character longest roster name at 18px / 400) against 215px of name width. Tighter than the 14px original — **measure this one, do not assume it** |
+| 8 | Every interactive element measures ≥ 44px in both axes | `--target-min`, §Accessibility |
 
-**Physical check, mandatory and not substitutable:** configure 8 players, start a draft, fill at
-least two rounds, set density to `standard` and pane state to `split`, then stand 3 metres back
-from a 1080p screen and read aloud whose turn it is, which round it is, and one named Pokémon
-from each of the eight rows. Record the result in the phase verification document. The numbers
-make it regressable; this is what tests the requirement.
+**Physical check, mandatory and not substitutable.** Configure 8 players, start a draft, fill at
+least two rounds, set density to `standard`, and stand 3 metres back from a 1080p screen. Two
+passes, because the two pane states show different things and `split` renders no board names at
+all:
+
+1. **`split` — the state the draft actually runs in.** Read aloud whose turn it is, which round
+   it is, and each of the eight player row labels. Then, without moving closer, name what you
+   can from the board sprites alone. Recognising some and not others is the expected result and
+   is exactly the D-21 trade-off being accepted; record which ones failed, because that list is
+   the evidence for or against revisiting D-21 in a later phase.
+2. **`board-full` — the disambiguation state.** Read aloud one named Pokémon from each of the
+   eight rows. This is the pass that tests assertion 2, and it is the only state where a board
+   name exists.
+
+Record both results in the phase verification document. The numbers make it regressable; this is
+what tests the requirement.
 
 ---
 
