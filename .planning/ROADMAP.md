@@ -106,13 +106,30 @@ Plans:
 **Plans**: 8 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 02-01-PLAN.md — feasibility gate, constrained pool draw, shared pool predicates, roster tripwire
 - [ ] 02-02-PLAN.md — schema version 2, widened config, v1 migration at all three comparison sites
 - [ ] 02-03-PLAN.md — type pills, base stats, three display densities, the view-preference adapter
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-04-PLAN.md — landing screen, config form, feasibility bar, the createTournament seam
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 02-05-PLAN.md — Mega rules and Pool config groups, free numeric fields, the constrained draw
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 02-06-PLAN.md — the shared draft screen: two panes, the N-player board, and every destructive confirm
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 02-07-PLAN.md — the host banlist: typeahead and ban grid over one list, ban mode, and a pool the bans are absent from
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 02-08-PLAN.md — the pool filter bar: name search, the type toolbar and its roving tabindex, and the Mega filter
 
 **UI hint**: yes

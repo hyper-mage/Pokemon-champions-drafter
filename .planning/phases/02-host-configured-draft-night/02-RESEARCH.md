@@ -1807,7 +1807,21 @@ feasibility ceiling, every hypergeometric probability, and every file/line refer
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+**All six were decided by the orchestrator before planning and are implemented in the plans.**
+Each recommendation below was accepted as written. Resolution map:
+
+| # | Question | Resolution | Implemented in |
+|---|----------|-----------|----------------|
+| 1 | Distinct reason string for "too many players at Exact"? | **Yes** — added as a ninth code, `tooManyPlayersForRoster`, precedence-ordered above `poolTooLarge` | 02-01 |
+| 2 | Migrate or reject Phase 1 saves? | **Migrate** — bump `SCHEMA_VERSION` 1 → 2; all three compare sites route through `migrate` | 02-02 |
+| 3 | Pool-size integrity check in `import-guard`? | **No** — run `checkFeasibility` on adopted docs, non-blocking notice; guard's posture unchanged | 02-02, 02-06 |
+| 4 | Where do the two config-time seeds live? | **Option A — action payloads**, stamped at the edge | 02-02, 02-04 |
+| 5 | Must `Randomize order` be clicked before Start? | **No** — roll `orderSeed` on mount so "no order yet" is unrepresentable | 02-04 |
+| 6 | F-03 player-name normalization | **trim + lowercase + collapse internal whitespace** | 02-04 |
+
+The original questions and their reasoning are preserved below for the record.
 
 1. **Should "too many players at the Exact preset" get its own reason string?**
    - *What we know:* at Exact, `N = p × r` identically, so F-05 can never fire and F-04 is the
