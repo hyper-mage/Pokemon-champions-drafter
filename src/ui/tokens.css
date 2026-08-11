@@ -2,13 +2,34 @@
  * tokens.css — the design contract, as CSS custom properties.
  *
  * Transcribed from .planning/phases/01-draft-skeleton-on-a-real-url/01-UI-SPEC.md
- * (approved). This file declares values; it must never style an element. Every other
- * stylesheet in the project consumes these tokens and declares no raw colour and no
- * raw length for anything covered here. That rule is what makes Phase 2's three
- * display densities (DRFT-06) a token swap rather than a restyle (CONTEXT.md D-07).
+ * (approved), and amended by 02-UI-SPEC.md §Amendments to Phase 1's Contract. This file
+ * declares values; it must never style an element. Every other stylesheet in the project
+ * consumes these tokens and declares no raw colour and no raw length for anything
+ * covered here.
  *
- * Phase 2 density contract: the densities change exactly four tokens —
- * --sprite-lg, --cell-min, --cell-h, --text-label. Nothing else.
+ * --- Density contract (02-UI-SPEC Amendment 1, D-25) ---
+ *
+ * This supersedes Phase 1's four-token rule, which named --sprite-lg, --cell-min,
+ * --cell-h and --text-label and permitted nothing else. That rule is broken by this
+ * phase, and it is rewritten here in the same change that breaks it: a stale contract
+ * comment is worse than no comment, because the next reader trusts it.
+ *
+ *   1. Density is carried by ONE attribute, data-density="minimal|standard|full", on
+ *      the pool pane root. It redeclares exactly THREE tokens — --sprite-lg, --cell-min
+ *      and --cell-h. The selectors themselves live in PoolGrid.css, because this file
+ *      declares values and never styles an element.
+ *   2. --text-label is REMOVED from the density-varying set. The type scale is invariant
+ *      across densities. That is stricter than Phase 1 rather than looser: it makes it
+ *      structurally impossible for a density to shrink text below 14px, which is what
+ *      DRFT-14 needs, and it removes the hazard that a density swap introduces a fifth
+ *      font size into a scale this file fixes at four.
+ *   3. Density additionally changes the CONTENT of MonCard — the whole reason the
+ *      four-token rule had to go. Pure scaling cannot deliver a usable "full" density,
+ *      because six 14px numbers in a 112px cell are unreadable at any scale.
+ *   4. Because the redeclaration is scoped to the pool pane subtree, the board pane
+ *      never inherits it. That is how D-24 ("density affects the pool only") is enforced
+ *      structurally rather than by discipline — a density that reached the board would
+ *      have to be written into a second selector to get there.
  *
  * Typography convention, chosen once and held: each --text-* token is a complete
  * `font` shorthand, `<weight> <size>/<line-height> <family>`, so a consumer writes
@@ -39,15 +60,29 @@
    * nativeWidth/nativeHeight. Rendering at the native size is what keeps the art
    * crisp, so this token and the <img> width/height attributes must agree with that
    * file. --sprite-sm is an exact 2:1 integer downscale.
+   *
+   * 96px and 48px are the ONLY sanctioned sprite sizes anywhere in the project. Every
+   * other value is a non-integer downscale of pixel art, which is why minimal density
+   * drops straight to 48px rather than to an intermediate 72px.
+   *
+   * --cell-min and --cell-h carry the STANDARD density's values as their defaults, and
+   * both are redeclared per density in PoolGrid.css. Their Phase 1 defaults (112px and
+   * 144px) no longer fit: standard density now carries a type-pill row and a stat total
+   * line beneath the name.
    */
   --sprite-lg: 96px;
   --sprite-sm: 48px;
-  --cell-min: 112px;
-  --cell-h: 144px;
+  --cell-min: 128px;
+  --cell-h: 188px;
   --target-min: 44px;
   --radius: 8px;
   --border-w: 2px;
   --hairline-w: 1px;
+
+  /* Type-pill height on a pool card: 14px x 1.4 = 19.6px of text, plus 2px above and
+   * below. A type filter pill does NOT use this — a filter pill is a control and takes
+   * --target-min in both axes. */
+  --pill-h: 24px;
 
   /* --- Font families. --font-mono carries no size of its own. --- */
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
@@ -56,7 +91,8 @@
     'Liberation Mono', monospace;
 
   /* --- Type scale. Exactly four sizes, exactly two weights. No 500, no 700,
-   *     no italics. No surface may introduce a fifth size. --- */
+   *     no italics. No surface may introduce a fifth size, and no density may
+   *     change one — see the density contract above. --- */
   --text-body: 400 18px / 1.5 var(--font-sans);
   --text-label: 600 14px / 1.4 var(--font-sans);
   --text-heading: 600 24px / 1.25 var(--font-sans);
@@ -77,6 +113,67 @@
   --color-danger: #ff7a70;
   --color-danger-ink: #0f1216;
 
-  /* The focus ring is the accent, always. Reserved use 3 of 3. */
+  /* --- Type palette. Eighteen hues, one per Pokemon type, a closed enumerated set
+   *     derived from roster data (02-UI-SPEC Amendment 2, D-26/D-27). ---
+   *
+   * Colour in this project is reserved for FOUR things, not three. This replaces the
+   * Phase 1 note beneath the focus ring below, which counted the reservations as three
+   * of three and is rewritten in the same change that breaks it. The three semantic
+   * reservations are unchanged — accent, danger, focus ring — and the type palette is
+   * the fourth.
+   *
+   * A type hue may appear on a pool-card type pill and on a type filter control (D-29)
+   * and NOWHERE else. It never marks state, never marks emphasis, never marks a control,
+   * and never appears on a board chip.
+   *
+   * All ratios below were computed with the WCAG 2.x relative-luminance formula on
+   * 2026-08-06 against --color-surface #1a1f26 and --color-surface-raised #232a33.
+   * Thirteen types take dark ink and five take light; ink was chosen per type as
+   * whichever of the two clears 4.5:1 against that hue. Every pairing clears it with
+   * margin and the lowest is Poison at 4.74:1.
+   *
+   * The three columns per row are: ink-on-fill / fill-on-surface / fill-on-raised.
+   *
+   * WHY FIVE FILLS SIT BELOW 3:1 AGAINST THE SURFACE, AND WHY THAT IS NOT A VIOLATION.
+   * Dark, Dragon, Fighting, Ghost and Poison measure 2.48-2.97:1 fill-against-surface.
+   * WCAG 1.4.11 requires 3:1 for visual information required to identify a component or
+   * its state. On a pool card the pill is a TEXT LABEL and its text clears 4.5:1 —
+   * SC 1.4.3 is the criterion that applies. On a filter control the pill is a button
+   * identified by its text label, and its pressed state is carried by a --border-w
+   * border in --color-text, not by the fill. In neither case is the fill boundary
+   * required information. Darkening those five was rejected by D-27, because Ice,
+   * Fairy, Electric and Ground stop looking like themselves, and the recognition is the
+   * entire reason colour was chosen here.
+   */
+  --type-bug: #a6b91a; /* BUG  dark  8.56:1 / 7.55:1 / 6.60:1 */
+  --type-dark: #705746; /* DAR  light 5.68:1 / 2.48:1 / 2.17:1 */
+  --type-dragon: #6f35fc; /* DRA  light 4.96:1 / 2.83:1 / 2.48:1 */
+  --type-electric: #f7d02c; /* ELE  dark 12.53:1 / 11.05:1 / 9.66:1 */
+  --type-fairy: #d685ad; /* FAI  dark  6.99:1 / 6.17:1 / 5.39:1 */
+  --type-fighting: #c22e28; /* FIG  light 4.80:1 / 2.93:1 / 2.56:1 */
+  --type-fire: #ee8130; /* FIR  dark  6.99:1 / 6.17:1 / 5.39:1 */
+  --type-flying: #a98ff3; /* FLY  dark  7.07:1 / 6.24:1 / 5.45:1 */
+  --type-ghost: #735797; /* GHO  light 5.04:1 / 2.79:1 / 2.44:1 */
+  --type-grass: #7ac74c; /* GRA  dark  9.03:1 / 7.97:1 / 6.96:1 */
+  --type-ground: #e2bf65; /* GRO  dark 10.62:1 / 9.37:1 / 8.19:1 */
+  --type-ice: #96d9d6; /* ICE  dark 11.80:1 / 10.41:1 / 9.10:1 */
+  --type-normal: #a8a77a; /* NOR  dark  7.58:1 / 6.68:1 / 5.84:1 */
+  --type-poison: #a33ea1; /* POI  light 4.74:1 / 2.97:1 / 2.59:1 */
+  --type-psychic: #f95587; /* PSY  dark  5.97:1 / 5.27:1 / 4.60:1 */
+  --type-rock: #b6a136; /* ROC  dark  7.28:1 / 6.42:1 / 5.61:1 */
+  --type-steel: #b7b7ce; /* STE  dark  9.55:1 / 8.42:1 / 7.36:1 */
+  --type-water: #6390f0; /* WAT  dark  6.06:1 / 5.35:1 / 4.67:1 */
+
+  /* The two inks. NEITHER is aliased to --color-bg or --color-text, even though the
+   * values coincide exactly. Phase 1 set that precedent with --color-accent-ink: ink is
+   * a ROLE, not a coincidence of value, and aliasing would make a future change to the
+   * page background silently change pill text. */
+  --type-ink-dark: #0f1216;
+  --type-ink-light: #e8edf2;
+
+  /* The focus ring is the accent, always. It is the third and last of the SEMANTIC
+   * colour reservations; the type palette above is the fourth reservation overall and is
+   * an enumerated set rather than a semantic role. Four in total — see the palette
+   * block. */
   --focus-ring: var(--color-accent);
 }
