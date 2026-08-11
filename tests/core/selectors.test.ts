@@ -51,6 +51,12 @@ const CONFIG: TournamentConfig = {
   rounds: 6,
   rosterVersion: 'mb',
   rosterChecksum: 'abc123',
+  poolSize: 12,
+  bans: [],
+  banMode: 'hostBanlist',
+  megasRequiredPerTeam: 0,
+  dualMegaChoices: [],
+  depth: 'draftOnly',
 };
 
 const ORDER = ['p1', 'p2'];
@@ -73,8 +79,8 @@ function makeDoc(log: readonly Action[]): TournamentDoc {
 /** A started draft with `count` legal alternating picks already made. */
 function stateAfter(count: number) {
   const log: Action[] = [
-    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum), 0),
-    stamp(draftStarted(ORDER), 1),
+    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
+    stamp(draftStarted(ORDER, 9), 1),
   ];
 
   for (let pickIndex = 0; pickIndex < count; pickIndex++) {
@@ -109,8 +115,8 @@ describe('selectAvailablePool', () => {
     // The pool ids are built in display order, so a filter that reordered them would
     // shuffle the grid under the host's cursor on every pick.
     const outOfOrderPicks: Action[] = [
-      stamp(poolBuilt(POOL, 'mb', 'abc123'), 0),
-      stamp(draftStarted(ORDER), 1),
+      stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 0),
+      stamp(draftStarted(ORDER, 9), 1),
       stamp(pickMade({ playerId: 'p1', monId: 'starmie', round: 1, pickIndex: 0 }), 2),
       stamp(pickMade({ playerId: 'p2', monId: 'venusaur', round: 1, pickIndex: 1 }), 3),
       stamp(pickMade({ playerId: 'p1', monId: 'garchomp', round: 2, pickIndex: 2 }), 4),
@@ -206,8 +212,8 @@ describe('selectCurrentTurn', () => {
 
   it('follows the recorded order, not the config order', () => {
     const log: Action[] = [
-      stamp(poolBuilt(POOL, 'mb', 'abc123'), 0),
-      stamp(draftStarted(['p2', 'p1']), 1),
+      stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 0),
+      stamp(draftStarted(['p2', 'p1'], 9), 1),
     ];
 
     expect(selectCurrentTurn(fold(makeDoc(log)))).toEqual({
@@ -272,8 +278,8 @@ describe('scaling past two players', () => {
 
   function eightPlayerState(count: number) {
     const log: Action[] = [
-      stamp(poolBuilt(bigPool, 'mb', 'abc123'), 0),
-      stamp(draftStarted(bigOrder), 1),
+      stamp(poolBuilt(bigPool, 'mb', 'abc123', 7, 0), 0),
+      stamp(draftStarted(bigOrder, 9), 1),
     ];
     for (let pickIndex = 0; pickIndex < count; pickIndex++) {
       log.push(

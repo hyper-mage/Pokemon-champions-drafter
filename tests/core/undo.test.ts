@@ -70,6 +70,12 @@ const CONFIG: TournamentConfig = {
   rounds: 6,
   rosterVersion: 'mb',
   rosterChecksum: 'abc123',
+  poolSize: 12,
+  bans: [],
+  banMode: 'hostBanlist',
+  megasRequiredPerTeam: 0,
+  dualMegaChoices: [],
+  depth: 'draftOnly',
 };
 
 const ORDER = ['p1', 'p2'];
@@ -93,8 +99,8 @@ function makeDoc(log: readonly Action[] = []): TournamentDoc {
 /** `pool/built` then `draft/started`, exactly as `createTournament` emits them. */
 function openingLog(): Action[] {
   return [
-    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum), 0),
-    stamp(draftStarted(ORDER), 1),
+    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
+    stamp(draftStarted(ORDER, 9), 1),
   ];
 }
 

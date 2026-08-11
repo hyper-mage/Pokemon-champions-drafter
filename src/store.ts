@@ -26,6 +26,7 @@ import { now } from './adapters/clock';
 import { newId, newSeed } from './adapters/id';
 import { isOwner } from './adapters/tab-lock';
 import { draftStarted, poolBuilt, type Action, type Intent } from './core/actions';
+import { migrate } from './core/migrate';
 import {
   initialState,
   SCHEMA_VERSION,
@@ -152,12 +153,17 @@ export function dispatch(intent: Intent): CanApplyResult {
  * Two actions are emitted, both carrying materialized results rather than instructions
  * to recompute (ARCHITECTURE Pattern 5):
  *
- *   pool/built     the actual ids, plus the regulation and checksum they came from.
- *                  Champions regulations rotate roughly every 2.5 months; a document
- *                  that recorded only "build a pool" would reopen next regulation as a
- *                  different tournament.
- *   draft/started  the resolved starting order. It is derived here from the stored
- *                  seed, once, and then read from the log forever after.
+ *   pool/built     the actual ids, plus the regulation and checksum they came from, the
+ *                  seed that drew them and how many can Mega Evolve. Champions
+ *                  regulations rotate roughly every 2.5 months; a document that recorded
+ *                  only "build a pool" would reopen next regulation as a different
+ *                  tournament.
+ *   draft/started  the resolved starting order, and the seed it was rolled from. It is
+ *                  derived here once and then read from the log forever after.
+ *
+ * Both seeds ride on the ACTION rather than in `config` or `rng`, which is what keeps a
+ * later re-roll expressible: it emits a new action with a new seed and contradicts no
+ * field anywhere else in the document.
  *
  * On the RNG cursor: Phase 1 makes exactly one derivation and always from cursor 0, and
  * because its result is materialized a replay never rolls again — so the cursor stays
@@ -169,12 +175,24 @@ export function createTournament(
   snapshot: RosterSnapshot,
   entries: readonly RosterEntry[],
 ): TournamentDoc | null {
+  // The six version 2 fields are all at their v1-equivalent defaults here, because Phase 1
+  // has no config screen to author them: the pool is the whole roster, nothing is banned,
+  // no Megas are required and the night ends at the last pick. Plan 02-04 replaces this
+  // literal with the host's answers; until then these are the values a migrated Phase 1
+  // document lands on, which keeps a freshly created tournament and a restored one the
+  // same shape rather than two shapes that happen to fold alike.
   const config: TournamentConfig = {
     formatLabel: `Champions ${snapshot.regulation}`,
     players: PHASE_ONE_PLAYERS.map((player) => ({ ...player })),
     rounds: PHASE_ONE_ROUNDS,
     rosterVersion: snapshot.regulation,
     rosterChecksum: snapshot.checksum,
+    poolSize: entries.length,
+    bans: [],
+    banMode: 'hostBanlist',
+    megasRequiredPerTeam: 0,
+    dualMegaChoices: [],
+    depth: 'draftOnly',
   };
 
   const seed = newSeed();
@@ -189,30 +207,52 @@ export function createTournament(
   };
   stateSignal.value = initialState(config);
 
-  dispatch(poolBuilt(entries.map((entry) => entry.id), snapshot.regulation, snapshot.checksum));
+  // Phase 1 does not DRAW the pool — it is the whole roster in display order — so no pool
+  // seed was ever rolled, and `0` records exactly that. Borrowing `seed` here would claim a
+  // draw that never happened, and a document's provenance is worth less than nothing when
+  // it is confidently wrong. Plan 02-05's constrained draw supplies the real one.
+  const megaCapableCount = entries.filter((entry) => entry.megaCapable).length;
+
   dispatch(
-    draftStarted(selectStartingOrder(seed, config.players.map((player) => player.id))),
+    poolBuilt(
+      entries.map((entry) => entry.id),
+      snapshot.regulation,
+      snapshot.checksum,
+      0,
+      megaCapableCount,
+    ),
+  );
+  dispatch(
+    draftStarted(selectStartingOrder(seed, config.players.map((player) => player.id)), seed),
   );
 
   return docSignal.peek();
 }
 
 /**
- * Adopt a document that already exists — a restored autosave today, an imported file in
- * plan 01-10.
+ * Adopt a document that already exists — a restored autosave, or an imported file.
+ *
+ * The version question goes to `migrate` rather than being answered here with a
+ * comparison. That is the difference between "this build cannot read this document" and
+ * "this build cannot read this document YET", and the two now have different answers: a
+ * schema 1 tournament is UPGRADED and adopted, while one from a build newer than this is
+ * still refused rather than half-loaded. `apply` tolerates action types it has never heard
+ * of, but a whole document shape it does not understand is a different question, and
+ * answering that one optimistically is how a good save gets replaced by a broken one.
+ *
+ * What gets adopted is `migrate`'s output, never the argument. For a version 1 document
+ * those are different objects, and publishing the argument would put a document the
+ * reducer cannot fully fold into the signal every component reads.
  *
  * The state is re-folded from scratch rather than trusted, because the log is the truth
- * and the folded state is only ever a cache of it. A document from a schema this build
- * does not recognise is refused rather than half-loaded: `apply` tolerates action types
- * it has never heard of, but a whole document shape it does not understand is a
- * different question, and answering it optimistically is how a good save gets replaced
- * by a broken one.
+ * and the folded state is only ever a cache of it.
  */
 export function adoptTournament(doc: TournamentDoc): boolean {
-  if (doc.schemaVersion !== SCHEMA_VERSION) return false;
+  const migrated = migrate(doc);
+  if (!migrated.ok) return false;
 
-  docSignal.value = doc;
-  stateSignal.value = fold(doc);
+  docSignal.value = migrated.doc;
+  stateSignal.value = fold(migrated.doc);
   return true;
 }
 

@@ -59,8 +59,16 @@
  */
 
 import type { Action } from './actions';
-import { migrate } from './migrate';
-import type { PlayerConfig, TournamentConfig, TournamentDoc } from './model';
+import { migrate, V1_CONFIG_DEFAULTS } from './migrate';
+import type {
+  BanMode,
+  DualMegaChoice,
+  DualMegaForme,
+  PlayerConfig,
+  TournamentConfig,
+  TournamentDepth,
+  TournamentDoc,
+} from './model';
 
 /**
  * The size gate — 5 MB.
@@ -215,6 +223,46 @@ function copyStringArray(value: unknown, limit: number): string[] | null {
   return copied;
 }
 
+/**
+ * The permitted members of each string-literal union, as runtime data.
+ *
+ * A union exists only in the type system, so nothing about `BanMode` survives to check an
+ * imported string against. These arrays are that check, and they are `as const` so the
+ * compiler errors if one drifts from the union it mirrors.
+ */
+const BAN_MODES: readonly BanMode[] = ['hostBanlist', 'blind', 'snake'];
+const DEPTHS: readonly TournamentDepth[] = ['draftOnly', 'draftAndBrackets', 'draftBracketsAndLog'];
+const DUAL_MEGA_FORMES: readonly DualMegaForme[] = ['x', 'y', 'either'];
+
+function isOneOf<T extends string>(value: unknown, allowed: readonly T[]): value is T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value);
+}
+
+/**
+ * A recorded seed, `0` when the key is absent, or `null` when it is present and wrong.
+ *
+ * `null` is the refusal and `0` is the version 1 answer, which is why this returns a
+ * number rather than a boolean: a version 1 `pool/built` recorded no seed because there
+ * was no second draw to record, and `0` says that rather than inventing one.
+ *
+ * A seed is a non-negative safe integer here — `newSeed()` draws a `Uint32` — and NOT
+ * merely a finite number. The looser check would let a fractional seed through the
+ * boundary and then be dropped by `isPoolBuiltAction` one step later, which imports a
+ * document successfully and folds it to an empty pool with nothing said.
+ */
+function optionalSeed(value: unknown): number | null {
+  if (value === undefined) return 0;
+  if (!isNonNegativeInteger(value)) return null;
+  return value;
+}
+
+/** The same absent-versus-malformed rule for a bounded count. */
+function optionalCount(value: unknown, limit: number): number | null {
+  if (value === undefined) return 0;
+  if (!isNonNegativeInteger(value) || value > limit) return null;
+  return value;
+}
+
 // ---------------------------------------------------------------------------
 // The allow-list rebuild
 // ---------------------------------------------------------------------------
@@ -245,6 +293,63 @@ function buildPlayers(value: unknown): PlayerConfig[] | null {
   return players;
 }
 
+/**
+ * The host's dual-Mega rulings, rebuilt element by element.
+ *
+ * Modelled on {@link buildPlayers} in every respect that matters: a non-array is refused,
+ * the length is bounded, each element goes through `safeObject`, and exactly two named
+ * fields are written out — so an element carrying a third loses it, which is the intended
+ * outcome rather than a limitation. Duplicate `speciesId` values are refused for the same
+ * reason duplicate player ids are: two rulings for one species means the renderer picks
+ * one arbitrarily and the host cannot tell which.
+ */
+function buildDualMegaChoices(value: unknown): DualMegaChoice[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length > MAX_POOL_IDS) return null;
+
+  const choices: DualMegaChoice[] = [];
+  for (const raw of value) {
+    const entry = safeObject(raw);
+    if (entry === null) return null;
+
+    const speciesId = entry['speciesId'];
+    const forme = entry['forme'];
+    if (!isNonEmptyString(speciesId) || !isOneOf(forme, DUAL_MEGA_FORMES)) return null;
+
+    choices.push({ speciesId, forme });
+  }
+
+  const ids = new Set(choices.map((choice) => choice.speciesId));
+  if (ids.size !== choices.length) return null;
+
+  return choices;
+}
+
+/**
+ * The config, rebuilt.
+ *
+ * ## Absent versus malformed — the distinction this function turns on
+ *
+ * The six keys schema version 2 added are OPTIONAL here, and that is forced by ordering
+ * rather than chosen for leniency: this function runs inside `buildDoc`, and `buildDoc`
+ * runs BEFORE `migrate`. Requiring the version 2 keys would therefore refuse every version
+ * 1 document at the shape check, one step before the migration that exists to upgrade it
+ * could run — and the host would be shown a sentence about their file not being a
+ * Champions Drafter tournament, which would be false.
+ *
+ * A key that is PRESENT and wrong is still refused, and refused for the whole config. That
+ * keeps this file's posture intact: repairing untrusted input is worse than refusing it.
+ * Supplying a value for a key that is not there is not repair, it is migration, and the
+ * values come from ONE place — `V1_CONFIG_DEFAULTS` in `migrate.ts` — so the guard and the
+ * migration cannot disagree about what a version 1 tournament was.
+ *
+ * `poolSize` is the exception with a reason: absent, it falls back to `players × rounds`,
+ * which is provisional. `migrateV1ToV2` replaces it with the length of the `pool/built`
+ * ids, because that is the number that actually produced the pool. This function cannot do
+ * that itself — it types every log entry in isolation and never reads one field against
+ * another, which is the same rule the `draft/started` case states as "a bound is not an
+ * integrity check".
+ */
 function buildConfig(value: unknown): TournamentConfig | null {
   const raw = safeObject(value);
   if (raw === null) return null;
@@ -270,7 +375,65 @@ function buildConfig(value: unknown): TournamentConfig | null {
     return null;
   }
 
-  return { formatLabel, players, rounds, rosterVersion, rosterChecksum };
+  // Every count below is bounded, and bounded separately from the size gate, for the
+  // reason the file header gives: a count is a few bytes and an allocation. `poolSize`
+  // becomes pool cells, `bans` becomes struck-through rows, `dualMegaChoices` becomes a
+  // form control each.
+  const rawPoolSize = raw['poolSize'];
+  let poolSize = players.length * rounds;
+  if (rawPoolSize !== undefined) {
+    if (!isPositiveInteger(rawPoolSize) || rawPoolSize > MAX_POOL_IDS) return null;
+    poolSize = rawPoolSize;
+  }
+
+  let bans: string[] = [...V1_CONFIG_DEFAULTS.bans];
+  if (raw['bans'] !== undefined) {
+    const copied = copyStringArray(raw['bans'], MAX_POOL_IDS);
+    if (copied === null) return null;
+    bans = copied;
+  }
+
+  let banMode: BanMode = V1_CONFIG_DEFAULTS.banMode;
+  if (raw['banMode'] !== undefined) {
+    if (!isOneOf(raw['banMode'], BAN_MODES)) return null;
+    banMode = raw['banMode'];
+  }
+
+  // Bounded by the round count rather than by an arbitrary number: a team cannot be
+  // required to hold more Megas than it has picks to spend on them.
+  let megasRequiredPerTeam: number = V1_CONFIG_DEFAULTS.megasRequiredPerTeam;
+  if (raw['megasRequiredPerTeam'] !== undefined) {
+    const value_ = raw['megasRequiredPerTeam'];
+    if (!isNonNegativeInteger(value_) || value_ > MAX_ROUNDS) return null;
+    megasRequiredPerTeam = value_;
+  }
+
+  let dualMegaChoices: DualMegaChoice[] = [...V1_CONFIG_DEFAULTS.dualMegaChoices];
+  if (raw['dualMegaChoices'] !== undefined) {
+    const built = buildDualMegaChoices(raw['dualMegaChoices']);
+    if (built === null) return null;
+    dualMegaChoices = built;
+  }
+
+  let depth: TournamentDepth = V1_CONFIG_DEFAULTS.depth;
+  if (raw['depth'] !== undefined) {
+    if (!isOneOf(raw['depth'], DEPTHS)) return null;
+    depth = raw['depth'];
+  }
+
+  return {
+    formatLabel,
+    players,
+    rounds,
+    rosterVersion,
+    rosterChecksum,
+    poolSize,
+    bans,
+    banMode,
+    megasRequiredPerTeam,
+    dualMegaChoices,
+    depth,
+  };
 }
 
 /**
@@ -310,7 +473,25 @@ function buildLogEntry(value: unknown): Action | null {
       if (ids === null || typeof rosterVersion !== 'string' || typeof checksum !== 'string') {
         return null;
       }
-      return { type: 'pool/built', ids, rosterVersion, checksum, ...envelope };
+
+      // Absent versus malformed again, and for the same ordering reason `buildConfig`
+      // gives: a version 1 `pool/built` predates both of these fields, and refusing it
+      // here would refuse the very entry `migrateV1ToV2` recovers `poolSize` from.
+      const seed = optionalSeed(raw['seed']);
+      if (seed === null) return null;
+
+      const megaCapableCount = optionalCount(raw['megaCapableCount'], MAX_POOL_IDS);
+      if (megaCapableCount === null) return null;
+
+      return {
+        type: 'pool/built',
+        ids,
+        rosterVersion,
+        checksum,
+        seed,
+        megaCapableCount,
+        ...envelope,
+      };
     }
 
     case 'draft/started': {
@@ -319,7 +500,11 @@ function buildLogEntry(value: unknown): Action | null {
       // does not do — every entry is typed in isolation. A bound is not an integrity check.
       const order = copyStringArray(raw['order'], MAX_PLAYERS);
       if (order === null) return null;
-      return { type: 'draft/started', order, ...envelope };
+
+      const seed = optionalSeed(raw['seed']);
+      if (seed === null) return null;
+
+      return { type: 'draft/started', order, seed, ...envelope };
     }
 
     case 'draft/pickMade': {
