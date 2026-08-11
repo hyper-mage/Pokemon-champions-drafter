@@ -314,6 +314,12 @@ export function App() {
   const turn = state === null ? null : selectCurrentTurn(state);
   const complete = state !== null && selectIsComplete(state);
 
+  // One local, two consumers: the turn banner's sentence and the board's empty state.
+  // Written twice they are two expressions that can be changed independently, and the
+  // board would then name a different player from the banner directly above it.
+  const turnPlayerName =
+    state === null || turn === null ? null : selectPlayerName(state, turn.playerId);
+
   // Undo's live-region announcement names the species that came back. The store holds
   // the document and the document holds ids, so the display name has to arrive from
   // here, where the roster snapshot already is. Falling back to the id keeps the
@@ -565,7 +571,7 @@ export function App() {
             <TurnBanner
               round={turn === null ? null : turn.round}
               rounds={state.config.rounds}
-              playerName={turn === null ? null : selectPlayerName(state, turn.playerId)}
+              playerName={turnPlayerName}
               complete={complete}
               picks={selectPickCount(state)}
               teams={state.config.players.length}
@@ -580,6 +586,10 @@ export function App() {
             entryById={entryById}
             spriteMeta={load.bundle.spriteMeta}
             pickCount={selectPickCount(state)}
+            // False until the pane state exists. The board is not expandable yet, so
+            // there is no state in which a name should render.
+            showName={false}
+            firstPlayerName={turnPlayerName}
           />
 
           {/*
