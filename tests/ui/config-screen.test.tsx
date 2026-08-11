@@ -52,8 +52,12 @@ vi.mock('../../src/adapters/id', () => ({
   newId: () => edge.newId(),
 }));
 
+import { isPoolBuiltAction, isDraftStartedAction } from '../../src/core/actions';
+import type { FeasibilityResult } from '../../src/core/feasibility';
 import { selectStartingOrder } from '../../src/core/selectors';
 import type { RosterSnapshot } from '../../src/core/roster/types';
+import { getDoc, getState } from '../../src/store';
+import { FeasibilityBar } from '../../src/ui/components/FeasibilityBar';
 import { announce } from '../../src/ui/components/LiveRegion';
 import { ConfigScreen } from '../../src/ui/screens/ConfigScreen';
 
@@ -122,9 +126,12 @@ afterEach(() => {
   host.remove();
 });
 
-function mount(): void {
+function mount(onStarted: () => void = () => undefined): void {
   act(() => {
-    render(<ConfigScreen snapshot={SNAPSHOT} entries={ENTRIES} />, host);
+    render(
+      <ConfigScreen snapshot={SNAPSHOT} entries={ENTRIES} onStarted={onStarted} />,
+      host,
+    );
   });
 }
 
@@ -163,6 +170,38 @@ function type(input: HTMLInputElement, value: string): void {
 function positionalNames(ids: readonly string[], resolved: readonly string[]): string[] {
   return resolved.map((id) => `Player ${ids.indexOf(id) + 1}`);
 }
+
+function startButton(): HTMLButtonElement | null {
+  return host.querySelector<HTMLButtonElement>('.feasibility-bar__start');
+}
+
+/** The element `aria-describedby` on Start actually resolves to. */
+function reasonElement(): Element | null {
+  const id = startButton()?.getAttribute('aria-describedby');
+  if (id === null || id === undefined) return null;
+  return host.querySelector(`#${id}`);
+}
+
+/** Fill `count` rows, adding any that do not exist yet. */
+function nameEveryone(names: readonly string[]): void {
+  while (nameInputs().length < names.length) {
+    act(() => {
+      buttonNamed('Add a player')?.click();
+    });
+  }
+  while (nameInputs().length > names.length) {
+    act(() => {
+      removeButtons().at(-1)?.click();
+    });
+  }
+
+  names.forEach((name, index) => {
+    const input = nameInputs()[index];
+    if (input !== undefined) type(input, name);
+  });
+}
+
+const SIX_NAMES = ['Ada', 'Bo', 'Cy', 'Dee', 'Eli', 'Fay'];
 
 // ---------------------------------------------------------------------------
 
@@ -330,5 +369,261 @@ describe('the Tournament group', () => {
     expect(host.textContent).toContain(
       'Depth is recorded now. Round robin and brackets arrive with the tournament screens.',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The feasibility bar — RULE-07
+//
+// These run BEFORE the `Start draft` block below, deliberately: the store is a module
+// singleton with no reset, so `getDoc()` is only null until something in this file creates
+// a tournament. The identity assertions would hold either way; the null one would not.
+// ---------------------------------------------------------------------------
+
+describe('a blocked Start draft', () => {
+  it('is aria-disabled, has no native disabled attribute, and stays focusable', () => {
+    mount();
+    nameEveryone(['']);
+
+    const start = startButton();
+    expect(start).not.toBeNull();
+    expect(start?.getAttribute('aria-disabled')).toBe('true');
+
+    // The divergence from Phase 1's undo button, and the whole point of RULE-07: a
+    // natively disabled button is unreachable by keyboard, so a keyboard user could never
+    // reach the explanation.
+    expect(start?.hasAttribute('disabled')).toBe(false);
+    start?.focus();
+    expect(document.activeElement).toBe(start);
+  });
+
+  it('carries the highest-precedence reason in a role=status region', () => {
+    mount();
+    nameEveryone(['']);
+
+    const reason = reasonElement();
+    expect(reason).not.toBeNull();
+    expect(reason?.getAttribute('role')).toBe('status');
+
+    // Exactly, not merely contained. `tooFewPlayers` outranks the blank name that also
+    // holds, and the sentence names the next action rather than only the problem.
+    expect(reason?.textContent).toBe(
+      'Add at least one more player. A draft needs two players.',
+    );
+  });
+
+  it('counts the problems it is not showing', () => {
+    mount();
+    nameEveryone(['']);
+
+    // One player AND a blank name: two blockers, one shown.
+    expect(host.textContent).toContain('1 other problems also block the start.');
+  });
+
+  it('does not count a single blocker as one other problem', () => {
+    mount();
+    nameEveryone(['', '']);
+
+    // Two blank rows normalize to the same key, but a blank row is `blankPlayerName`'s
+    // problem and never a duplicate — so this is exactly one blocker.
+    expect(host.textContent).toContain('Every player needs a name. Player 1 is blank.');
+    expect(host.textContent).not.toContain('other problems also block the start.');
+  });
+
+  it('refuses to act when clicked', () => {
+    const onStarted = vi.fn();
+    mount(onStarted);
+    nameEveryone(['']);
+
+    expect(getDoc()).toBeNull();
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    expect(onStarted).not.toHaveBeenCalled();
+    expect(getDoc()).toBeNull();
+    expect(getState()).toBeNull();
+  });
+});
+
+describe('a satisfiable configuration', () => {
+  it('warns at exactly players x rounds without blocking', () => {
+    mount();
+    nameEveryone(SIX_NAMES);
+
+    // Exact is the default preset, so the pool is always exactly the minimum and this
+    // warning is the ordinary case rather than an edge one — which is precisely why the
+    // gate needs two severities.
+    expect(reasonElement()?.textContent).toBe(
+      'Warning — the pool is exactly 36. The last player to pick in Round 6 will have one Pokémon to choose from.',
+    );
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+    expect(host.textContent).not.toContain('other problems also block the start.');
+  });
+});
+
+describe('the feasibility bar rendering a result it did not compute', () => {
+  function clear(): FeasibilityResult {
+    return {
+      blocked: false,
+      problems: [],
+      legalCount: 235,
+      megaCapableLegalCount: 74,
+      banCount: 0,
+    };
+  }
+
+  it('restates the configuration when nothing is wrong', () => {
+    act(() => {
+      render(
+        <FeasibilityBar
+          result={clear()}
+          players={6}
+          rounds={6}
+          poolSize={54}
+          onStart={() => undefined}
+        />,
+        host,
+      );
+    });
+
+    // Not praise and not a checkmark: the host reads their own configuration back before
+    // committing to it.
+    expect(reasonElement()?.textContent).toBe('6 players, 6 rounds, 54 Pokémon in the pool.');
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('reports the first of three blockers and counts the other two', () => {
+    const result: FeasibilityResult = {
+      blocked: true,
+      problems: [
+        { code: 'tooFewPlayers', severity: 'blocking', message: 'First.' },
+        { code: 'blankPlayerName', severity: 'blocking', message: 'Second.' },
+        { code: 'duplicatePlayerName', severity: 'blocking', message: 'Third.' },
+        { code: 'poolExactlyMinimum', severity: 'warning', message: 'Warning — fourth.' },
+      ],
+      legalCount: 235,
+      megaCapableLegalCount: 74,
+      banCount: 0,
+    };
+
+    act(() => {
+      render(
+        <FeasibilityBar
+          result={result}
+          players={1}
+          rounds={6}
+          poolSize={6}
+          onStart={() => undefined}
+        />,
+        host,
+      );
+    });
+
+    expect(reasonElement()?.textContent).toBe('First.');
+    // Blocking severity only. The warning is a problem but it does not block the start.
+    expect(host.textContent).toContain('2 other problems also block the start.');
+  });
+
+  it('calls onStart exactly once when nothing blocks', () => {
+    const onStart = vi.fn();
+
+    act(() => {
+      render(
+        <FeasibilityBar
+          result={clear()}
+          players={6}
+          rounds={6}
+          poolSize={54}
+          onStart={onStart}
+        />,
+        host,
+      );
+    });
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    expect(onStart).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Start draft on a satisfiable configuration', () => {
+  it('creates a tournament from the host answers and nothing else', () => {
+    const onStarted = vi.fn();
+    mount(onStarted);
+    nameEveryone(SIX_NAMES);
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    expect(onStarted).toHaveBeenCalledTimes(1);
+
+    const doc = getDoc();
+    const state = getState();
+
+    expect(doc?.log).toHaveLength(2);
+    expect(state?.poolIds).toHaveLength(36);
+    expect(state?.order).toHaveLength(6);
+    expect(doc?.config.players.map((player) => player.name)).toEqual(SIX_NAMES);
+    expect(doc?.config.rounds).toBe(6);
+    expect(doc?.config.poolSize).toBe(36);
+    expect(doc?.config.depth).toBe('draftOnly');
+    expect(doc?.config.formatLabel).toBe('Champions mb');
+
+    // Player ids are generated at the edge, and `p1` is not one of them any more.
+    expect(doc?.config.players.map((player) => player.id)).not.toContain('p1');
+  });
+
+  it('materializes both seeds and the Mega-capable count into the log', () => {
+    mount();
+    nameEveryone(SIX_NAMES);
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    const log = getDoc()?.log ?? [];
+    const pool = log[0];
+    const started = log[1];
+
+    expect(pool).toBeDefined();
+    expect(started).toBeDefined();
+    if (pool === undefined || started === undefined) return;
+
+    expect(isPoolBuiltAction(pool)).toBe(true);
+    expect(isDraftStartedAction(started)).toBe(true);
+    if (!isPoolBuiltAction(pool) || !isDraftStartedAction(started)) return;
+
+    // Provenance, not an instruction to rebuild: the ids are already in the log, and the
+    // seeds say where they came from.
+    expect(pool.ids).toHaveLength(36);
+    expect(Number.isSafeInteger(pool.seed)).toBe(true);
+    expect(pool.megaCapableCount).toBeGreaterThan(0);
+    expect(pool.megaCapableCount).toBeLessThanOrEqual(36);
+    expect(Number.isSafeInteger(started.seed)).toBe(true);
+
+    // The two derivations do not share a stream, so the seeds are two draws and not one.
+    expect(pool.seed).not.toBe(started.seed);
+  });
+
+  it('starts the draft with the order the host was shown', () => {
+    mount();
+    nameEveryone(SIX_NAMES);
+
+    const shown = renderedOrder();
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    const doc = getDoc();
+    const byId = new Map(doc?.config.players.map((player) => [player.id, player.name]) ?? []);
+    const state = getState();
+
+    expect(state?.order.map((id) => byId.get(id))).toEqual(shown);
   });
 });
