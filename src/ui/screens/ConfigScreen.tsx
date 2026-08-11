@@ -3,11 +3,17 @@ import { useCallback, useMemo, useState } from 'preact/hooks';
 import { newId, newSeed } from '../../adapters/id';
 import { drawPool } from '../../core/draw';
 import { checkFeasibility, poolSizeForPreset } from '../../core/feasibility';
-import type { TournamentConfig, TournamentDepth } from '../../core/model';
+import type {
+  DualMegaChoice,
+  DualMegaForme,
+  TournamentConfig,
+  TournamentDepth,
+} from '../../core/model';
 import type { RosterEntry, RosterSnapshot } from '../../core/roster/types';
 import { selectStartingOrder } from '../../core/selectors';
 import { createTournament } from '../../store';
 import { FeasibilityBar } from '../components/FeasibilityBar';
+import { NumericField, parseNumericField } from '../components/NumericField';
 import { PlayerList, type PlayerDraft } from '../components/PlayerList';
 import { SegmentedControl, type SegmentedOption } from '../components/SegmentedControl';
 
@@ -37,10 +43,10 @@ import './ConfigScreen.css';
  *
  * ## Group order
  *
- * This plan builds groups 1 (`Players`) and 2 (`Tournament`). Plan 02-05 inserts
- * `Mega rules` and `Pool`, plan 02-07 inserts `Bans` — each at its declared position in
- * the 02-UI-SPEC table rather than appended, because the table's order is the reason the
- * pool readout is last: it is the only group whose readout reflects every group above it.
+ * Groups 1 (`Players`), 2 (`Tournament`) and 3 (`Mega rules`) are here. Plan 02-07 inserts
+ * `Bans` as group 4 — each at its declared position in the 02-UI-SPEC table rather than
+ * appended, because the table's order is the reason the pool readout is last: it is the
+ * only group whose readout reflects every group above it.
  */
 
 /**
@@ -71,6 +77,31 @@ const DEPTH_OPTIONS: readonly SegmentedOption<TournamentDepth>[] = [
 const DEPTH_NOTE =
   'Depth is recorded now. Round robin and brackets arrive with the tournament screens.';
 
+/**
+ * Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen.
+ *
+ * `Either` is the default and it is what an ABSENT entry in `dualMegaChoices` means, so a
+ * host who never touches these rows stores nothing (see `DualMegaChoice` in `model.ts`).
+ */
+const DUAL_MEGA_OPTIONS: readonly SegmentedOption<DualMegaForme>[] = [
+  { value: 'x', label: 'Mega X' },
+  { value: 'y', label: 'Mega Y' },
+  { value: 'either', label: 'Either' },
+];
+
+const DUAL_MEGA_HEADING = 'Dual-Mega species';
+
+/**
+ * Interpolated from the player count and the value ON SCREEN, so the number the host is
+ * reasoning about is the one in front of them rather than a worked example.
+ *
+ * An unparseable field reads as `0` here rather than as `NaN`. The gate says what is wrong
+ * with the field; a helper line repeating it in arithmetic would be a second voice.
+ */
+function megasRequiredHelper(players: number, megasPerTeam: number): string {
+  return `0 means no Mega requirement. A requirement of ${megasPerTeam} needs at least ${players * megasPerTeam} Mega-capable Pokémon in the pool.`;
+}
+
 export interface ConfigScreenProps {
   /** The loaded roster snapshot. Supplies the regulation the format label is prefilled from. */
   snapshot: RosterSnapshot;
@@ -99,6 +130,25 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
 
   const [formatLabel, setFormatLabel] = useState(`Champions ${snapshot.regulation}`);
   const [depth, setDepth] = useState<TournamentDepth>('draftOnly');
+
+  /**
+   * The RAW text of `Megas required per team`, not a number — D-06.
+   *
+   * The string is the state and the parsed value is a derivation of it, because the two
+   * cannot then disagree about what is on screen. `'0'` rather than `''` is the default:
+   * no Mega requirement is a real answer, and an empty field is the host having deleted
+   * one, which is a different thing and blocks.
+   */
+  const [megasRequiredRaw, setMegasRequiredRaw] = useState('0');
+
+  /**
+   * Only the rows the host actually changed — D-03.
+   *
+   * An absent entry means `'either'` (see `DualMegaChoice`), so choosing `Either` REMOVES
+   * a row rather than recording it. A stale entry left behind by a regulation rotation is
+   * then simply ignored instead of resurrecting a species the roster no longer offers.
+   */
+  const [dualMegaChoices, setDualMegaChoices] = useState<DualMegaChoice[]>([]);
 
   /**
    * The starting order is rolled ON MOUNT, not on a click.
@@ -136,6 +186,31 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
   );
 
   /**
+   * `null` when the field is empty or unparseable, and that is the whole mechanism.
+   *
+   * The gate refuses `null`; nothing here does. See `parseNumericField` for why the
+   * alternative — reading the field arithmetically — reports all-clear on a broken value.
+   */
+  const megasRequiredPerTeam = useMemo(
+    () => parseNumericField(megasRequiredRaw),
+    [megasRequiredRaw],
+  );
+
+  /**
+   * One row per species carrying more than one Mega forme — D-03.
+   *
+   * Derived from the roster, never a hardcoded pair. A regulation that adds a third
+   * dual-Mega species just appears here, and one that drops a species stops rendering it.
+   * The `entries` prop arrives in display order (`app.tsx` sorts it once, by dex number
+   * with an id tiebreak), and a filter preserves that order — so the rows are
+   * deterministic without this screen owning a second comparator that could disagree.
+   */
+  const dualMegaRows = useMemo(
+    () => entries.filter((entry) => entry.megaFormes.length > 1),
+    [entries],
+  );
+
+  /**
    * Exact, for now. Plan 02-05 replaces this line with the preset control and the free
    * numeric override; the derivation and the default it computes are already right.
    */
@@ -155,13 +230,13 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
         playerNames: players.map((player) => player.name),
         rounds: ROUNDS,
         poolSize,
-        // Both arrive with plan 02-05 and 02-07. Zero and empty are the honest values
-        // today rather than a stand-in: nothing on this screen can yet set either.
-        megasRequiredPerTeam: 0,
+        megasRequiredPerTeam,
+        // Arrives with plan 02-07. Empty is the honest value today rather than a
+        // stand-in: nothing on this screen can yet ban anything.
         bannedIds: [],
         entries,
       }),
-    [players, poolSize, entries],
+    [players, poolSize, megasRequiredPerTeam, entries],
   );
 
   /**
@@ -196,6 +271,38 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
     setOrderSeed(newSeed());
   }, []);
 
+  /** The forme a row is showing. Absent means `Either`, which is the default. */
+  const formeFor = useCallback(
+    (speciesId: string): DualMegaForme =>
+      dualMegaChoices.find((choice) => choice.speciesId === speciesId)?.forme ?? 'either',
+    [dualMegaChoices],
+  );
+
+  const handleDualMega = useCallback((speciesId: string, forme: DualMegaForme) => {
+    setDualMegaChoices((current) => {
+      const others = current.filter((choice) => choice.speciesId !== speciesId);
+      // `Either` is what an absent entry already means, so recording it would be a second
+      // way to say the same thing — and two encodings of one answer is how an importer
+      // ends up with a rule the host never set.
+      return forme === 'either' ? others : [...others, { speciesId, forme }];
+    });
+  }, []);
+
+  /**
+   * The stored list, ordered by the ROWS rather than by the order they were clicked in.
+   *
+   * Two hosts who made the same rulings get byte-identical documents, which is what makes
+   * an exported tournament comparable. ARCHITECTURE sync rule 14 forbids taking order from
+   * a key set; this takes it from the roster's display order instead.
+   */
+  const dualMegaChoicesForConfig = useMemo(
+    () =>
+      dualMegaRows
+        .map((entry) => ({ speciesId: entry.id, forme: formeFor(entry.id) }))
+        .filter((choice) => choice.forme !== 'either'),
+    [dualMegaRows, formeFor],
+  );
+
   /**
    * The one moment this screen writes anything.
    *
@@ -220,8 +327,15 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
       poolSize,
       bans: [],
       banMode: 'hostBanlist',
-      megasRequiredPerTeam: 0,
-      dualMegaChoices: [],
+      // `?? 0` is unreachable: `feasibility.blocked` is false here, and a null field is
+      // itself a blocker. It exists because the compiler cannot see that, and inventing a
+      // number the host did not choose would be worse than the branch.
+      megasRequiredPerTeam: megasRequiredPerTeam ?? 0,
+      // Phase 2 STORES this and renders nothing from it during the draft. The forme it
+      // selects is read by Phase 3's compiler and by the export path's
+      // `Species @ StoneItemName` form; recording it now costs one field and means no
+      // saved tournament needs migrating for it later.
+      dualMegaChoices: dualMegaChoicesForConfig,
       depth,
     };
 
@@ -246,6 +360,8 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
     players,
     snapshot,
     poolSize,
+    megasRequiredPerTeam,
+    dualMegaChoicesForConfig,
     depth,
     poolSeed,
     order,
@@ -299,6 +415,43 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
         />
 
         <p class="config-screen__note">{DEPTH_NOTE}</p>
+      </fieldset>
+
+      <fieldset class="config-screen__group">
+        <legend class="config-screen__legend">Mega rules</legend>
+
+        <NumericField
+          label="Megas required per team"
+          value={megasRequiredRaw}
+          onInput={setMegasRequiredRaw}
+          helper={megasRequiredHelper(players.length, megasRequiredPerTeam ?? 0)}
+          min={0}
+          max={ROUNDS}
+        />
+
+        {/*
+          The heading and the rows appear together or not at all. A regulation with no
+          dual-Mega species would otherwise leave a heading over nothing.
+        */}
+        {dualMegaRows.length > 0 && (
+          <>
+            <p class="config-screen__subheading">{DUAL_MEGA_HEADING}</p>
+
+            {dualMegaRows.map((entry) => (
+              <SegmentedControl
+                key={entry.id}
+                legend={`${entry.name} Mega forme`}
+                // Derived per species. A shared name would merge the rows into ONE radio
+                // group, so answering the second row would silently unanswer the first —
+                // and it would look like a rendering glitch rather than a naming bug.
+                name={`dual-mega-${entry.id}`}
+                options={DUAL_MEGA_OPTIONS}
+                value={formeFor(entry.id)}
+                onChange={(forme) => handleDualMega(entry.id, forme)}
+              />
+            ))}
+          </>
+        )}
       </fieldset>
 
       <FeasibilityBar
