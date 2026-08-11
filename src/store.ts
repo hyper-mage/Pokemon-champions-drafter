@@ -169,12 +169,24 @@ export function createTournament(
   snapshot: RosterSnapshot,
   entries: readonly RosterEntry[],
 ): TournamentDoc | null {
+  // The six version 2 fields are all at their v1-equivalent defaults here, because Phase 1
+  // has no config screen to author them: the pool is the whole roster, nothing is banned,
+  // no Megas are required and the night ends at the last pick. Plan 02-04 replaces this
+  // literal with the host's answers; until then these are the values a migrated Phase 1
+  // document lands on, which keeps a freshly created tournament and a restored one the
+  // same shape rather than two shapes that happen to fold alike.
   const config: TournamentConfig = {
     formatLabel: `Champions ${snapshot.regulation}`,
     players: PHASE_ONE_PLAYERS.map((player) => ({ ...player })),
     rounds: PHASE_ONE_ROUNDS,
     rosterVersion: snapshot.regulation,
     rosterChecksum: snapshot.checksum,
+    poolSize: entries.length,
+    bans: [],
+    banMode: 'hostBanlist',
+    megasRequiredPerTeam: 0,
+    dualMegaChoices: [],
+    depth: 'draftOnly',
   };
 
   const seed = newSeed();

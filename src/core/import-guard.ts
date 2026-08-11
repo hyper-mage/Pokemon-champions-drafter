@@ -270,7 +270,24 @@ function buildConfig(value: unknown): TournamentConfig | null {
     return null;
   }
 
-  return { formatLabel, players, rounds, rosterVersion, rosterChecksum };
+  // The six fields schema version 2 added are not named by the allow-list above, so
+  // nothing from the parsed value can reach them and they land on the values a version 1
+  // document migrates to. That is this file's documented fail-safe — a field it does not
+  // name is dropped — and it is also lossy for a v2 export, which is why each of them
+  // needs an allow-list line with a bound of its own.
+  return {
+    formatLabel,
+    players,
+    rounds,
+    rosterVersion,
+    rosterChecksum,
+    poolSize: players.length * rounds,
+    bans: [],
+    banMode: 'hostBanlist',
+    megasRequiredPerTeam: 0,
+    dualMegaChoices: [],
+    depth: 'draftOnly',
+  };
 }
 
 /**

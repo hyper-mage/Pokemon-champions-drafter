@@ -68,6 +68,12 @@ const CONFIG: TournamentConfig = {
   rounds: 6,
   rosterVersion: 'mb',
   rosterChecksum: 'abc123',
+  poolSize: 12,
+  bans: [],
+  banMode: 'hostBanlist',
+  megasRequiredPerTeam: 0,
+  dualMegaChoices: [],
+  depth: 'draftOnly',
 };
 
 const ORDER = ['p1', 'p2'];

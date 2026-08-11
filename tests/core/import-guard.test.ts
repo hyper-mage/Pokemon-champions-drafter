@@ -51,6 +51,12 @@ function validDoc(): TournamentDoc {
       rounds: 2,
       rosterVersion: 'mb',
       rosterChecksum: 'sha256-abc',
+      poolSize: 4,
+      bans: [],
+      banMode: 'hostBanlist',
+      megasRequiredPerTeam: 0,
+      dualMegaChoices: [],
+      depth: 'draftOnly',
     },
     rng: { seed: 12345, cursor: 0 },
     log: [
