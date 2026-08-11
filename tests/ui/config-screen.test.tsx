@@ -52,13 +52,15 @@ vi.mock('../../src/adapters/id', () => ({
   newId: () => edge.newId(),
 }));
 
+import committedSnapshot from '../../public/data/roster.mb.json';
 import { isPoolBuiltAction, isDraftStartedAction } from '../../src/core/actions';
 import type { FeasibilityResult } from '../../src/core/feasibility';
 import { selectStartingOrder } from '../../src/core/selectors';
-import type { RosterSnapshot } from '../../src/core/roster/types';
+import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import { getDoc, getState } from '../../src/store';
 import { FeasibilityBar } from '../../src/ui/components/FeasibilityBar';
 import { announce } from '../../src/ui/components/LiveRegion';
+import { NumericField, parseNumericField } from '../../src/ui/components/NumericField';
 import { ConfigScreen } from '../../src/ui/screens/ConfigScreen';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,22 @@ const ENTRIES = Array.from({ length: 60 }, (_, index) => ({
   spriteId: `mon-${index}`,
   spriteMissing: true,
 }));
+
+/**
+ * Pokedex order, and deterministic — the same comparator `app.tsx` sorts with before it
+ * hands `entries` to the screen. The committed snapshot is stored alphabetically by id, so
+ * a test that skipped this would be asserting against an order the app never renders.
+ */
+function byDexOrder(a: RosterEntry, b: RosterEntry): number {
+  if (a.num !== b.num) return a.num - b.num;
+  if (a.id < b.id) return -1;
+  if (a.id > b.id) return 1;
+  return 0;
+}
+
+/** The ACTUAL roster, for the assertions whose whole point is what really exists. */
+const COMMITTED = committedSnapshot as unknown as RosterSnapshot;
+const COMMITTED_ENTRIES: readonly RosterEntry[] = [...COMMITTED.entries].sort(byDexOrder);
 
 const SNAPSHOT: RosterSnapshot = {
   schemaVersion: 1,
@@ -133,6 +151,31 @@ function mount(onStarted: () => void = () => undefined): void {
       host,
     );
   });
+}
+
+/** The same screen against the real committed roster rather than the 60-entry fixture. */
+function mountCommitted(onStarted: () => void = () => undefined): void {
+  act(() => {
+    render(
+      <ConfigScreen snapshot={COMMITTED} entries={COMMITTED_ENTRIES} onStarted={onStarted} />,
+      host,
+    );
+  });
+}
+
+/**
+ * The input a visible `<label>` is bound to.
+ *
+ * Resolved through `for`/`id` rather than by class, so a field whose label stopped being
+ * associated with its control fails here instead of passing on a `querySelector`.
+ */
+function fieldLabelled(label: string): HTMLInputElement | null {
+  const element = Array.from(host.querySelectorAll('label')).find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  const id = element?.getAttribute('for');
+  if (id === null || id === undefined) return null;
+  return host.querySelector<HTMLInputElement>(`input[id="${id}"]`);
 }
 
 function buttonNamed(name: string): HTMLButtonElement | null {
@@ -202,6 +245,7 @@ function nameEveryone(names: readonly string[]): void {
 }
 
 const SIX_NAMES = ['Ada', 'Bo', 'Cy', 'Dee', 'Eli', 'Fay'];
+const EIGHT_NAMES = [...SIX_NAMES, 'Gus', 'Hal'];
 
 // ---------------------------------------------------------------------------
 
@@ -336,6 +380,195 @@ describe('the player rows', () => {
     // The order shrinks with the roster of rows rather than keeping a ghost entry.
     expect(host.querySelectorAll('.player-list__order li')).toHaveLength(3);
   });
+});
+
+// ---------------------------------------------------------------------------
+// NumericField — the parse that closes the NaN hole at the field boundary
+//
+// The gate refuses; the field only reports what it was given. Everything below asserts
+// that division of labour rather than any particular verdict about a number.
+// ---------------------------------------------------------------------------
+
+describe('parseNumericField', () => {
+  it('collapses every unusable input to null rather than to NaN', () => {
+    // NaN is the value the gate cannot refuse: every relational comparison with it is
+    // false, so `> legal` and `< players × rounds` BOTH pass and Start enables on a
+    // configuration that cannot be drawn. `null` is a case the compiler forces the gate
+    // to handle; NaN is one it cannot see.
+    expect(parseNumericField('')).toBeNull();
+    expect(parseNumericField('   ')).toBeNull();
+    expect(parseNumericField('abc')).toBeNull();
+    expect(parseNumericField('4e')).toBeNull();
+  });
+
+  it('parses values the gate will refuse rather than refusing them itself', () => {
+    // One authority on what is satisfiable, not two. A field that rejected 48.5 would be
+    // a second opinion, and the host would be arguing with an input box.
+    expect(parseNumericField('48')).toBe(48);
+    expect(parseNumericField('48.5')).toBe(48.5);
+    expect(parseNumericField('-3')).toBe(-3);
+  });
+});
+
+describe('the NumericField control', () => {
+  it('binds its label to its input and describes it with the helper', () => {
+    act(() => {
+      render(
+        <NumericField
+          label="Megas required per team"
+          value="2"
+          onInput={() => undefined}
+          helper="A helper sentence."
+          min={0}
+          max={6}
+        />,
+        host,
+      );
+    });
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    expect(input?.value).toBe('2');
+
+    const describedBy = input?.getAttribute('aria-describedby');
+    expect(describedBy).not.toBeNull();
+    expect(host.querySelector(`[id="${describedBy}"]`)?.textContent).toBe(
+      'A helper sentence.',
+    );
+
+    // `min` and `max` are native affordances, not enforcement — typing past `max` only
+    // marks the input `:invalid`, which is exactly why the gate carries its own blocker.
+    expect(input?.getAttribute('min')).toBe('0');
+    expect(input?.getAttribute('max')).toBe('6');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Group 3 — Mega rules (D-03, D-08)
+// ---------------------------------------------------------------------------
+
+describe('the Mega rules group', () => {
+  it('interpolates the helper from the player count and the value on screen', () => {
+    mount();
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    if (input !== null) type(input, '2');
+
+    // Four rows × 2 Megas. The number the host is reasoning about is the one in front of
+    // them rather than a worked example.
+    expect(host.textContent).toContain(
+      '0 means no Mega requirement. A requirement of 2 needs at least 8 Mega-capable Pokémon in the pool.',
+    );
+  });
+
+  it('blocks Start when the requirement outruns a team of six', () => {
+    mount();
+    nameEveryone(['Ada', 'Bo']);
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    if (input !== null) type(input, '9');
+
+    // 2 × 9 = 18 is well under the fixture's Mega-capable count, so the Mega-COUNT
+    // blocker passes. Nothing but `megasExceedRounds` catches this, which is why it is
+    // in the precedence list at all (02-RESEARCH F-09).
+    expect(reasonElement()?.textContent).toBe(
+      'A team has 6 slots, so at most 6 of them can be Megas. Lower the Megas required per team.',
+    );
+    expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('blocks Start with the same sentence when the field is emptied', () => {
+    mount();
+    nameEveryone(['Ada', 'Bo']);
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    if (input !== null) type(input, '');
+
+    expect(reasonElement()?.textContent).toBe(
+      'A team has 6 slots, so at most 6 of them can be Megas. Lower the Megas required per team.',
+    );
+    expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('reports the Mega-capable shortfall when the roster cannot supply the quota', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    if (input !== null) type(input, '6');
+
+    // The fixture carries 15 Mega-capable entries in 60, so 8 × 6 cannot be met.
+    expect(reasonElement()?.textContent).toBe(
+      'Not enough Mega-capable Pokémon. 8 players × 6 Megas needs 48; 15 are draftable after 0 bans.',
+    );
+  });
+
+  it('does not block the same requirement against the committed roster', () => {
+    mountCommitted();
+    nameEveryone(EIGHT_NAMES);
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    if (input !== null) type(input, '6');
+
+    // 8 × 6 = 48 Megas needed, 74 Mega-capable species draftable. Satisfiable, and only
+    // the exactly-minimum warning holds.
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('renders one dual-Mega row per roster species, never a hardcoded pair', () => {
+    mountCommitted();
+
+    const legends = Array.from(host.querySelectorAll('legend'))
+      .map((legend) => legend.textContent ?? '')
+      .filter((text) => text.endsWith(' Mega forme'));
+
+    // Derived from `megaFormes.length > 1` (D-03): a regulation that adds a third
+    // dual-Mega species just appears here, and one that drops Raichu stops rendering it.
+    expect(legends).toEqual(['Charizard Mega forme', 'Raichu Mega forme']);
+  });
+
+  it('renders nothing about dual Megas when the roster has none', () => {
+    // The 60-entry fixture carries no `megaFormes` at all.
+    mount();
+
+    expect(host.textContent).not.toContain('Dual-Mega species');
+    expect(host.textContent).not.toContain(' Mega forme');
+  });
+
+  it('keeps the two dual-Mega rows in separate radio groups', () => {
+    mountCommitted();
+
+    const charizardX = host.querySelector<HTMLInputElement>(
+      'input[name="dual-mega-charizard"][value="x"]',
+    );
+    const raichuEither = host.querySelector<HTMLInputElement>(
+      'input[name="dual-mega-raichu"][value="either"]',
+    );
+
+    expect(charizardX).not.toBeNull();
+    expect(raichuEither).not.toBeNull();
+
+    // Either is the default, and it is checked rather than merely first.
+    expect(raichuEither?.checked).toBe(true);
+
+    act(() => {
+      if (charizardX !== null) {
+        charizardX.checked = true;
+        charizardX.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+
+    expect(charizardX?.checked).toBe(true);
+    // Two controls sharing one `name` would have deselected this the moment the row
+    // above it was answered.
+    expect(raichuEither?.checked).toBe(true);
+  });
+
 });
 
 describe('the Tournament group', () => {
@@ -628,5 +861,32 @@ describe('Start draft on a satisfiable configuration', () => {
     const state = getState();
 
     expect(state?.order.map((id) => byId.get(id))).toEqual(shown);
+  });
+
+  it('stores the Megas required and only the dual-Mega rows the host changed', () => {
+    mountCommitted();
+    nameEveryone(SIX_NAMES);
+
+    const megas = fieldLabelled('Megas required per team');
+    expect(megas).not.toBeNull();
+    if (megas !== null) type(megas, '2');
+
+    const charizardY = host.querySelector<HTMLInputElement>(
+      'input[name="dual-mega-charizard"][value="y"]',
+    );
+    act(() => {
+      if (charizardY !== null) {
+        charizardY.checked = true;
+        charizardY.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    expect(getDoc()?.config.megasRequiredPerTeam).toBe(2);
+    // An absent entry means `either`, so the row the host left alone contributes nothing.
+    expect(getDoc()?.config.dualMegaChoices).toEqual([{ speciesId: 'charizard', forme: 'y' }]);
   });
 });

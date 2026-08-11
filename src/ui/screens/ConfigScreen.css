@@ -59,6 +59,51 @@
 }
 
 /*
+ * A label for a run of controls inside a group — currently only `Dual-Mega species`.
+ *
+ * A <p> rather than a heading or a nested <legend>: each row below it already carries a
+ * self-describing legend (`Charizard Mega forme`), so this is a visual grouping aid and
+ * announcing it as structure would be claiming a level the form does not have.
+ */
+.config-screen__subheading {
+  margin: 0;
+  font: var(--text-label);
+}
+
+/*
+ * The draw readout. At --text-body rather than --text-label (02-UI-SPEC §2): it is the
+ * answer the whole group produces, not an aside about a control.
+ */
+.config-screen__readout {
+  margin: 0;
+  max-width: 60ch;
+  font: var(--text-body);
+}
+
+/*
+ * Same shape as PlayerList's two actions, because they are the same kind of thing — a
+ * secondary action inside a group. Accent is reserved and this is not one of its three
+ * uses.
+ */
+.config-screen__reroll {
+  align-self: flex-start;
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.config-screen__reroll:hover {
+  background: var(--color-surface-raised);
+}
+
+/*
  * The note under a group. Muted and at --text-label, so it reads as an aside about the
  * control above it rather than as a second field.
  */
