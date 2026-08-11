@@ -101,8 +101,8 @@ function docWithPicks(): TournamentDoc {
     config: CONFIG,
     rng: { seed: 0x5f3a91c2, cursor: 0 },
     log: [
-      stamp(poolBuilt(['venusaur', 'charizard', 'blastoise'], 'mb', 'abc123'), 0),
-      stamp(draftStarted(['p1', 'p2']), 1),
+      stamp(poolBuilt(['venusaur', 'charizard', 'blastoise'], 'mb', 'abc123', 7, 0), 0),
+      stamp(draftStarted(['p1', 'p2'], 9), 1),
       stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 0 }), 2),
       stamp(pickMade({ playerId: 'p2', monId: 'charizard', round: 1, pickIndex: 1 }), 3),
     ],

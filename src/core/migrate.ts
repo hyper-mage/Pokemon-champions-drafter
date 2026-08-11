@@ -29,7 +29,27 @@ import { SCHEMA_VERSION, type TournamentDoc } from './model';
  * is a real possibility and a `>= MIN` check could not express it. Kept in sync with
  * `SCHEMA_VERSION` by test, not by hope.
  */
-export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [1];
+export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [1, 2];
+
+/**
+ * What every version 2 config field is worth in a version 1 document.
+ *
+ * One place, and `import-guard.buildConfig` imports it rather than repeating the literals:
+ * the guard has to know these values because it rebuilds a config for a document whose
+ * version it has not asked about yet, and two copies of a default table is two tables that
+ * can disagree about what a Phase 1 tournament was.
+ *
+ * `poolSize` is deliberately NOT here. It is the one field with a real answer rather than a
+ * default — the length of the `pool/built` ids the log already carries — so defaulting it
+ * would be inventing a number when the document is holding the true one.
+ */
+export const V1_CONFIG_DEFAULTS = {
+  bans: [],
+  banMode: 'hostBanlist',
+  megasRequiredPerTeam: 0,
+  dualMegaChoices: [],
+  depth: 'draftOnly',
+} as const;
 
 export type MigrateRejectionReason =
   /** Written by a build newer than this one. Reload and try again. */

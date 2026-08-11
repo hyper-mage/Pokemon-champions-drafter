@@ -37,8 +37,11 @@ function docAtVersion(schemaVersion: number): TournamentDoc {
 }
 
 describe('SUPPORTED_SCHEMA_VERSIONS', () => {
-  it('lists version 1 and nothing else', () => {
-    expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([1]);
+  it('lists both versions this build can fold, in order', () => {
+    // A list rather than a floor. Version 1 stays on it after the bump because this build
+    // upgrades those documents rather than refusing them, and a `>= MIN` check could not
+    // express a future build that reads 1 but not 2.
+    expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([1, 2]);
   });
 
   it('includes the version this build writes', () => {

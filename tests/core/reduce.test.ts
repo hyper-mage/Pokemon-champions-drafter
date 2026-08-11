@@ -97,8 +97,8 @@ function makeDoc(log: readonly Action[] = []): TournamentDoc {
 /** `pool/built` then `draft/started`, exactly as `createTournament` emits them. */
 function openingLog(): Action[] {
   return [
-    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum), 0),
-    stamp(draftStarted(ORDER), 1),
+    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
+    stamp(draftStarted(ORDER, 9), 1),
   ];
 }
 
@@ -170,7 +170,7 @@ describe('fold', () => {
 
 describe('apply', () => {
   it('materializes the pool ids, regulation and checksum from pool/built', () => {
-    const state = fold(makeDoc([stamp(poolBuilt(POOL, 'mb', 'abc123'), 0)]));
+    const state = fold(makeDoc([stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 0)]));
     expect(state.poolIds).toEqual(POOL);
     expect(state.rosterVersion).toBe('mb');
     expect(state.rosterChecksum).toBe('abc123');
@@ -179,7 +179,7 @@ describe('apply', () => {
   it('reads the starting order from the log rather than re-deriving it', () => {
     // Pattern 5. The order was resolved from the seed at creation and recorded; a
     // replay must read the recorded result, not roll again.
-    const state = fold(makeDoc([...openingLog().slice(0, 1), stamp(draftStarted(['p2', 'p1']), 1)]));
+    const state = fold(makeDoc([...openingLog().slice(0, 1), stamp(draftStarted(['p2', 'p1'], 9), 1)]));
     expect(state.order).toEqual(['p2', 'p1']);
   });
 
@@ -372,7 +372,7 @@ describe('canApply', () => {
   });
 
   it('rejects a pick before the draft has started', () => {
-    const state = fold(makeDoc([stamp(poolBuilt(POOL, 'mb', 'abc123'), 0)]));
+    const state = fold(makeDoc([stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 0)]));
     const action = stamp(
       pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 0 }),
       1,
@@ -405,11 +405,11 @@ describe('canApply', () => {
   it('rejects a second pool/built and a second draft/started', () => {
     const state = fold(makeDoc(openingLog()));
 
-    expect(canApply(state, stamp(poolBuilt(POOL, 'mb', 'abc123'), 2))).toEqual({
+    expect(canApply(state, stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 2))).toEqual({
       ok: false,
       reason: 'poolAlreadyBuilt',
     });
-    expect(canApply(state, stamp(draftStarted(ORDER), 2))).toEqual({
+    expect(canApply(state, stamp(draftStarted(ORDER, 9), 2))).toEqual({
       ok: false,
       reason: 'draftAlreadyStarted',
     });
@@ -418,12 +418,12 @@ describe('canApply', () => {
   it('rejects an empty pool and a draft/started that names an unknown player', () => {
     const empty = initialState(CONFIG);
 
-    expect(canApply(empty, stamp(poolBuilt([], 'mb', 'abc123'), 0))).toEqual({
+    expect(canApply(empty, stamp(poolBuilt([], 'mb', 'abc123', 7, 0), 0))).toEqual({
       ok: false,
       reason: 'emptyPool',
     });
     expect(
-      canApply(fold(makeDoc([stamp(poolBuilt(POOL, 'mb', 'abc123'), 0)])), stamp(draftStarted(['p1', 'ghost']), 1)),
+      canApply(fold(makeDoc([stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 0)])), stamp(draftStarted(['p1', 'ghost'], 9), 1)),
     ).toEqual({ ok: false, reason: 'unknownPlayer' });
   });
 

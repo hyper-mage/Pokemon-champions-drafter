@@ -99,8 +99,8 @@ function makeDoc(log: readonly Action[] = []): TournamentDoc {
 /** `pool/built` then `draft/started`, exactly as `createTournament` emits them. */
 function openingLog(): Action[] {
   return [
-    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum), 0),
-    stamp(draftStarted(ORDER), 1),
+    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
+    stamp(draftStarted(ORDER, 9), 1),
   ];
 }
 
