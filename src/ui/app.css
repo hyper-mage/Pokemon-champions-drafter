@@ -23,9 +23,15 @@ body {
  * The shell: one column, centred, capped so a wide monitor does not stretch the pool
  * grid into an unreadable band. Vertical order once the later plans land is
  * read-only banner, TopBar, TurnBanner, BoardGrid, PoolGrid.
+ *
+ * The cap tightened from Phase 1's 1600px (02-UI-SPEC §Two-Pane Geometry → "The shell
+ * changes"): a config form and a landing screen do not want a 1600px measure, and both
+ * are now real screens rather than a hypothetical. This does NOT constrain the draft
+ * board — plan 02-08 introduces a separate full-bleed `.draft-shell` for the two-pane
+ * screen, which drops the cap entirely so the board pane gets every pixel it can.
  */
 .app-shell {
-  max-width: 1600px;
+  max-width: 1200px;
   margin-inline: auto;
   padding: var(--space-4);
 }
@@ -47,6 +53,76 @@ body {
 .app-shell__status {
   margin: 0;
   max-width: 60ch;
+}
+
+/*
+ * The landing screen — D-01.
+ *
+ * Its rules live here rather than in a stylesheet beside the component, following
+ * `StorageBlocked`: the landing screen is assembled from the shell's own vocabulary plus
+ * three actions, and a private stylesheet holding six rules is a second file to keep in
+ * step rather than a boundary worth having.
+ */
+.landing {
+  padding-block: var(--space-7);
+}
+
+.landing__subtitle {
+  margin: 0 0 var(--space-6);
+  max-width: 60ch;
+  color: var(--color-text-muted);
+}
+
+/*
+ * Vertical, --space-3 apart. `align-items: flex-start` so an action is as wide as its
+ * label rather than as wide as a 1200px shell — a full-bleed button reads as a banner.
+ */
+.landing__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* An action plus the line describing it, so the description tracks its own button. */
+.landing__choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.landing__action {
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.landing__action:hover:not(.landing__action--primary) {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * The one accent-filled control on this screen, and the only accent fill in the whole
+ * landing/config flow outside the pinned Start. Accent's first reserved use is a
+ * screen's single primary action, and starting a tournament is this screen's.
+ */
+.landing__action--primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+.landing__description {
+  margin: 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
 }
 
 /*
