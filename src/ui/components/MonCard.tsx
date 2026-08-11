@@ -1,23 +1,46 @@
+import type { Density } from '../../adapters/view-prefs';
 import type { SpriteMeta } from '../../adapters/roster-source';
 import type { RosterEntry } from '../../core/roster/types';
 import { handleSpriteError, spriteSrc } from '../sprite-src';
 
+import { StatBlock } from './StatBlock';
+import { TypePill } from './TypePill';
+
 import './MonCard.css';
 
 /**
- * One pool cell: sprite above name, the whole cell a real button.
- *
- * Phase 2 adds typing and base stats here (DRFT-05). The props are shaped so that is
- * an addition rather than a rewrite.
+ * One pool cell: sprite, name, and — from `standard` upward — typing and base stats.
  *
  * The sprite URL rule lives in `src/ui/sprite-src.ts` and nowhere else — see that file
  * for why the obvious construction from `entry.spriteId` resolves for zero entries.
+ *
+ * ## Density is content, not just scale (DRFT-05, DRFT-06, D-25)
+ *
+ * The levels are cumulative: each renders everything the level below it renders plus its
+ * own additions. `minimal` is sprite and name; `standard` adds a row of three-letter type
+ * pills and the stat total; `full` swaps the pills to full type names and opens the six
+ * base stats.
+ *
+ * Scaling alone could not have delivered `full`, which is why Phase 1's four-token
+ * density contract had to be rewritten rather than extended: six 14px numbers inside a
+ * 112px cell are unreadable at any sprite size. The type scale itself is now invariant
+ * across densities, so no level can shrink text below 14px (DRFT-14).
+ *
+ * ## No `content-visibility` here, and it is not an oversight
+ *
+ * Phase 1 shipped 235 cells measured, and the live draft pool is 48–96. The escape hatch
+ * would also fight the `min-height` this file now depends on: a skipped cell is measured
+ * at its intrinsic size while a rendered one at `full` is taller, which produces
+ * scrollbar jitter on exactly the density that needs the most scrolling. `PoolGrid`'s
+ * doc block records the one sanctioned form if profiling ever demands it.
  */
 
 export interface MonCardProps {
   entry: RosterEntry;
   /** The measured sprite inventory; the only correct source of a sprite filename. */
   spriteMeta: SpriteMeta;
+  /** Decides both the token scale and how much of the entry is rendered. */
+  density: Density;
   onPick: (entry: RosterEntry) => void;
 }
 
@@ -28,15 +51,24 @@ export interface MonCardProps {
  *   alt is empty on purpose. The species name sits right beside the sprite and is the
  *   button's accessible name, so alt text here would make every cell announce twice.
  *
+ *   That justification survives the density work unchanged, and it is worth stating
+ *   because the parallel case does NOT: MonCard renders its name at EVERY level,
+ *   including minimal, so the adjacent text is always there. MonChip is the opposite —
+ *   D-21 removes its name in split view, so its alt has to carry the name instead. The
+ *   two components look alike and their alt rules are opposites for a real reason.
+ *
  *   width and height are explicit and come from the measurement rather than a typed
  *   literal, so they cannot drift from --sprite-lg. Without them the grid takes 235
- *   simultaneous layout shifts as the art arrives.
+ *   simultaneous layout shifts as the art arrives. They stay the INTRINSIC size at every
+ *   density; CSS does the scaling.
  *
  *   The image is deliberately NOT lazily loaded. D-16 precaches every sprite on
  *   service-worker install, so deferring the request buys nothing and costs pop-in on
  *   scroll. The attribute that would do it is left off entirely.
  */
-export function MonCard({ entry, spriteMeta, onPick }: MonCardProps) {
+export function MonCard({ entry, spriteMeta, density, onPick }: MonCardProps) {
+  const showDetail = density !== 'minimal';
+
   return (
     <button type="button" class="mon-card" onClick={() => onPick(entry)}>
       <img
@@ -50,6 +82,16 @@ export function MonCard({ entry, spriteMeta, onPick }: MonCardProps) {
       <span class="mon-card__name" title={entry.name}>
         {entry.name}
       </span>
+
+      {showDetail && (
+        <span class="mon-card__types">
+          {entry.types.map((type) => (
+            <TypePill key={type} type={type} form={density === 'full' ? 'name' : 'code'} />
+          ))}
+        </span>
+      )}
+
+      {showDetail && <StatBlock stats={entry.baseStats} showAll={density === 'full'} />}
     </button>
   );
 }

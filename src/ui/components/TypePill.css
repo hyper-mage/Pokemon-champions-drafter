@@ -1,0 +1,26 @@
+/*
+ * TypePill — one Pokemon type, as a pill on a pool card.
+ *
+ * Consumes tokens only. The fill and the ink arrive as --pill-fill and --pill-ink, set
+ * inline by the component from the closed 18-entry map in src/ui/type-codes.ts. This
+ * file never names a hue, which is what keeps the palette in one place.
+ *
+ * No :focus rule and no :active rule, inheriting MonCard.css's stated reason: the global
+ * accent ring in app.css covers every focusable element and a per-component ring is how
+ * a design system drifts. Here it is doubly true — this element is not interactive at
+ * all.
+ */
+
+.type-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--pill-h);
+  padding-inline: var(--space-1);
+  border-radius: var(--radius);
+  background: var(--pill-fill);
+  color: var(--pill-ink);
+  font: var(--text-label);
+  white-space: nowrap;
+}
