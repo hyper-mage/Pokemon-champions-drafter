@@ -1,0 +1,107 @@
+/*
+ * SegmentedControl — a real radio group, styled.
+ *
+ * Consumes tokens only. The one raw length here is the focus outline, which repeats
+ * app.css's global ring verbatim rather than inventing a second one — see the note on
+ * .segmented__input:focus-visible below for why the global rule cannot reach this case.
+ */
+
+.segmented {
+  /* A fieldset arrives with a border, a margin and a min-width of min-content. All three
+   * are removed: the grouping is semantic here, not visual. min-width matters most —
+   * without it a fieldset refuses to shrink below its content and breaks the pool
+   * header's wrap. */
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.segmented__legend {
+  padding: 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.segmented__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+/*
+ * The input is CLIPPED. It is never removed from rendering and never hidden by the
+ * visibility property.
+ *
+ * This is the load-bearing rule in the file. A radio taken out of the box tree is not
+ * focusable, and a radio group that cannot take focus cannot be operated by keyboard at
+ * all — the arrow keys, the tab stop and the checked state all evaporate together, and
+ * the control still looks completely correct in a screenshot. Same technique as
+ * app.css's .visually-hidden, restated locally rather than shared, because a utility
+ * class on this element is one refactor away from someone "simplifying" it.
+ */
+.segmented__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.segmented__label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding-inline: var(--space-3);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: var(--border-w) solid var(--color-hairline);
+  border-radius: var(--radius);
+  font: var(--text-label);
+  cursor: pointer;
+  /* Motion budget: colour only, at most 120ms. */
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.segmented__label:hover {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * Selected. Not accent — accent has three reserved uses and this is not one of them.
+ * The border is --border-w in both states so selecting an option cannot reflow the row.
+ */
+.segmented__input:checked + .segmented__label {
+  background: var(--color-surface-raised);
+  border-color: var(--color-text);
+}
+
+/*
+ * The focus ring has to be drawn here rather than inherited from app.css's global
+ * :focus-visible rule: the element that actually takes focus is the clipped input, and a
+ * 1px outline on a clipped box is invisible. The declarations are byte-identical to the
+ * global rule on purpose — a different ring on one control is how a design system
+ * drifts.
+ */
+.segmented__input:focus-visible + .segmented__label {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.segmented__input:disabled + .segmented__label {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.segmented__input:disabled + .segmented__label:hover {
+  background: var(--color-surface);
+}

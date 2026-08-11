@@ -1,0 +1,53 @@
+/*
+ * StatBlock — the base-stat total, and the six stats at full density.
+ *
+ * Consumes tokens only. Nothing here varies with density: the density decides whether
+ * the six render at all (that is MonCard's branch), never how large their text is. The
+ * type scale is invariant across densities, which is what keeps every figure at or above
+ * 14px (DRFT-14).
+ */
+
+.stat-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.stat-block__total {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+/*
+ * The list resets its own margin: a description list carries a block margin by default,
+ * which would push the grid past the cell height the density contract derived.
+ */
+.stat-block__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1);
+  width: 100%;
+  margin: 0;
+}
+
+.stat-block__cell {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.stat-block__label {
+  margin: 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+/* A description value carries a 40px inline margin by default. */
+.stat-block__value {
+  margin: 0;
+  font: var(--text-label);
+  color: var(--color-text);
+}
