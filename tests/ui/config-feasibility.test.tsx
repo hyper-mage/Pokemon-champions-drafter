@@ -55,9 +55,11 @@ vi.mock('../../src/adapters/id', () => ({
 }));
 
 import committedSnapshot from '../../public/data/roster.mb.json';
+import { isPoolBuiltAction, pickMade } from '../../src/core/actions';
 import { drawPool } from '../../src/core/draw';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
-import { getState } from '../../src/store';
+import { selectAvailablePool, selectCurrentTurn } from '../../src/core/selectors';
+import { dispatch, getDoc, getState } from '../../src/store';
 import { announce } from '../../src/ui/components/LiveRegion';
 import { ConfigScreen } from '../../src/ui/screens/ConfigScreen';
 
@@ -211,6 +213,15 @@ const EIGHT_NAMES = ['Ada', 'Bo', 'Cy', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal'];
 
 function fortyNames(): string[] {
   return Array.from({ length: 40 }, (_, index) => `Player-${index + 1}`);
+}
+
+/** `part` appears inside `whole` in order — a forward two-cursor walk, never a set test. */
+function isSubsequence(whole: readonly string[], part: readonly string[]): boolean {
+  let cursor = 0;
+  for (const id of whole) {
+    if (cursor < part.length && part[cursor] === id) cursor += 1;
+  }
+  return cursor === part.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -429,6 +440,176 @@ describe('Re-roll pool', () => {
     });
 
     expect(getState()?.poolIds).toEqual(after.ids);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The constrained draw — D-08, D-09
+// ---------------------------------------------------------------------------
+
+describe('the Mega requirement reaching the draw', () => {
+  it('asks for players × megasRequiredPerTeam Megas, gets them, and does not hang', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    const megas = fieldLabelled('Megas required per team');
+    expect(megas).not.toBeNull();
+
+    const started = Date.now();
+    if (megas !== null) type(megas, '4');
+    const elapsed = Date.now() - started;
+
+    // The quota is p × k, not k: every player must be able to field four, so the whole
+    // pool needs thirty-two. Reject-and-redraw would need ~6.4 × 10^7 expected redraws at
+    // exactly this configuration, and this configuration passes every feasibility
+    // blocker — so a retry loop here is a frozen tab for an ordinary host.
+    expect(elapsed).toBeLessThan(500);
+
+    const text = readout() ?? '';
+    expect(text).toMatch(/^Pool: 48 Pokémon — \d+ Mega-capable$/);
+
+    const drawn = Number(text.replace('Pool: 48 Pokémon — ', '').replace(' Mega-capable', ''));
+    expect(drawn).toBeGreaterThanOrEqual(32);
+  });
+
+  it('records the drawn Mega-capable count into the log, recountable against the roster', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    const megas = fieldLabelled('Megas required per team');
+    if (megas !== null) type(megas, '4');
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    const pool = getDoc()?.log[0];
+    expect(pool).toBeDefined();
+    if (pool === undefined || !isPoolBuiltAction(pool)) throw new Error('no pool/built action');
+
+    expect(pool.ids).toHaveLength(48);
+    expect(pool.megaCapableCount).toBeGreaterThanOrEqual(32);
+    // D-09: the figure Phase 3's RULE-09 gate reads rather than recomputing against a
+    // roster that may since have rotated. It is the drawn set's own count, so recounting
+    // it against today's roster must agree — and Phase 3 must handle the day it does not.
+    expect(pool.ids.filter((id) => MEGA_CAPABLE_IDS.has(id))).toHaveLength(
+      pool.megaCapableCount,
+    );
+  });
+
+  it('leaves the draw unconstrained at a requirement of zero', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    const pool = getDoc()?.log[0];
+    if (pool === undefined || !isPoolBuiltAction(pool)) throw new Error('no pool/built action');
+
+    // Whatever the uniform draw produced, which is well under the constrained figure.
+    expect(pool.megaCapableCount).toBeLessThan(32);
+    expect(pool.ids.filter((id) => MEGA_CAPABLE_IDS.has(id))).toHaveLength(
+      pool.megaCapableCount,
+    );
+  });
+
+  it('emits the pool in dex order rather than in the shuffle order', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    const megas = fieldLabelled('Megas required per team');
+    if (megas !== null) type(megas, '4');
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    const ids = getState()?.poolIds ?? [];
+    expect(ids).toHaveLength(48);
+    expect(
+      isSubsequence(
+        ENTRIES.map((entry) => entry.id),
+        ids,
+      ),
+    ).toBe(true);
+
+    // The guard: a reversed pool is the same SET and must fail the same walk, or the
+    // assertion above has quietly degenerated into a set comparison.
+    expect(
+      isSubsequence(
+        ENTRIES.map((entry) => entry.id),
+        [...ids].reverse(),
+      ),
+    ).toBe(false);
+  });
+
+  it('starts the draft with the order the host was shown', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    const shown = renderedOrder();
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    const byId = new Map(
+      getDoc()?.config.players.map((player) => [player.id, player.name]) ?? [],
+    );
+    expect(getState()?.order.map((id) => byId.get(id))).toEqual(shown);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The pool-dry invariant — pinned by a test, never guarded by code
+// ---------------------------------------------------------------------------
+
+describe('a pool drawn at Exact', () => {
+  it('leaves the last picker exactly one option and never runs dry', () => {
+    mount();
+    nameEveryone(['Ada', 'Bo']);
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    expect(getState()?.poolIds).toHaveLength(12);
+
+    // `N − j` ids are available before the 0-based pick `j`: `canApply` rejects a
+    // duplicate pool id, the rotation length is exactly `p`, and each accepted pick
+    // removes exactly one distinct id. So the final picker sees exactly `N − p×r + 1`,
+    // which at the Exact preset is one.
+    for (let pick = 0; pick < 11; pick++) {
+      const state = getState();
+      if (state === null) throw new Error('no draft state');
+
+      const turn = selectCurrentTurn(state);
+      if (turn === null) throw new Error(`no turn at pick ${pick}`);
+
+      const next = selectAvailablePool(state)[0];
+      if (next === undefined) throw new Error(`the pool ran dry at pick ${pick}`);
+
+      const result = dispatch(
+        pickMade({
+          playerId: turn.playerId,
+          monId: next,
+          round: turn.round,
+          pickIndex: turn.pickIndex,
+        }),
+      );
+      expect(result.ok).toBe(true);
+    }
+
+    const final = getState();
+    if (final === null) throw new Error('no draft state');
+
+    // The feasibility blocker IS the guarantee. Nothing in the draft needs defensive
+    // mid-draft pool-dry handling, and adding some would be a second answer to a question
+    // the gate has already settled.
+    expect(selectAvailablePool(final)).toHaveLength(1);
+    expect(selectCurrentTurn(final)).not.toBeNull();
   });
 });
 
