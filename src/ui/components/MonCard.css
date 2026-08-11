@@ -1,8 +1,14 @@
 /*
  * MonCard — one pool cell.
  *
- * Consumes tokens only. Phase 2's density toggle changes --sprite-lg, --cell-min,
- * --cell-h and --text-label; nothing in this file should need to change with it.
+ * Consumes tokens only. The density toggle redeclares --sprite-lg, --cell-min and
+ * --cell-h on the pool pane root, and this file inherits all three without naming a
+ * density anywhere — the selectors live in PoolGrid.css.
+ *
+ * Phase 1's header claimed nothing here would need to change with the density toggle.
+ * That is now false and is rewritten rather than left to mislead: the cell had a fixed
+ * height, and a fixed height is incompatible with a pill row that wraps. See the
+ * min-height rule below.
  *
  * The cell is the click target in its entirety, which puts it far above --target-min
  * in both axes (--cell-min wide by --cell-h tall).
@@ -14,7 +20,14 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  height: var(--cell-h);
+  /*
+   * A FLOOR, not a fixed height. --cell-h is derived per density from the content that
+   * density renders, so it is the right number in the ordinary case — but at full
+   * density a two-type species with two long type names wraps its pill row, and a fixed
+   * height would clip the second row. The grid's own row sizing already equalises every
+   * cell in a row, so letting one grow moves nothing beside it.
+   */
+  min-height: var(--cell-h);
   padding: var(--space-2);
   background: var(--color-surface);
   color: var(--color-text);
@@ -49,4 +62,17 @@
   text-overflow: ellipsis;
   text-align: center;
   font: var(--text-label);
+}
+
+/*
+ * The pill row wraps, which is the whole reason the cell height above is a floor. A
+ * one-type species renders one pill and a two-type species two; no committed entry
+ * carries more than two.
+ */
+.mon-card__types {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
 }

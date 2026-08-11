@@ -1,5 +1,5 @@
 /*
- * PoolGrid — the pool block.
+ * PoolGrid — the pool block, and the three display densities.
  *
  * auto-fill rather than auto-fit: auto-fill keeps empty tracks, so a heavily filtered
  * pool in Phase 2 leaves its remaining cells at their normal size instead of
@@ -10,6 +10,10 @@
  */
 
 .pool__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
 
@@ -19,7 +23,7 @@
 }
 
 .pool__count {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   font: var(--text-label);
   color: var(--color-text-muted);
 }
@@ -28,4 +32,53 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--cell-min), 1fr));
   gap: var(--space-2);
+}
+
+/*
+ * --- The density contract, as CSS ---
+ *
+ * These selectors live here rather than in tokens.css because tokens.css declares values
+ * and never styles an element. Each level redeclares exactly the same three tokens —
+ * --sprite-lg, --cell-min and --cell-h — and nothing else: not a colour, not a font, not
+ * a spacing token. --text-label in particular is invariant, which is what makes it
+ * structurally impossible for a density to put text below 14px (DRFT-14).
+ *
+ * Every selector is scoped to the pool root class, so the board pane can never inherit a
+ * redeclaration. That is D-24 enforced by the shape of the CSS rather than by discipline.
+ *
+ * SPRITE SIZES: 96px and 48px are the only two sanctioned anywhere in the project. Both
+ * come from the 2026-08-04 measurement of all 311 committed PNGs (96x96, zero outliers)
+ * and 48px is its exact 2:1 integer downscale. Every other value is a non-integer
+ * downscale of pixel art, which is why minimal drops straight to 48px rather than to an
+ * intermediate 72px.
+ *
+ * CELL HEIGHTS, so a reviewer can measure a rendered cell instead of trusting a number.
+ * 20 is --text-label at 14px x 1.4, rounded up from 19.6. 24 is --pill-h. 44 is two 20px
+ * stat rows with a --space-1 gap between them.
+ *
+ *   minimal   8 pad + 48 sprite + 4 + 20 name                               + 8 pad =  88
+ *   standard  8 pad + 96 sprite + 4 + 20 name + 4 + 24 pills + 4 + 20 total + 8 pad = 188
+ *   full      8 pad + 96 sprite + 4 + 20 name + 4 + 24 pills + 4 + 20 total
+ *                                                     + 4 + 44 stat grid    + 8 pad = 236
+ *
+ * Each is a floor, not a fixed height — see MonCard.css. At 1109px of pool pane the
+ * three levels give 10, 8 and 5 columns respectively.
+ */
+
+.pool[data-density='minimal'] {
+  --sprite-lg: 48px;
+  --cell-min: 96px;
+  --cell-h: 88px;
+}
+
+.pool[data-density='standard'] {
+  --sprite-lg: 96px;
+  --cell-min: 128px;
+  --cell-h: 188px;
+}
+
+.pool[data-density='full'] {
+  --sprite-lg: 96px;
+  --cell-min: 208px;
+  --cell-h: 236px;
 }
