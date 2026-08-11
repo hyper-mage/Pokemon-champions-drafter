@@ -30,3 +30,23 @@ carry zero occurrences, which is the part of the criterion that was in scope.
 (which the code already satisfies), or rewrite the nine comments to name the roster
 symbolically. Rewriting nine unrelated Phase 1 files inside a Phase 2 plan would put unreviewed
 churn into a wave that other worktrees are merging against.
+
+## D2 — the config screen has no way back to the landing screen
+
+**Found during:** 02-04, wiring the `Screen` router.
+
+Once a host clicks `New tournament` there is no control that returns them to the landing
+screen, so `Resume saved draft` and `Import JSON…` are unreachable without a page reload.
+The dead end is worst when the roster fails: the config branch renders
+`The roster did not load. Reload the page — if it keeps failing, the site may be mid-deploy.`
+and nothing else, and that sentence naming a reload is the only reason this is survivable
+rather than a trap.
+
+**Not fixed here** because 02-UI-SPEC §2 gives the config screen five groups and a pinned
+bar, and no back control anywhere. Inventing one would be a surface the contract does not
+describe, on a screen three later plans are still adding groups to.
+
+**Decision needed:** whether the config screen gets a `Back to the start` secondary action
+beside `Start draft`, or whether the reload is considered sufficient. Plan 02-09 owns the
+config screen's confirmations and is the natural home for it — leaving a half-typed config
+does want a confirm, which is exactly that plan's shape.
