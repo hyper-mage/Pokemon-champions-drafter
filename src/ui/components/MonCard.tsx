@@ -3,6 +3,8 @@ import type { SpriteMeta } from '../../adapters/roster-source';
 import type { RosterEntry } from '../../core/roster/types';
 import { handleSpriteError, spriteSrc } from '../sprite-src';
 
+import { typeDisplay } from '../type-codes';
+
 import { StatBlock } from './StatBlock';
 import { TypePill } from './TypePill';
 
@@ -48,8 +50,9 @@ export interface MonCardProps {
  * Notes on the <img> below, kept out of the markup so the CI text checks cannot match
  * their own documentation:
  *
- *   alt is empty on purpose. The species name sits right beside the sprite and is the
- *   button's accessible name, so alt text here would make every cell announce twice.
+ *   alt is empty on purpose. The sprite is decorative here: the species name is visible
+ *   right beside it and is also stated in the button's aria-label, so alt text would make
+ *   every cell announce twice.
  *
  *   That justification survives the density work unchanged, and it is worth stating
  *   because the parallel case does NOT: MonCard renders its name at EVERY level,
@@ -66,11 +69,40 @@ export interface MonCardProps {
  *   service-worker install, so deferring the request buys nothing and costs pop-in on
  *   scroll. The attribute that would do it is left off entirely.
  */
+/*
+ * The cell's accessible name, stated rather than computed.
+ *
+ * A button with no explicit name takes one by flattening its whole subtree to text, which
+ * at `full` density would announce every cell as "Venusaur Grass Poison Total 525 HP 80
+ * Atk 82 ..." — 235 of those in the pool. The stats stay in the DOM and stay reachable;
+ * they are simply no longer part of the NAME.
+ *
+ * It is deliberately identical at all three densities. A name that changed when the host
+ * flipped the density control would make the same cell a different control to a screen
+ * reader, and the types are worth announcing even at `minimal` where no pill renders.
+ *
+ * Built from `typeDisplay` rather than the raw roster string for the same reason
+ * `TypePill` does it: the 18-entry map is closed, and a type with no entry contributes
+ * nothing instead of leaking a snapshot value into the name.
+ */
+function accessibleName(entry: RosterEntry): string {
+  const types = entry.types
+    .map((type) => typeDisplay(type)?.name)
+    .filter((name): name is string => name !== undefined);
+
+  return types.length > 0 ? `${entry.name}, ${types.join(' ')}` : entry.name;
+}
+
 export function MonCard({ entry, spriteMeta, density, onPick }: MonCardProps) {
   const showDetail = density !== 'minimal';
 
   return (
-    <button type="button" class="mon-card" onClick={() => onPick(entry)}>
+    <button
+      type="button"
+      class="mon-card"
+      aria-label={accessibleName(entry)}
+      onClick={() => onPick(entry)}
+    >
       <img
         class="mon-card__sprite"
         src={spriteSrc(entry, spriteMeta)}

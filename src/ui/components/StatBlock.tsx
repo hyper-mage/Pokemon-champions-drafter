@@ -9,11 +9,21 @@ import './StatBlock.css';
  * once the total has caught their eye, which is why `full` keeps both (D-25's content
  * table is cumulative, D-30 gives the layout).
  *
- * The six are a description list of term-and-value pairs rather than a table or a row of
- * bare spans, so the label-to-value relationship is in the markup instead of being
- * inferred from proximity by a screen reader. Each pair is wrapped in a plain div —
- * explicitly permitted inside a description list — so a pair is one grid item and a
- * label can never be separated from its number by a column boundary.
+ * The six are phrasing content — spans throughout. A description list was the original
+ * choice (UI-SPEC §10, D-30), so the label-to-value relationship would live in the markup
+ * instead of being inferred from proximity by a screen reader. That rationale does not
+ * survive the wrapper: `MonCard` makes the whole cell a single `<button>` (D-13), a button
+ * admits only phrasing content, and accessible-name computation FLATTENS a button's
+ * subtree to plain text. The list structure was therefore never reaching a screen reader —
+ * it bought nothing while making the markup non-conforming. The pairing is carried by
+ * `MonCard`'s explicit `aria-label` instead.
+ *
+ * Overriding UI-SPEC §10 here was a host decision, taken at the phase 2 wave 1 boundary
+ * and recorded in the phase record. Do not restore the `<dl>` without also removing the
+ * button wrapper, or the same defect returns.
+ *
+ * Each pair is still one grid item, so a label can never be separated from its number by
+ * a column boundary.
  *
  * The total is computed here rather than selected from core. It is display arithmetic
  * over six numbers already in hand, not a game rule: nothing branches on it, nothing
@@ -52,14 +62,14 @@ export function StatBlock({ stats, showAll }: StatBlockProps) {
       </span>
 
       {showAll && (
-        <dl class="stat-block__grid">
+        <span class="stat-block__grid">
           {STATS.map(([label, key]) => (
-            <div class="stat-block__cell" key={key}>
-              <dt class="stat-block__label">{label}</dt>
-              <dd class="stat-block__value">{stats[key]}</dd>
-            </div>
+            <span class="stat-block__cell" key={key}>
+              <span class="stat-block__label">{label}</span>
+              <span class="stat-block__value">{stats[key]}</span>
+            </span>
           ))}
-        </dl>
+        </span>
       )}
     </span>
   );

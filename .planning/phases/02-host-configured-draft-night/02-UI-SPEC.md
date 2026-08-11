@@ -838,9 +838,18 @@ Wrapping is why `--cell-h` became a `min-height`.
 - Measured bounds from `public/data/roster.mb.json` on 2026-08-06: stat totals run 288–600 and
   no single stat exceeds 200, so every figure is at most three digits. `SpA 150` at 14px
   semibold is ~54px inside a 61px grid column at `--cell-min: 208px`. It fits without wrapping.
-- The stat grid is a `<dl>` with `<dt>`/`<dd>` pairs, not a table and not bare spans, so the
+- ~~The stat grid is a `<dl>` with `<dt>`/`<dd>` pairs, not a table and not bare spans, so the
   label/value relationship survives without a screen reader having to infer it from
-  proximity.
+  proximity.~~
+
+  **SUPERSEDED during phase 2 wave 1 — host decision. The stat grid is spans.** The `<dl>`
+  contradicts §3/§6 and D-13, which make the whole cell a single `<button>`: a button admits
+  only phrasing content, and `<dl>` is flow content. The stated benefit never arrived either —
+  accessible-name computation flattens a button's subtree to text, so the term/value pairing
+  was not reaching a screen reader at all. It was a conformance violation buying nothing.
+  The pairing is now carried by an explicit `aria-label` on the cell (species and types,
+  identical at every density). See `src/ui/components/StatBlock.tsx` for the full rationale
+  and `tests/ui/pool-density.test.tsx` for the assertions that pin it.
 
 ### 11. Confirmation dialogs (DRFT-13, D-36…D-39)
 

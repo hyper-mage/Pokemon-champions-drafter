@@ -178,7 +178,7 @@ describe('minimal density', () => {
 
   it('renders no stat block', () => {
     expect(container.querySelectorAll('.stat-block')).toHaveLength(0);
-    expect(container.querySelectorAll('dl')).toHaveLength(0);
+    expect(container.querySelectorAll('.stat-block__grid')).toHaveLength(0);
   });
 });
 
@@ -212,7 +212,7 @@ describe('standard density', () => {
   });
 
   it('does not open the six stats', () => {
-    expect(container.querySelectorAll('dl')).toHaveLength(0);
+    expect(container.querySelectorAll('.stat-block__grid')).toHaveLength(0);
   });
 });
 
@@ -237,18 +237,18 @@ describe('full density', () => {
 
   it('keeps the total and adds six labelled stats per card', () => {
     for (const card of cards()) {
-      const list = card.querySelector('dl');
+      const list = card.querySelector('.stat-block__grid');
       expect(list).not.toBeNull();
-      expect(list!.querySelectorAll('dt')).toHaveLength(6);
-      expect(list!.querySelectorAll('dd')).toHaveLength(6);
+      expect(list!.querySelectorAll('.stat-block__label')).toHaveLength(6);
+      expect(list!.querySelectorAll('.stat-block__value')).toHaveLength(6);
     }
   });
 
   it("lists the stats in Showdown's canonical order with the right values", () => {
     const [venusaur] = cards();
-    const list = venusaur!.querySelector('dl')!;
+    const list = venusaur!.querySelector('.stat-block__grid')!;
 
-    expect([...list.querySelectorAll('dt')].map((term) => term.textContent)).toEqual([
+    expect([...list.querySelectorAll('.stat-block__label')].map((term) => term.textContent)).toEqual([
       'HP',
       'Atk',
       'Def',
@@ -256,7 +256,7 @@ describe('full density', () => {
       'SpD',
       'Spe',
     ]);
-    expect([...list.querySelectorAll('dd')].map((value) => value.textContent)).toEqual([
+    expect([...list.querySelectorAll('.stat-block__value')].map((value) => value.textContent)).toEqual([
       '80',
       '82',
       '83',
@@ -264,6 +264,19 @@ describe('full density', () => {
       '100',
       '80',
     ]);
+  });
+
+  /*
+   * The six stats are phrasing content, not a description list, because the whole cell is
+   * a button and a button admits only phrasing content. Asserted on the rendered DOM
+   * rather than trusted from the JSX: the invalid nesting rendered perfectly well in every
+   * browser, which is exactly why it survived review the first time.
+   */
+  it('renders the stats as phrasing content, so the cell stays a conforming button', () => {
+    for (const card of cards()) {
+      expect(card.tagName).toBe('BUTTON');
+      expect(card.querySelectorAll('dl, dt, dd')).toHaveLength(0);
+    }
   });
 });
 
@@ -308,7 +321,42 @@ describe('changing the density', () => {
 
     expect(poolRoot().getAttribute('data-density')).toBe('full');
     expect(container.querySelectorAll('.type-pill')).toHaveLength(3);
-    expect(container.querySelectorAll('dl')).toHaveLength(2);
+    expect(container.querySelectorAll('.stat-block__grid')).toHaveLength(2);
+  });
+});
+
+/*
+ * The cell states its own name instead of letting one be computed from its subtree.
+ *
+ * Without this the name is the flattened text of everything inside the button, so `full`
+ * density announces every stat as part of the control's name. The assertions below pin
+ * both halves of that: the name is the species and its types, and it does NOT grow when
+ * the density opens the stats.
+ */
+describe('the accessible name of a cell', () => {
+  function namesAtDensity(density: string): (string | null)[] {
+    setStoredDensity(density);
+    act(mount);
+    return cards().map((card) => card.getAttribute('aria-label'));
+  }
+
+  it('is the species and its types', () => {
+    expect(namesAtDensity('standard')).toEqual(['Venusaur, Grass Poison', 'Snorlax, Normal']);
+  });
+
+  it('is identical at every density, so flipping the control never renames a cell', () => {
+    const minimal = namesAtDensity('minimal');
+    act(() => render(null, container));
+    const full = namesAtDensity('full');
+
+    expect(minimal).toEqual(full);
+  });
+
+  it('excludes the base stats even once they are visible', () => {
+    for (const name of namesAtDensity('full')) {
+      expect(name).not.toContain('525');
+      expect(name).not.toContain('Total');
+    }
   });
 });
 

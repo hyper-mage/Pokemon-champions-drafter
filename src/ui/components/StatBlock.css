@@ -21,15 +21,16 @@
 }
 
 /*
- * The list resets its own margin: a description list carries a block margin by default,
- * which would push the grid past the cell height the density contract derived.
+ * Every element here is a span, so nothing arrives carrying a UA margin to reset — the
+ * grid height is exactly what the density contract derived. This block used to be a
+ * description list and each rule below had a margin reset for that reason; see
+ * StatBlock.tsx for why the list went.
  */
 .stat-block__grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-1);
   width: 100%;
-  margin: 0;
 }
 
 .stat-block__cell {
@@ -40,14 +41,11 @@
 }
 
 .stat-block__label {
-  margin: 0;
   font: var(--text-label);
   color: var(--color-text-muted);
 }
 
-/* A description value carries a 40px inline margin by default. */
 .stat-block__value {
-  margin: 0;
   font: var(--text-label);
   color: var(--color-text);
 }
