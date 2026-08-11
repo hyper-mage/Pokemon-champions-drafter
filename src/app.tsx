@@ -515,7 +515,11 @@ export function App() {
       )}
 
       {screen.name === 'config' && load.status === 'ready' && (
-        <ConfigScreen snapshot={load.bundle.snapshot} entries={entries} />
+        <ConfigScreen
+          snapshot={load.bundle.snapshot}
+          entries={entries}
+          onStarted={() => setScreen({ name: 'draft' })}
+        />
       )}
 
       {screen.name === 'draft' && <h1 class="app-shell__title">Champions Draft</h1>}
@@ -552,10 +556,19 @@ export function App() {
               importError={importFlow.status === 'failed' ? importFlow.message : null}
             />
 
+            {/*
+              Every number here is derived from the config the host authored. `teams` is
+              the player count rather than `Object.keys(selectTeams(state)).length`: one
+              team per player is what the config asserts, and counting the fold's output
+              would report the same figure by a longer route that can disagree with it.
+            */}
             <TurnBanner
               round={turn === null ? null : turn.round}
+              rounds={state.config.rounds}
               playerName={turn === null ? null : selectPlayerName(state, turn.playerId)}
               complete={complete}
+              picks={selectPickCount(state)}
+              teams={state.config.players.length}
             />
           </div>
 

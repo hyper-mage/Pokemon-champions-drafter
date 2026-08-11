@@ -34,9 +34,7 @@ import {
   type TournamentConfig,
   type TournamentDoc,
 } from './core/model';
-import type { RosterEntry, RosterSnapshot } from './core/roster/types';
 import { apply, canApply, fold, type CanApplyResult } from './core/reduce';
-import { selectStartingOrder } from './core/selectors';
 import { canUndo, lastPickAction, undoLast } from './core/undo';
 import { announce } from './ui/components/LiveRegion';
 
@@ -45,13 +43,6 @@ import { announce } from './ui/components/LiveRegion';
  * or player id; the field exists now so no saved tournament ever needs migrating for it.
  */
 const ACTOR_HOST = 'host';
-
-/** Phase 1 scaffolding: two players, six rounds, twelve picks. Phase 2 configures both. */
-const PHASE_ONE_ROUNDS = 6;
-const PHASE_ONE_PLAYERS = [
-  { id: 'p1', name: 'Player 1' },
-  { id: 'p2', name: 'Player 2' },
-];
 
 const docSignal = signal<TournamentDoc | null>(null);
 const stateSignal = signal<DraftState | null>(null);
@@ -145,86 +136,99 @@ export function dispatch(intent: Intent): CanApplyResult {
 }
 
 /**
- * Start a new tournament against a roster snapshot.
+ * Everything `createTournament` needs, and nothing it could work out for itself.
  *
- * `entries` is the pool in the order it will be displayed, so the ids recorded in
- * `pool/built` and the cells on screen agree without a second sort.
+ * Each field is a result the config screen already computed and already showed the host:
+ * the drawn pool, the resolved starting order, and the seed behind each. Passing the
+ * results rather than the instructions is what makes "the tournament that starts is the
+ * one on screen" structural — a store that re-drew from a seed could disagree with the
+ * readout the host clicked Start under, and would, the first time a derivation changed.
+ */
+export interface CreateTournamentInput {
+  /** Host-authored. Player ids are generated at the edge before this is called. */
+  config: TournamentConfig;
+  /** `drawPool` output, already in display order. */
+  poolIds: readonly string[];
+  /** The seed that produced `poolIds`. */
+  poolSeed: number;
+  /** D-09 — the drawn pool's Mega-capable count, for Phase 3's RULE-09 gate. */
+  megaCapableCount: number;
+  /** `selectStartingOrder` output. */
+  order: readonly string[];
+  /** The seed that produced `order`. */
+  orderSeed: number;
+}
+
+/**
+ * Start a new tournament from a host-authored config.
  *
- * Two actions are emitted, both carrying materialized results rather than instructions
- * to recompute (ARCHITECTURE Pattern 5):
+ * It derives NOTHING. No config synthesis, no seed-driven order roll, no pool built from
+ * a roster. The config screen owns all three and has already put them on screen; this is
+ * where they become a document.
+ *
+ * Two actions are emitted, both carrying materialized results rather than instructions to
+ * recompute (ARCHITECTURE Pattern 5):
  *
  *   pool/built     the actual ids, plus the regulation and checksum they came from, the
  *                  seed that drew them and how many can Mega Evolve. Champions
  *                  regulations rotate roughly every 2.5 months; a document that recorded
  *                  only "build a pool" would reopen next regulation as a different
  *                  tournament.
- *   draft/started  the resolved starting order, and the seed it was rolled from. It is
- *                  derived here once and then read from the log forever after.
+ *   draft/started  the resolved starting order, and the seed it was rolled from.
  *
  * Both seeds ride on the ACTION rather than in `config` or `rng`, which is what keeps a
  * later re-roll expressible: it emits a new action with a new seed and contradicts no
  * field anywhere else in the document.
  *
- * On the RNG cursor: Phase 1 makes exactly one derivation and always from cursor 0, and
- * because its result is materialized a replay never rolls again — so the cursor stays
- * at 0 and stays honest. The first feature that needs a *second* draw (Phase 2's
- * priority-card tie-breaks) must materialize the advanced cursor into the log as well,
- * or two consumers will silently share one draw.
+ * `rng` is a THIRD seed and it is untouched by anything in Phase 2. It is reserved for
+ * Phase 3's priority-card tie-breaks, which is the first feature that needs the cursor to
+ * advance — and it must materialize the advanced cursor into the log when it does, or two
+ * consumers silently share one stretch of one stream. The config screen's two derivations
+ * dodge that by using two independent seeds, each consumed from cursor 0.
+ *
+ * ## Ordering that looks stylistic and is not
+ *
+ * Both signals are assigned BEFORE either dispatch, because `dispatch` returns
+ * `{ ok: false, reason: 'draftNotStarted' }` while either is null. And both are restored
+ * when either dispatch is refused: the assignment has already happened by then, so
+ * "leaves the store as it found it" means rolling back rather than never writing.
  */
-export function createTournament(
-  snapshot: RosterSnapshot,
-  entries: readonly RosterEntry[],
-): TournamentDoc | null {
-  // The six version 2 fields are all at their v1-equivalent defaults here, because Phase 1
-  // has no config screen to author them: the pool is the whole roster, nothing is banned,
-  // no Megas are required and the night ends at the last pick. Plan 02-04 replaces this
-  // literal with the host's answers; until then these are the values a migrated Phase 1
-  // document lands on, which keeps a freshly created tournament and a restored one the
-  // same shape rather than two shapes that happen to fold alike.
-  const config: TournamentConfig = {
-    formatLabel: `Champions ${snapshot.regulation}`,
-    players: PHASE_ONE_PLAYERS.map((player) => ({ ...player })),
-    rounds: PHASE_ONE_ROUNDS,
-    rosterVersion: snapshot.regulation,
-    rosterChecksum: snapshot.checksum,
-    poolSize: entries.length,
-    bans: [],
-    banMode: 'hostBanlist',
-    megasRequiredPerTeam: 0,
-    dualMegaChoices: [],
-    depth: 'draftOnly',
-  };
-
-  const seed = newSeed();
+export function createTournament(input: CreateTournamentInput): TournamentDoc | null {
+  const previousDoc = docSignal.peek();
+  const previousState = stateSignal.peek();
 
   docSignal.value = {
     schemaVersion: SCHEMA_VERSION,
     id: newId(),
     createdAt: now(),
-    config,
-    rng: { seed, cursor: 0 },
+    config: input.config,
+    rng: { seed: newSeed(), cursor: 0 },
     log: [],
   };
-  stateSignal.value = initialState(config);
+  stateSignal.value = initialState(input.config);
 
-  // Phase 1 does not DRAW the pool — it is the whole roster in display order — so no pool
-  // seed was ever rolled, and `0` records exactly that. Borrowing `seed` here would claim a
-  // draw that never happened, and a document's provenance is worth less than nothing when
-  // it is confidently wrong. Plan 02-05's constrained draw supplies the real one.
-  const megaCapableCount = entries.filter((entry) => entry.megaCapable).length;
-
-  dispatch(
+  const pool = dispatch(
     poolBuilt(
-      entries.map((entry) => entry.id),
-      snapshot.regulation,
-      snapshot.checksum,
-      0,
-      megaCapableCount,
+      input.poolIds,
+      input.config.rosterVersion,
+      input.config.rosterChecksum,
+      input.poolSeed,
+      input.megaCapableCount,
     ),
   );
-  dispatch(
-    draftStarted(selectStartingOrder(seed, config.players.map((player) => player.id)), seed),
-  );
+
+  const started = pool.ok
+    ? dispatch(draftStarted(input.order, input.orderSeed))
+    : pool;
+
+  if (!started.ok) {
+    // A half-built tournament is worse than none: the pool would render with no turn
+    // banner and no way to pick. The caller gets null and the store gets its old life
+    // back, including the object identity every component is holding.
+    docSignal.value = previousDoc;
+    stateSignal.value = previousState;
+    return null;
+  }
 
   return docSignal.peek();
 }

@@ -231,7 +231,10 @@ describe('the starting order', () => {
     // had stopped re-rolling entirely.
     expect(before).not.toEqual(after);
 
-    edge.reset([FIRST, SECOND]);
+    // Mount draws TWO seeds — the order's, then the pool's — and they are independent by
+    // design, so `Randomize order` is the third draw. The pool seed sitting between them
+    // is exactly what this test is asserting cannot be shared.
+    edge.reset([FIRST, 4242, SECOND]);
     mount();
 
     expect(renderedOrder()).toEqual(positionalNames(INITIAL_IDS, before));

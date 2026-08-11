@@ -1,9 +1,13 @@
 import { useCallback, useMemo, useState } from 'preact/hooks';
 
 import { newId, newSeed } from '../../adapters/id';
-import type { TournamentDepth } from '../../core/model';
+import { drawPool } from '../../core/draw';
+import { checkFeasibility, poolSizeForPreset } from '../../core/feasibility';
+import type { TournamentConfig, TournamentDepth } from '../../core/model';
 import type { RosterEntry, RosterSnapshot } from '../../core/roster/types';
 import { selectStartingOrder } from '../../core/selectors';
+import { createTournament } from '../../store';
+import { FeasibilityBar } from '../components/FeasibilityBar';
 import { PlayerList, type PlayerDraft } from '../components/PlayerList';
 import { SegmentedControl, type SegmentedOption } from '../components/SegmentedControl';
 
@@ -39,6 +43,13 @@ import './ConfigScreen.css';
  * pool readout is last: it is the only group whose readout reflects every group above it.
  */
 
+/**
+ * Six rounds, six picks, one team of six. Phase 3 makes the round count a host decision;
+ * until then it is a constant in one place rather than a `6` scattered through the four
+ * derivations that read it.
+ */
+const ROUNDS = 6;
+
 /** How many blank rows a fresh config screen starts with. */
 const INITIAL_PLAYERS = 4;
 
@@ -65,9 +76,11 @@ export interface ConfigScreenProps {
   snapshot: RosterSnapshot;
   /** The draftable roster in display order. */
   entries: readonly RosterEntry[];
+  /** A tournament now exists. Routing is the caller's; this screen only reports it. */
+  onStarted: () => void;
 }
 
-export function ConfigScreen({ snapshot }: ConfigScreenProps) {
+export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps) {
   /**
    * Four rows, all blank.
    *
@@ -102,6 +115,17 @@ export function ConfigScreen({ snapshot }: ConfigScreenProps) {
    */
   const [orderSeed, setOrderSeed] = useState(() => newSeed());
 
+  /**
+   * The pool draw's seed — the second of two, and independent of the first.
+   *
+   * Two seeds rather than one advancing cursor. Each is consumed from cursor 0 by its own
+   * pure function and each is re-DRAWN rather than advanced by its own re-roll, so
+   * re-rolling the pool cannot disturb the starting order and vice versa. That is the
+   * collision `src/store.ts` predicted one phase early, closed structurally rather than by
+   * remembering to pass the right cursor.
+   */
+  const [poolSeed] = useState(() => newSeed());
+
   const order = useMemo(
     () =>
       selectStartingOrder(
@@ -110,6 +134,46 @@ export function ConfigScreen({ snapshot }: ConfigScreenProps) {
       ),
     [orderSeed, players],
   );
+
+  /**
+   * Exact, for now. Plan 02-05 replaces this line with the preset control and the free
+   * numeric override; the derivation and the default it computes are already right.
+   */
+  const poolSize = useMemo(
+    () => poolSizeForPreset(players.length, ROUNDS, 'exact'),
+    [players.length],
+  );
+
+  /**
+   * Recomputed on every keystroke — no debounce and no `Check` button (D-16). It is a pure
+   * pass over a few hundred ids, and a gate the host has to ask for is a gate they find out
+   * about after typing everything else.
+   */
+  const feasibility = useMemo(
+    () =>
+      checkFeasibility({
+        playerNames: players.map((player) => player.name),
+        rounds: ROUNDS,
+        poolSize,
+        // Both arrive with plan 02-05 and 02-07. Zero and empty are the honest values
+        // today rather than a stand-in: nothing on this screen can yet set either.
+        megasRequiredPerTeam: 0,
+        bannedIds: [],
+        entries,
+      }),
+    [players, poolSize, entries],
+  );
+
+  /**
+   * Guarded on the gate, and the guard is load-bearing rather than tidy: a blocked config
+   * can ask for a pool larger than the candidate list, and `drawPool` inherits `nextInt`'s
+   * empty-range `RangeError` rather than clamping. Blocked means no draw, and `Start draft`
+   * refuses on the same condition.
+   */
+  const draw = useMemo(() => {
+    if (feasibility.blocked) return null;
+    return drawPool({ candidates: entries, size: poolSize, megasRequired: 0, seed: poolSeed });
+  }, [feasibility.blocked, entries, poolSize, poolSeed]);
 
   const handleChangeName = useCallback((id: string, name: string) => {
     setPlayers((current) =>
@@ -131,6 +195,63 @@ export function ConfigScreen({ snapshot }: ConfigScreenProps) {
   const handleRandomize = useCallback(() => {
     setOrderSeed(newSeed());
   }, []);
+
+  /**
+   * The one moment this screen writes anything.
+   *
+   * Everything above is pre-document form state; this turns it into a document. The
+   * results handed to `createTournament` are the ones already on screen — the drawn pool
+   * and the numbered order — rather than the seeds that produced them, so the tournament
+   * that starts is provably the one the host clicked Start under.
+   *
+   * Names are trimmed on the way in. The feasibility gate already treats `Sam` and `sam `
+   * as one player, so a leading space is a difference the tool has decided is not one; the
+   * stored name should agree rather than carry it into the board and every export.
+   */
+  const handleStart = useCallback(() => {
+    if (feasibility.blocked || draw === null) return;
+
+    const config: TournamentConfig = {
+      formatLabel: formatLabel.trim(),
+      players: players.map((player) => ({ id: player.id, name: player.name.trim() })),
+      rounds: ROUNDS,
+      rosterVersion: snapshot.regulation,
+      rosterChecksum: snapshot.checksum,
+      poolSize,
+      bans: [],
+      banMode: 'hostBanlist',
+      megasRequiredPerTeam: 0,
+      dualMegaChoices: [],
+      depth,
+    };
+
+    const created = createTournament({
+      config,
+      poolIds: draw.ids,
+      poolSeed,
+      megaCapableCount: draw.megaCapableCount,
+      order,
+      orderSeed,
+    });
+
+    // A refused creation leaves the host on this screen with their answers intact, which
+    // is the only place they could act on it.
+    if (created === null) return;
+
+    onStarted();
+  }, [
+    feasibility.blocked,
+    draw,
+    formatLabel,
+    players,
+    snapshot,
+    poolSize,
+    depth,
+    poolSeed,
+    order,
+    orderSeed,
+    onStarted,
+  ]);
 
   return (
     <div class="config-screen">
@@ -179,6 +300,14 @@ export function ConfigScreen({ snapshot }: ConfigScreenProps) {
 
         <p class="config-screen__note">{DEPTH_NOTE}</p>
       </fieldset>
+
+      <FeasibilityBar
+        result={feasibility}
+        players={players.length}
+        rounds={ROUNDS}
+        poolSize={poolSize}
+        onStart={handleStart}
+      />
     </div>
   );
 }
