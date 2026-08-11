@@ -15,6 +15,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isDraftStartedAction,
+  isPoolBuiltAction,
+  type AnyAction,
+} from '../../src/core/actions';
+import {
   isValidTournament,
   MAX_IMPORT_BYTES,
   MAX_LOG_ENTRIES,
@@ -36,6 +41,15 @@ import { fold } from '../../src/core/reduce';
  * typographic apostrophe (U+2019) that an ASCII-normalising round trip mangles into `'`.
  */
 const TRICKY_NAMES = ['Kommo-o', 'Mr. Rime', 'Farfetch’d'] as const;
+
+/**
+ * The two config-time seeds, distinct from each other and from `rng.seed`.
+ *
+ * Three different numbers on purpose: a round trip that copied the wrong one into the
+ * right field would still pass an assertion written against a single shared constant.
+ */
+const POOL_SEED = 3_141_592_653;
+const ORDER_SEED = 2_718_281_828;
 
 function validDoc(): TournamentDoc {
   return {
@@ -65,6 +79,8 @@ function validDoc(): TournamentDoc {
         ids: ['venusaur', 'garchomp', 'rotomwash', 'kommoo'],
         rosterVersion: 'mb',
         checksum: 'sha256-abc',
+        seed: POOL_SEED,
+        megaCapableCount: 2,
         seq: 0,
         at: 1_770_000_000_001,
         actorId: 'host',
@@ -72,6 +88,7 @@ function validDoc(): TournamentDoc {
       {
         type: 'draft/started',
         order: ['p1', 'p2'],
+        seed: ORDER_SEED,
         seq: 1,
         at: 1_770_000_000_002,
         actorId: 'host',
@@ -632,6 +649,330 @@ describe('round trip', () => {
     expect(result.doc.config.players[2]!.name).not.toContain("'");
     expect(result.doc.config.players[2]!.name.codePointAt(8)).toBe(0x2019);
   });
+});
+
+// ---------------------------------------------------------------------------
+// The version 2 config fields — T-02-05 / T-02-06
+// ---------------------------------------------------------------------------
+
+/** A serialized document whose config carries `overrides` on top of the fixture. */
+function configuredText(overrides: Record<string, unknown>): string {
+  const doc = validDoc() as unknown as Record<string, unknown>;
+  Object.assign(doc['config'] as Record<string, unknown>, overrides);
+  return JSON.stringify(doc);
+}
+
+/** Every version 2 field, none of them at its default. */
+const CONFIGURED: Record<string, unknown> = {
+  poolSize: 96,
+  bans: ['mewtwo', 'rayquaza'],
+  banMode: 'snake',
+  megasRequiredPerTeam: 3,
+  dualMegaChoices: [
+    { speciesId: 'charizard', forme: 'x' },
+    { speciesId: 'raichu', forme: 'either' },
+  ],
+  depth: 'draftBracketsAndLog',
+};
+
+describe('version 2 config fields', () => {
+  it('returns every one of them unchanged, field by field', () => {
+    // Field by field rather than one `toEqual` on the whole document: a single deep
+    // comparison against a fixture that was itself built from the parse result would
+    // agree with any consistent dropping of fields.
+    const result = parse(configuredText(CONFIGURED));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { config } = result.doc;
+    expect(config.poolSize).toBe(96);
+    expect(config.bans).toEqual(['mewtwo', 'rayquaza']);
+    expect(config.banMode).toBe('snake');
+    expect(config.megasRequiredPerTeam).toBe(3);
+    expect(config.dualMegaChoices).toEqual([
+      { speciesId: 'charizard', forme: 'x' },
+      { speciesId: 'raichu', forme: 'either' },
+    ]);
+    expect(config.depth).toBe('draftBracketsAndLog');
+  });
+
+  it('copies bans rather than aliasing, and drops a third field off a dual-Mega choice', () => {
+    const result = parse(
+      configuredText({
+        bans: ['mewtwo'],
+        dualMegaChoices: [{ speciesId: 'charizard', forme: 'y', note: 'not a field' }],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.dualMegaChoices[0]).toEqual({ speciesId: 'charizard', forme: 'y' });
+    expect(Object.keys(result.doc.config.dualMegaChoices[0] ?? {}).sort()).toEqual([
+      'forme',
+      'speciesId',
+    ]);
+  });
+
+  it.each([
+    ['a banMode outside the three literals', { banMode: 'blindish' }],
+    ['a banMode that is not a string at all', { banMode: 3 }],
+    ['a depth that is a number', { depth: 42 }],
+    ['a depth outside the three literals', { depth: 'draftAndVibes' }],
+    ['a poolSize that renders as a four-billion-cell grid', { poolSize: 4e9 }],
+    ['a negative poolSize', { poolSize: -1 }],
+    ['a zero poolSize', { poolSize: 0 }],
+    ['a fractional poolSize', { poolSize: 12.5 }],
+    ['more required Megas than there are rounds to draft them in', { megasRequiredPerTeam: 25 }],
+    ['a negative megasRequiredPerTeam', { megasRequiredPerTeam: -1 }],
+    ['a bans value that is not an array', { bans: 3 }],
+    ['a bans array holding a non-string', { bans: ['mewtwo', 7] }],
+    ['a dualMegaChoices forme outside the three literals', {
+      dualMegaChoices: [{ speciesId: 'charizard', forme: 'z' }],
+    }],
+    ['a dualMegaChoices entry with an empty speciesId', {
+      dualMegaChoices: [{ speciesId: '', forme: 'x' }],
+    }],
+    ['a dualMegaChoices entry that is not an object', { dualMegaChoices: ['charizard'] }],
+    ['duplicate dualMegaChoices for one species', {
+      dualMegaChoices: [
+        { speciesId: 'charizard', forme: 'x' },
+        { speciesId: 'charizard', forme: 'y' },
+      ],
+    }],
+  ])('refuses %s', (_label, overrides) => {
+    // Refused, never clamped. A clamped value loads a tournament nobody played, under a
+    // board the host has no reason to distrust.
+    expect(rejection(parse(configuredText(overrides)))).toBe('wrongShape');
+  });
+
+  it('refuses a bans list longer than the pool cap', () => {
+    const bans = Array.from({ length: MAX_POOL_IDS + 1 }, (_unused, i) => `mon-${String(i)}`);
+    expect(rejection(parse(configuredText({ bans })))).toBe('wrongShape');
+
+    const atCap = Array.from({ length: MAX_POOL_IDS }, (_unused, i) => `mon-${String(i)}`);
+    expect(parse(configuredText({ bans: atCap })).ok).toBe(true);
+  });
+
+  it('refuses a dualMegaChoices list longer than the pool cap', () => {
+    const choices = Array.from({ length: MAX_POOL_IDS + 1 }, (_unused, i) => ({
+      speciesId: `mon-${String(i)}`,
+      forme: 'either',
+    }));
+    expect(rejection(parse(configuredText({ dualMegaChoices: choices })))).toBe('wrongShape');
+  });
+
+  it('accepts megasRequiredPerTeam exactly at the round cap', () => {
+    expect(parse(configuredText({ megasRequiredPerTeam: MAX_ROUNDS })).ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The two config-time seeds — D-06
+// ---------------------------------------------------------------------------
+
+describe('config-time seeds in the log', () => {
+  it('keeps both seeds and the Mega-capable count across a round trip', () => {
+    // This file rebuilds payloads field by field, so a field it does not name is dropped
+    // SILENTLY. A dropped pool seed is a tournament that can never explain its own pool.
+    const result = parse(exported(validDoc()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const built = result.doc.log[0];
+    expect(built?.type).toBe('pool/built');
+    if (built === undefined || built.type !== 'pool/built') return;
+    expect(built.seed).toBe(POOL_SEED);
+    expect(built.megaCapableCount).toBe(2);
+
+    const started = result.doc.log[1];
+    expect(started?.type).toBe('draft/started');
+    if (started === undefined || started.type !== 'draft/started') return;
+    expect(started.seed).toBe(ORDER_SEED);
+  });
+
+  it('refuses a seed that is present and malformed', () => {
+    for (const seed of ['12345', 1.5, Number.NaN, null]) {
+      const doc = validDoc() as unknown as Record<string, unknown>;
+      (doc['log'] as Record<string, unknown>[])[0]!['seed'] = seed;
+      expect(rejection(parse(JSON.stringify(doc)))).toBe('wrongShape');
+    }
+  });
+
+  it('refuses a megaCapableCount above the pool cap', () => {
+    const doc = validDoc() as unknown as Record<string, unknown>;
+    (doc['log'] as Record<string, unknown>[])[0]!['megaCapableCount'] = MAX_POOL_IDS + 1;
+    expect(rejection(parse(JSON.stringify(doc)))).toBe('wrongShape');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A version 1 document — decision 4
+// ---------------------------------------------------------------------------
+
+/**
+ * Exactly what Phase 1 wrote: `schemaVersion: 1`, five config fields, and a `pool/built`
+ * that predates both config-time seeds.
+ *
+ * This fixture is the reason `buildConfig` and `buildLogEntry` treat an ABSENT key
+ * differently from a MALFORMED one. `buildConfig` runs inside `buildDoc`, which runs
+ * BEFORE `migrate`, so requiring the version 2 keys here would refuse every Phase 1
+ * document before the migration that exists to upgrade it ever got to run.
+ */
+function v1Text(configOverrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    id: 'b3f1c2d4-0000-4000-8000-000000000000',
+    createdAt: 1_770_000_000_000,
+    config: {
+      formatLabel: 'Champions MB',
+      players: [
+        { id: 'p1', name: 'Player 1' },
+        { id: 'p2', name: 'Player 2' },
+      ],
+      rounds: 6,
+      rosterVersion: 'mb',
+      rosterChecksum: 'sha256-abc',
+      ...configOverrides,
+    },
+    rng: { seed: 12345, cursor: 0 },
+    log: [
+      {
+        type: 'pool/built',
+        ids: ['venusaur', 'garchomp', 'rotomwash', 'kommoo'],
+        rosterVersion: 'mb',
+        checksum: 'sha256-abc',
+        seq: 0,
+        at: 1_770_000_000_001,
+        actorId: 'host',
+      },
+      {
+        type: 'draft/started',
+        order: ['p1', 'p2'],
+        seq: 1,
+        at: 1_770_000_000_002,
+        actorId: 'host',
+      },
+    ],
+  });
+}
+
+describe('a version 1 document', () => {
+  it('is accepted rather than refused for the keys it could not have had', () => {
+    expect(parse(v1Text()).ok).toBe(true);
+  });
+
+  it('keeps its materialized pool, which is what the migration recovers poolSize from', () => {
+    const result = parse(v1Text());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const built = result.doc.log[0];
+    if (built === undefined || built.type !== 'pool/built') {
+      throw new Error('the v1 pool/built entry did not survive the guard');
+    }
+    expect(built.ids).toHaveLength(4);
+  });
+
+  it('lands its absent config keys on the version 1 defaults', () => {
+    const result = parse(v1Text());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { config } = result.doc;
+    expect(config.bans).toEqual([]);
+    expect(config.banMode).toBe('hostBanlist');
+    expect(config.megasRequiredPerTeam).toBe(0);
+    expect(config.dualMegaChoices).toEqual([]);
+    expect(config.depth).toBe('draftOnly');
+  });
+
+  it('is REFUSED when a version 2 key is present and malformed', () => {
+    // Absent is defaulted; present-but-wrong is refused. Repairing untrusted input is
+    // worse than refusing it, and a `bans` of `3` is not a document this app ever wrote.
+    expect(rejection(parse(v1Text({ bans: 3 })))).toBe('wrongShape');
+    expect(rejection(parse(v1Text({ banMode: 'blindish' })))).toBe('wrongShape');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The payload guards — an imported log entry is untrusted input
+// ---------------------------------------------------------------------------
+
+function poolBuiltEntry(overrides: Record<string, unknown> = {}): AnyAction {
+  return {
+    type: 'pool/built',
+    ids: ['venusaur'],
+    rosterVersion: 'mb',
+    checksum: 'sha256-abc',
+    seed: POOL_SEED,
+    megaCapableCount: 1,
+    seq: 0,
+    at: 1,
+    actorId: 'host',
+    ...overrides,
+  } as unknown as AnyAction;
+}
+
+function draftStartedEntry(overrides: Record<string, unknown> = {}): AnyAction {
+  return {
+    type: 'draft/started',
+    order: ['p1', 'p2'],
+    seed: ORDER_SEED,
+    seq: 1,
+    at: 1,
+    actorId: 'host',
+    ...overrides,
+  } as unknown as AnyAction;
+}
+
+function without(entry: AnyAction, key: string): AnyAction {
+  const copy = { ...entry } as Record<string, unknown>;
+  delete copy[key];
+  return copy as unknown as AnyAction;
+}
+
+describe('isPoolBuiltAction', () => {
+  it('accepts a complete version 2 payload', () => {
+    expect(isPoolBuiltAction(poolBuiltEntry())).toBe(true);
+  });
+
+  it('refuses a payload missing either new field', () => {
+    // The discriminant alone is not enough: a `pool/built` that folded with an undefined
+    // seed would produce a tournament that cannot say where its pool came from.
+    expect(isPoolBuiltAction(without(poolBuiltEntry(), 'seed'))).toBe(false);
+    expect(isPoolBuiltAction(without(poolBuiltEntry(), 'megaCapableCount'))).toBe(false);
+  });
+
+  it.each([['12345'], [Number.NaN], [1.5], [null]])(
+    'refuses a seed of %s',
+    (seed: unknown) => {
+      expect(isPoolBuiltAction(poolBuiltEntry({ seed }))).toBe(false);
+    },
+  );
+
+  it.each([['2'], [Number.NaN], [2.5], [null]])(
+    'refuses a megaCapableCount of %s',
+    (megaCapableCount: unknown) => {
+      expect(isPoolBuiltAction(poolBuiltEntry({ megaCapableCount }))).toBe(false);
+    },
+  );
+});
+
+describe('isDraftStartedAction', () => {
+  it('accepts a complete version 2 payload', () => {
+    expect(isDraftStartedAction(draftStartedEntry())).toBe(true);
+  });
+
+  it('refuses a payload missing its seed', () => {
+    expect(isDraftStartedAction(without(draftStartedEntry(), 'seed'))).toBe(false);
+  });
+
+  it.each([['12345'], [Number.NaN], [1.5], [null]])(
+    'refuses a seed of %s',
+    (seed: unknown) => {
+      expect(isDraftStartedAction(draftStartedEntry({ seed }))).toBe(false);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
