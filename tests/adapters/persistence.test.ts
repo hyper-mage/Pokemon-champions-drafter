@@ -16,7 +16,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { load, probeStorage, save, savingBlocked } from '../../src/adapters/persistence';
 import { draftStarted, pickMade, poolBuilt, type Action, type Intent } from '../../src/core/actions';
+import { parseTournamentFile } from '../../src/core/import-guard';
 import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
+import { adoptTournament, getDoc, getState } from '../../src/store';
 
 const STORAGE_KEY = 'champions-drafter:tournament';
 
@@ -326,5 +328,128 @@ describe('load', () => {
     load();
 
     expect(storage.backing.get(STORAGE_KEY)).toBe(raw);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Resuming a Phase 1 save — decision 4
+// ---------------------------------------------------------------------------
+
+/**
+ * A version 1 document, exactly as the deployed Phase 1 build wrote one.
+ *
+ * Five config fields and a `pool/built` with neither config-time seed, because none of
+ * those fields existed. Four pool ids against 2 players × 6 rounds, so a recovered
+ * `poolSize` of 4 is unmistakably the log's number and not the config's arithmetic.
+ */
+function v1Doc(): unknown {
+  return {
+    schemaVersion: 1,
+    id: 'phase-one-tournament',
+    createdAt: 1_700_000_000_000,
+    config: {
+      formatLabel: 'Champions MB',
+      players: [
+        { id: 'p1', name: 'Player 1' },
+        { id: 'p2', name: 'Player 2' },
+      ],
+      rounds: 6,
+      rosterVersion: 'mb',
+      rosterChecksum: 'abc123',
+    },
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log: [
+      {
+        type: 'pool/built',
+        ids: ['venusaur', 'charizard', 'blastoise', 'garchomp'],
+        rosterVersion: 'mb',
+        checksum: 'abc123',
+        seq: 0,
+        at: 1_700_000_000_001,
+        actorId: 'host',
+      },
+      {
+        type: 'draft/started',
+        order: ['p1', 'p2'],
+        seq: 1,
+        at: 1_700_000_000_002,
+        actorId: 'host',
+      },
+    ],
+  };
+}
+
+/** The wrapper record Phase 1 wrote around it — note `schemaVersion: 1` on the WRAPPER. */
+function v1Record(): string {
+  return JSON.stringify({ schemaVersion: 1, generation: 3, savedAt: 0, doc: v1Doc() });
+}
+
+describe('a draft saved by Phase 1', () => {
+  it('loads, rather than being dropped at the wrapper version check', () => {
+    // `load()` compared the WRAPPER's schemaVersion against the current one, which sits a
+    // step before `isValidTournament` ever runs. A v1 wrapper died there regardless of
+    // what `migrate` had to say about the document inside it, and the visible symptom was
+    // `Resume saved draft` silently never appearing.
+    storage.backing.set(STORAGE_KEY, v1Record());
+
+    expect(load()).not.toBeNull();
+  });
+
+  it('comes back at version 2, not at the version it was stored as', () => {
+    // `isValidTournament` is a PREDICATE: it calls `migrate` and throws the result away.
+    // Returning the narrowed object therefore hands back the un-migrated document, which
+    // `adoptTournament` refuses one call later.
+    storage.backing.set(STORAGE_KEY, v1Record());
+
+    expect(load()?.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(load()?.schemaVersion).toBe(2);
+  });
+
+  it('lands with the pool size its log actually recorded', () => {
+    storage.backing.set(STORAGE_KEY, v1Record());
+
+    expect(load()?.config.poolSize).toBe(4);
+  });
+
+  it('still returns null for a wrapper version this build has never supported', () => {
+    storage.backing.set(
+      STORAGE_KEY,
+      JSON.stringify({ schemaVersion: 99, generation: 1, savedAt: 0, doc: v1Doc() }),
+    );
+
+    expect(load()).toBeNull();
+  });
+
+  it('opens through all three schemaVersion comparison sites — decision 4', () => {
+    // One fixture, three doors. Each of these compared a version independently before this
+    // plan, and a fix to any two of them leaves a route by which a Phase 1 draft cannot be
+    // reopened. The import path and the autosave path are different code reached by
+    // different user actions, and `adoptTournament` is what both of them end at.
+    const text = JSON.stringify(v1Doc());
+
+    const imported = parseTournamentFile(text, text.length);
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) return;
+    expect(imported.doc.schemaVersion).toBe(2);
+
+    storage.backing.set(STORAGE_KEY, v1Record());
+    const restored = load();
+    expect(restored?.schemaVersion).toBe(2);
+
+    expect(adoptTournament(imported.doc)).toBe(true);
+    expect(getDoc()?.schemaVersion).toBe(2);
+  });
+
+  it('adopts an un-migrated v1 document rather than refusing it', () => {
+    // `adoptTournament` is reachable with a raw v1 document, so it migrates rather than
+    // comparing — and the state it publishes is the fold of the MIGRATED document.
+    expect(adoptTournament(v1Doc() as TournamentDoc)).toBe(true);
+    expect(getDoc()?.schemaVersion).toBe(2);
+    expect(getState()?.poolIds).toHaveLength(4);
+  });
+
+  it('refuses a document from a schema this build has never supported', () => {
+    const future = { ...(v1Doc() as Record<string, unknown>), schemaVersion: 99 };
+    expect(adoptTournament(future as unknown as TournamentDoc)).toBe(false);
   });
 });
