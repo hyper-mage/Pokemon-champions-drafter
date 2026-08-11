@@ -1,0 +1,87 @@
+/*
+ * PlayerList.css — the name rows, the two actions, and the numbered order.
+ *
+ * Tokens only. Every control clears --target-min in both axes, which is the phase's
+ * interaction baseline and matters more here than anywhere else on the config screen:
+ * `Remove {name}` sits beside a text field that a touch host is already aiming at.
+ */
+
+.player-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.player-list__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.player-list__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* The row is capped rather than the input, so the remove button stays beside the
+   * field it removes instead of drifting to the far edge of a 1200px shell. */
+  max-width: 60ch;
+}
+
+.player-list__name {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: var(--text-body);
+}
+
+.player-list__name::placeholder {
+  color: var(--color-text-muted);
+}
+
+.player-list__remove,
+.player-list__button {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.player-list__remove:hover,
+.player-list__button:hover {
+  background: var(--color-surface-raised);
+}
+
+.player-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/*
+ * --text-label rather than --text-heading. The group's own <legend> is already at
+ * --text-heading, and a second 24px line inside the same box would read as a second
+ * group rather than as a label for the list beneath it.
+ */
+.player-list__order-heading {
+  margin: 0;
+  font: var(--text-label);
+}
+
+.player-list__order {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}

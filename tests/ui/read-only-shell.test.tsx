@@ -82,6 +82,7 @@ vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
 });
 
 import { App } from '../../src/app';
+import { save as saveTournament } from '../../src/adapters/persistence';
 import {
   CLAIM_WINDOW_MS,
   claimOwnership,
@@ -91,6 +92,8 @@ import {
   type LockChannel,
   type LockMessage,
 } from '../../src/adapters/tab-lock';
+import { draftStarted, poolBuilt, type Action, type Intent } from '../../src/core/actions';
+import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
 
 // ---------------------------------------------------------------------------
 
@@ -155,8 +158,79 @@ function draftRegion(): HTMLElement | null {
   return host.querySelector('.draft-region');
 }
 
+function stamp(intent: Intent, seq: number): Action {
+  return { ...intent, seq, at: 1_770_000_000_000 + seq, actorId: 'host' };
+}
+
+/**
+ * Put a tournament in browser storage, so the landing screen offers `Resume saved draft`.
+ *
+ * Since D-01 the app creates nothing on load — it opens on the landing screen — so a test
+ * about the DRAFT screen now has to say how it got there. Resume is the shortest of the
+ * three routes and the only one that does not go through the config screen, which keeps
+ * this file about `inert` rather than about the form.
+ *
+ * Called before `claimOwnership`, deliberately: `persistence.save` refuses a tab that does
+ * not hold the lock, and this write is the fixture rather than part of what is under test.
+ */
+function seedSavedDraft(): void {
+  const config: TournamentConfig = {
+    formatLabel: 'Champions MB',
+    players: [
+      { id: 'p1', name: 'Ada' },
+      { id: 'p2', name: 'Bo' },
+    ],
+    rounds: 6,
+    rosterVersion: 'mb',
+    rosterChecksum: 'test-checksum',
+    poolSize: 12,
+    bans: [],
+    banMode: 'hostBanlist',
+    megasRequiredPerTeam: 0,
+    dualMegaChoices: [],
+    depth: 'draftOnly',
+  };
+
+  const doc: TournamentDoc = {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'read-only-shell-fixture',
+    createdAt: 1_770_000_000_000,
+    config,
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log: [
+      stamp(
+        poolBuilt(
+          Array.from({ length: 12 }, (_, index) => `mon-${index}`),
+          'mb',
+          'test-checksum',
+          11,
+          0,
+        ),
+        0,
+      ),
+      stamp(draftStarted(['p1', 'p2'], 13), 1),
+    ],
+  };
+
+  expect(saveTournament(doc)).toBe(true);
+}
+
+/** Click through the landing screen to the draft. */
+async function resumeSavedDraft(): Promise<void> {
+  const resume = Array.from(host.querySelectorAll('button')).find(
+    (button) => button.textContent?.trim() === 'Resume saved draft',
+  );
+  expect(resume).toBeDefined();
+
+  await act(async () => {
+    resume?.click();
+    await Promise.resolve();
+  });
+}
+
 describe('the draft region in a read-only tab', () => {
   it('is inert while another tab is drafting, and stops being inert on takeover', async () => {
+    seedSavedDraft();
     const bus = makeBus();
 
     // Another tab already holds the lock. Engaging this tab's lock BEFORE mounting is
@@ -171,6 +245,7 @@ describe('the draft region in a read-only tab', () => {
     vi.useRealTimers();
 
     await mountApp();
+    await resumeSavedDraft();
 
     const region = draftRegion();
     expect(region).not.toBeNull();
@@ -197,6 +272,7 @@ describe('the draft region in a read-only tab', () => {
   });
 
   it('is never inert in a tab that is the only one open', async () => {
+    seedSavedDraft();
     const bus = makeBus();
     vi.useFakeTimers();
     claimOwnership({ channel: bus.connect() });
@@ -204,6 +280,7 @@ describe('the draft region in a read-only tab', () => {
     vi.useRealTimers();
 
     await mountApp();
+    await resumeSavedDraft();
 
     // The ordinary case, and the one a regression would hit hardest: a lone tab that
     // cannot be drafted in is a broken app, not a cautious one.

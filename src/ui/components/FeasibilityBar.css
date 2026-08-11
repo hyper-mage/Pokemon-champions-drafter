@@ -1,0 +1,68 @@
+/*
+ * FeasibilityBar.css — the pinned bar at the foot of the config screen.
+ *
+ * Sticky rather than fixed: fixed would take it out of flow and it would overlay the form
+ * at every scroll position including the top, where there is nothing to pin it over.
+ */
+
+.feasibility-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  background: var(--color-bg);
+  border-top: var(--hairline-w) solid var(--color-hairline);
+}
+
+/*
+ * The primary action of this screen, and the only accent fill on it. Accent's second
+ * reserved use is exactly one per screen.
+ */
+.feasibility-bar__start {
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--hairline-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+/*
+ * The visual echo of a state the ARIA attribute already carries — colour is never the
+ * only signal, and here it is not a signal at all: the reason sentence beside the button
+ * is what actually says why. Same treatment as Phase 1's undo (TopBar.css), reached
+ * through `aria-disabled` because this button deliberately has no native `disabled`.
+ */
+.feasibility-bar__start[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.feasibility-bar__reason {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/*
+ * --color-text, not --color-danger. A blocked start is a not-yet state and nothing has
+ * been lost; the destructive colour is reserved for the three surfaces that destroy work.
+ */
+.feasibility-bar__message {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--color-text);
+}
+
+.feasibility-bar__others {
+  margin: 0;
+  max-width: 60ch;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}

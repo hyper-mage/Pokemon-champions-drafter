@@ -30,7 +30,6 @@ import {
 } from './core/selectors';
 import {
   adoptTournament,
-  createTournament,
   dispatch,
   draftState,
   getDoc,
@@ -45,6 +44,8 @@ import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
 import { CompletedDraft } from './ui/screens/CompletedDraft';
+import { ConfigScreen } from './ui/screens/ConfigScreen';
+import { LandingScreen } from './ui/screens/LandingScreen';
 import { StorageBlocked } from './ui/screens/StorageBlocked';
 import { useOwnership } from './ui/use-ownership';
 
@@ -52,6 +53,18 @@ type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; bundle: RosterBundle }
   | { status: 'failed'; message: string };
+
+/**
+ * Which screen the app is showing — D-01.
+ *
+ * A discriminated union in the same style as `LoadState` and `ImportFlow`, and the reason
+ * it exists at all is that Phase 1 had no concept of a screen: the app created a
+ * tournament as soon as the roster resolved, so "which screen" and "does a tournament
+ * exist" were the same question. They are not the same question any more — a host can be
+ * on the config screen with no document, and can arrive at the draft from three different
+ * places — so the answer is held rather than inferred.
+ */
+type Screen = { name: 'landing' } | { name: 'config' } | { name: 'draft' };
 
 /**
  * Where an import has got to.
@@ -146,6 +159,7 @@ function handlePick(entry: RosterEntry): void {
 
 export function App() {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
+  const [screen, setScreen] = useState<Screen>({ name: 'landing' });
 
   // The canary runs during the very first render, before a single pool cell exists.
   // That timing is the requirement, not an optimization (D-13): a host who learns at
@@ -170,6 +184,20 @@ export function App() {
   const [checkpointDismissed, setCheckpointDismissed] = useState(false);
 
   const storageOk = probe.ok;
+
+  // The saved document, probed once during the same first render as the canary, so
+  // `Resume saved draft` can be rendered conditionally and its description line built.
+  //
+  // Probed, NOT adopted. Adoption is the button's job, and keeping the two apart is what
+  // makes "the host chose this draft" a thing that happened rather than a thing that was
+  // assumed — which is the entire difference between this and Phase 1's boot effect.
+  //
+  // A `useState` initializer rather than an effect for the same reason the canary is one:
+  // an effect runs after the first paint, and a `Resume saved draft` button that appears a
+  // frame late is a button the host has already decided is not there.
+  const [saved] = useState<TournamentDoc | null>(() =>
+    probe.ok ? loadSavedTournament() : null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -199,35 +227,12 @@ export function App() {
     [load],
   );
 
-  // Booting a tournament twice would emit a second pool/built, which canApply rejects
-  // — but it would also discard the picks already made, so the guard is a ref rather
-  // than a reliance on the reducer refusing.
-  const bootedRef = useRef(false);
   const stopAutosaveRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    if (load.status !== 'ready' || bootedRef.current) return;
-    bootedRef.current = true;
-
-    // Restore before creating, never after: createTournament would emit its own
-    // pool/built and the restored log would have nowhere to go. A saved document that
-    // this build cannot read is treated exactly like no saved document at all.
-    const restored = storageOk ? loadSavedTournament() : null;
-    if (restored === null || !adoptTournament(restored)) {
-      createTournament(load.bundle.snapshot, entries);
-    }
-
-    // No autosave when the canary already proved writes do not land. Scheduling them
-    // anyway would spend the whole draft failing quietly at 300ms intervals, which is
-    // the silent-retry behaviour the warning screen exists to replace.
-    if (storageOk) {
-      stopAutosaveRef.current = startAutosave({ subscribe, getDoc });
-    }
-  }, [load, entries, storageOk]);
+  const autosaveStartedRef = useRef(false);
 
   // Stopping autosave is an unmount concern and only an unmount concern. Tying it to
-  // the effect above would let a dependency change tear the listeners down and then
-  // decline to rebuild them, because the boot guard has already fired.
+  // the start effect below would let a dependency change tear the listeners down and
+  // then decline to rebuild them, because the start guard has already fired.
   useEffect(
     () => () => {
       stopAutosaveRef.current?.();
@@ -272,6 +277,25 @@ export function App() {
   const readOnly = ownership.readOnly;
 
   const state = draftState.value;
+
+  /**
+   * Start autosaving once a tournament EXISTS, and exactly once.
+   *
+   * Phase 1 started it inside the boot effect, which was the same moment a tournament
+   * came into being. There is no such moment any more — a document can arrive from
+   * `Start draft`, from `Resume saved draft` or from an import — so the trigger is the
+   * document's existence rather than any one of the three routes to it.
+   *
+   * Still gated on the canary, and the reason is unchanged from Phase 1: scheduling
+   * autosaves when the probe already proved writes do not land would spend the whole
+   * draft failing quietly at 300ms intervals, which is the silent-retry behaviour the
+   * warning screen exists to replace.
+   */
+  useEffect(() => {
+    if (state === null || !storageOk || autosaveStartedRef.current) return;
+    autosaveStartedRef.current = true;
+    stopAutosaveRef.current = startAutosave({ subscribe, getDoc });
+  }, [state, storageOk]);
 
   const entryById = useMemo(
     () => new Map(entries.map((entry) => [entry.id, entry])),
@@ -341,7 +365,25 @@ export function App() {
     const restored = getState();
     announce(importAnnouncement(restored === null ? 0 : selectPickCount(restored)));
     setImportFlow({ status: 'idle' });
+    // A successful import is a tournament, so it goes to the draft — from the landing
+    // screen, which is where D-01 gives import its front door, and from the draft screen,
+    // where this is already where the host is.
+    setScreen({ name: 'draft' });
   }, []);
+
+  /**
+   * Take up the document that was already in storage when this tab opened.
+   *
+   * A refused adoption leaves the host on the landing screen rather than dropping them on
+   * an empty draft. `load()` has already run `isValidTournament` and `migrate`, so this
+   * failing means the document is from a build this one cannot read — and the landing
+   * screen, with `Import JSON…` on it, is the only place that offers a way out.
+   */
+  const handleResume = useCallback(() => {
+    if (saved === null) return;
+    if (!adoptTournament(saved)) return;
+    setScreen({ name: 'draft' });
+  }, [saved]);
 
   /**
    * Persist a freshly imported document, once, after the render that displayed it.
@@ -437,8 +479,6 @@ export function App() {
     <div class="app-shell">
       <LiveRegion />
 
-      <h1 class="app-shell__title">Champions Draft</h1>
-
       {/*
         Above the top bar, and above the storage warning's own gate: the two are
         independent conditions and a tab can genuinely be both read-only and unable to
@@ -448,26 +488,52 @@ export function App() {
       <ReadOnlyBanner ownership={ownership} />
 
       {/*
-        Nothing but the warning until it is acknowledged. Not the pool, not the board,
-        not even the loading line — the one thing the host must do first is read this.
+        The landing screen owns the boot-time storage warning (D-01), because it is what
+        comes first now. It renders that and nothing else until it is acknowledged.
       */}
-      {storageBlockedAtBoot && (
-        <StorageBlocked onAcknowledge={() => setProbeAcknowledged(true)} />
+      {screen.name === 'landing' && (
+        <LandingScreen
+          saved={saved}
+          storageBlocked={storageBlockedAtBoot}
+          onAcknowledgeStorage={() => setProbeAcknowledged(true)}
+          onNewTournament={() => setScreen({ name: 'config' })}
+          onResume={handleResume}
+          onImportFile={handleImportFile}
+        />
       )}
 
-      {!storageBlockedAtBoot && storageBlockedMidDraft && (
+      {/*
+        The roster gates the config screen because every derivation on it — the pool
+        size, the draw, the feasibility gate — reads the snapshot. There is nothing
+        useful to render before it lands, and rendering the form against an empty roster
+        would report a configuration as unsatisfiable that is not.
+      */}
+      {screen.name === 'config' && load.status !== 'ready' && (
+        <p class="app-shell__status">
+          {load.status === 'failed' ? load.message : 'Loading the pool…'}
+        </p>
+      )}
+
+      {screen.name === 'config' && load.status === 'ready' && (
+        <ConfigScreen
+          snapshot={load.bundle.snapshot}
+          entries={entries}
+          onStarted={() => setScreen({ name: 'draft' })}
+        />
+      )}
+
+      {screen.name === 'draft' && <h1 class="app-shell__title">Champions Draft</h1>}
+
+      {/*
+        A write that failed mid-draft, which is a different event from the canary and
+        gets its own acknowledgement — see above. It can only reach the host on the draft
+        screen, because that is the only screen a `save` runs behind.
+      */}
+      {screen.name === 'draft' && storageBlockedMidDraft && (
         <StorageBlocked onAcknowledge={() => setWriteFailureAcknowledged(true)} />
       )}
 
-      {!storageBlockedAtBoot && load.status === 'loading' && (
-        <p class="app-shell__status">Loading the pool…</p>
-      )}
-
-      {!storageBlockedAtBoot && load.status === 'failed' && (
-        <p class="app-shell__status">{load.message}</p>
-      )}
-
-      {!storageBlockedAtBoot && load.status === 'ready' && state !== null && (
+      {screen.name === 'draft' && load.status === 'ready' && state !== null && (
         /*
           One attribute disables pointer, keyboard, and focus across the entire draft
           region, and it is Baseline-supported. The hand-rolled alternative —
@@ -490,10 +556,19 @@ export function App() {
               importError={importFlow.status === 'failed' ? importFlow.message : null}
             />
 
+            {/*
+              Every number here is derived from the config the host authored. `teams` is
+              the player count rather than `Object.keys(selectTeams(state)).length`: one
+              team per player is what the config asserts, and counting the fold's output
+              would report the same figure by a longer route that can disagree with it.
+            */}
             <TurnBanner
               round={turn === null ? null : turn.round}
+              rounds={state.config.rounds}
               playerName={turn === null ? null : selectPlayerName(state, turn.playerId)}
               complete={complete}
+              picks={selectPickCount(state)}
+              teams={state.config.players.length}
             />
           </div>
 

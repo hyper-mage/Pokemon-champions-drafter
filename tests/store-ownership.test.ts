@@ -20,6 +20,14 @@
  * Default `node` environment. Nothing here needs a DOM: `claimOwnership` skips its
  * lifecycle listeners when `window` is undefined, which is precisely the seam that lets
  * the ownership protocol be driven from a plain test.
+ *
+ * ## Why `createTournament` is tested here too
+ *
+ * It is the store's third write path and it arrived with this phase's config screen. Its
+ * relationship to the lock is the same question this file already asks: `store.ts` records
+ * that `dispatch` is deliberately NOT `isOwner()`-gated because `createTournament`
+ * dispatches inside the 250ms claim window whenever the roster comes from cache, which
+ * offline is every time. That asymmetry is asserted below rather than left as a comment.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,9 +40,24 @@ import {
   type LockChannel,
   type LockMessage,
 } from '../src/adapters/tab-lock';
-import { draftStarted, pickMade, poolBuilt, type Action, type Intent } from '../src/core/actions';
+import {
+  draftStarted,
+  isDraftStartedAction,
+  isPoolBuiltAction,
+  pickMade,
+  poolBuilt,
+  type Action,
+  type Intent,
+} from '../src/core/actions';
 import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../src/core/model';
-import { adoptTournament, getDoc, undo } from '../src/store';
+import {
+  adoptTournament,
+  createTournament,
+  getDoc,
+  getState,
+  undo,
+  type CreateTournamentInput,
+} from '../src/store';
 
 // ---------------------------------------------------------------------------
 // A channel the other tab can be spoken through
@@ -186,5 +209,125 @@ describe('undo in a tab that does not own the lock', () => {
     expect(isOwner()).toBe(true);
     expect(undo()).toBe(true);
     expect(getDoc()?.log).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTournament — the config screen's write path
+// ---------------------------------------------------------------------------
+
+/** Six named players, as the config screen would hand them over. */
+const SIX_PLAYER_CONFIG: TournamentConfig = {
+  ...CONFIG,
+  formatLabel: 'Champions mb',
+  players: ['Ada', 'Bo', 'Cy', 'Dee', 'Eli', 'Fay'].map((name, index) => ({
+    id: `player-${index + 1}`,
+    name,
+  })),
+  poolSize: 36,
+};
+
+function sixPlayerInput(overrides: Partial<CreateTournamentInput> = {}): CreateTournamentInput {
+  return {
+    config: SIX_PLAYER_CONFIG,
+    poolIds: Array.from({ length: 36 }, (_, index) => `mon-${index}`),
+    poolSeed: 21,
+    megaCapableCount: 9,
+    order: SIX_PLAYER_CONFIG.players.map((player) => player.id),
+    orderSeed: 34,
+    ...overrides,
+  };
+}
+
+describe('createTournament', () => {
+  it('emits exactly pool/built then draft/started, each carrying its own seed', () => {
+    const created = createTournament(sixPlayerInput());
+
+    expect(created).not.toBeNull();
+    expect(created?.log).toHaveLength(2);
+    expect(getState()?.config.players).toHaveLength(6);
+
+    const [pool, started] = created?.log ?? [];
+    expect(pool).toBeDefined();
+    expect(started).toBeDefined();
+    if (pool === undefined || started === undefined) return;
+
+    expect(isPoolBuiltAction(pool)).toBe(true);
+    expect(isDraftStartedAction(started)).toBe(true);
+    if (!isPoolBuiltAction(pool) || !isDraftStartedAction(started)) return;
+
+    expect(pool.ids).toHaveLength(36);
+    expect(pool.seed).toBe(21);
+    expect(pool.megaCapableCount).toBe(9);
+    expect(pool.rosterVersion).toBe(SIX_PLAYER_CONFIG.rosterVersion);
+    expect(pool.checksum).toBe(SIX_PLAYER_CONFIG.rosterChecksum);
+
+    expect(started.order).toHaveLength(6);
+    expect(started.seed).toBe(34);
+  });
+
+  it('invents nothing — the config it stores is the config it was given', () => {
+    const created = createTournament(sixPlayerInput());
+
+    expect(created?.config.players.map((player) => player.name)).toEqual([
+      'Ada',
+      'Bo',
+      'Cy',
+      'Dee',
+      'Eli',
+      'Fay',
+    ]);
+    expect(created?.config.poolSize).toBe(36);
+    expect(created?.config.formatLabel).toBe('Champions mb');
+    expect(created?.schemaVersion).toBe(SCHEMA_VERSION);
+
+    // The document's own RNG seed is reserved for Phase 3's priority-card tie-breaks and
+    // is not either of the two config-time seeds, which ride on the actions.
+    expect(created?.rng.cursor).toBe(0);
+  });
+
+  it('returns null and leaves both signals untouched when the pool dispatch is refused', () => {
+    expect(createTournament(sixPlayerInput())).not.toBeNull();
+
+    const docBefore = getDoc();
+    const stateBefore = getState();
+
+    // An empty pool is refused by `canApply`. The signals were already reassigned by the
+    // time that happens, so "untouched" means restored rather than never written.
+    expect(createTournament(sixPlayerInput({ poolIds: [] }))).toBeNull();
+
+    // Identity, not shape. A rollback that rebuilt an equal document would still have
+    // replaced the object every component holds a reference to.
+    expect(getDoc()).toBe(docBefore);
+    expect(getState()).toBe(stateBefore);
+  });
+
+  it('returns null and leaves both signals untouched when the order dispatch is refused', () => {
+    expect(createTournament(sixPlayerInput())).not.toBeNull();
+
+    const docBefore = getDoc();
+    const stateBefore = getState();
+
+    // An order naming a player the config does not have. This is the SECOND dispatch, so
+    // the first one has already succeeded against the new document — the rollback has to
+    // undo a partially-written tournament rather than a never-written one.
+    expect(createTournament(sixPlayerInput({ order: ['nobody'] }))).toBeNull();
+
+    expect(getDoc()).toBe(docBefore);
+    expect(getState()).toBe(stateBefore);
+  });
+
+  it('is not refused while the ownership claim is still in flight', () => {
+    const wire = makeWire();
+    claimOwnership({ channel: wire });
+
+    // The 250ms window during which this tab might still turn out to be a secondary.
+    // `undo` is refused here and that is correct; `createTournament` must not be, or an
+    // offline load — where the roster comes from cache every time — creates a document
+    // with an empty log, an unpickable pool and no turn banner.
+    expect(isOwner()).toBe(false);
+
+    const created = createTournament(sixPlayerInput());
+    expect(created?.log).toHaveLength(2);
   });
 });
