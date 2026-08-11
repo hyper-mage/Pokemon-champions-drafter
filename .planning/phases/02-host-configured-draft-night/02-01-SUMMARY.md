@@ -174,6 +174,12 @@ The three modules the rest of Phase 2 renders are done and under test. Every dow
 
 One thing to carry forward: `checkFeasibility` takes `playerNames`, not `PlayerConfig[]`. The config screen holds pre-document form state, so it has names before it has ids — but whoever wires `createTournament` should not pass `players.map(p => p.name)` and call it validated. The gate checks names; id uniqueness is still `import-guard`'s and the store's business.
 
+## Self-Check: PASSED
+
+All nine claimed files are tracked in git. All six task commits plus the metadata commit
+resolve in `git log`. `.planning/STATE.md` and `.planning/ROADMAP.md` are byte-identical to
+the base commit — the orchestrator owns those writes after the wave merges.
+
 ---
 *Phase: 02-host-configured-draft-night*
 *Completed: 2026-08-11*
