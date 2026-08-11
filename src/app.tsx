@@ -44,6 +44,7 @@ import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
 import { CompletedDraft } from './ui/screens/CompletedDraft';
+import { ConfigScreen } from './ui/screens/ConfigScreen';
 import { LandingScreen } from './ui/screens/LandingScreen';
 import { StorageBlocked } from './ui/screens/StorageBlocked';
 import { useOwnership } from './ui/use-ownership';
@@ -502,14 +503,19 @@ export function App() {
       )}
 
       {/*
-        Placeholder until plan 02-04 Task 2 lands the real form. The roster gates it
-        because the config screen's every derivation — pool size, the draw, the
-        feasibility gate — reads the snapshot.
+        The roster gates the config screen because every derivation on it — the pool
+        size, the draw, the feasibility gate — reads the snapshot. There is nothing
+        useful to render before it lands, and rendering the form against an empty roster
+        would report a configuration as unsatisfiable that is not.
       */}
       {screen.name === 'config' && load.status !== 'ready' && (
         <p class="app-shell__status">
           {load.status === 'failed' ? load.message : 'Loading the pool…'}
         </p>
+      )}
+
+      {screen.name === 'config' && load.status === 'ready' && (
+        <ConfigScreen snapshot={load.bundle.snapshot} entries={entries} />
       )}
 
       {screen.name === 'draft' && <h1 class="app-shell__title">Champions Draft</h1>}
