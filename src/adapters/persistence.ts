@@ -30,6 +30,7 @@
 import { computed, signal, type ReadonlySignal } from '@preact/signals';
 
 import { isValidTournament } from '../core/import-guard';
+import { migrate, SUPPORTED_SCHEMA_VERSIONS } from '../core/migrate';
 import { SCHEMA_VERSION, type TournamentDoc } from '../core/model';
 import { now } from './clock';
 import { isOwner, notifySaved } from './tab-lock';
@@ -219,7 +220,16 @@ export function load(): TournamentDoc | null {
   }
 
   if (!isPlainRecord(parsed)) return null;
-  if (parsed['schemaVersion'] !== SCHEMA_VERSION) return null;
+
+  // The WRAPPER's version, which is a step earlier than it looks: this runs before
+  // `isValidTournament` and therefore before `migrate` sees anything. Comparing it against
+  // the current version dropped every Phase 1 record here regardless of what the migration
+  // had to say about the document inside, and the host's symptom was `Resume saved draft`
+  // silently never appearing. A wrapper version this build has never supported still
+  // returns null — the set of readable versions changed, not the posture.
+  const wrapperVersion = parsed['schemaVersion'];
+  if (typeof wrapperVersion !== 'number') return null;
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(wrapperVersion)) return null;
 
   // The same guard the imported-file path runs — T-01-05.
   //
@@ -239,13 +249,26 @@ export function load(): TournamentDoc | null {
   const storedGeneration = parsed['generation'];
   generation = Number.isSafeInteger(storedGeneration) ? (storedGeneration as number) : 0;
 
-  // `isValidTournament` is a predicate, so this is the parsed object itself rather than a
-  // rebuilt copy — narrowed, not reconstructed. The distinction is worth stating: a
-  // stored record that passes carries its own unknown fields into the store and back out
-  // on the next save, whereas the FILE path returns a document rebuilt field by field and
-  // drops them. Both refuse the poison keys, which is the part that matters; the file
-  // path is stricter because its input arrived from outside this browser.
-  return stored;
+  // Migrated here, and not merely validated, because `isValidTournament` is a PREDICATE:
+  // it calls `migrate` to decide the answer and then throws the migrated document away
+  // (`import-guard.ts`). Returning `stored` would hand back the document at the version it
+  // was written at — and `adoptTournament` would refuse it one call later, so a Phase 1
+  // save would pass every check in this function and still fail to open.
+  //
+  // `isValidTournament` already established this cannot fail, and it is still asked rather
+  // than asserted: a `null` return is this function's whole vocabulary for "nothing usable
+  // here", and inventing a throw for the impossible case would give callers a second
+  // failure mode to handle.
+  //
+  // Note what `stored` is: the parsed object itself, narrowed rather than reconstructed. A
+  // record that passes carries its own unknown fields into the store and back out on the
+  // next save, whereas the FILE path returns a document rebuilt field by field and drops
+  // them. Both refuse the poison keys, which is the part that matters; the file path is
+  // stricter because its input arrived from outside this browser.
+  const migrated = migrate(stored);
+  if (!migrated.ok) return null;
+
+  return migrated.doc;
 }
 
 /**

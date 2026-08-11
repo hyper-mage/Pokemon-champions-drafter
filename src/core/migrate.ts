@@ -68,6 +68,100 @@ export type MigrateResult =
  * specified sentences to show the host, and an exception is a worse way to carry a
  * two-valued answer than a two-valued answer.
  */
+/**
+ * The number of ids the first `pool/built` recorded, or `null` when the log holds none.
+ *
+ * Defensive about the shape because of who calls it: `persistence.load` hands `migrate`
+ * the object `JSON.parse` produced, NOT a document the import guard rebuilt. The type
+ * says `Action[]`; the value is whatever was in `localStorage`.
+ */
+/** A recorded number, or `0` for the version 1 case where the field did not exist. */
+function numberOrZero(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function recordedPoolSize(log: TournamentDoc['log']): number | null {
+  for (const action of log) {
+    if (action.type !== 'pool/built') continue;
+    const ids: unknown = (action as { ids?: unknown }).ids;
+    if (Array.isArray(ids)) return ids.length;
+  }
+  return null;
+}
+
+/**
+ * Version 1 to version 2.
+ *
+ * Two things happen here and both are upgrades rather than repairs.
+ *
+ * **The config gains six fields.** Five come from {@link V1_CONFIG_DEFAULTS} and are
+ * lossless by definition — a version 1 tournament had no bans, required no Megas and
+ * ended at the last pick, so there is nothing to lose. The sixth, `poolSize`, is
+ * RECOVERED rather than defaulted: the first `pool/built` in the log is holding the ids
+ * that were actually drawn, and their count is the true pool size rather than an estimate.
+ * `players × rounds` is the fallback for a document whose draft never got as far as
+ * building a pool, and only for that.
+ *
+ * That recovery cannot live in `import-guard.buildConfig`, which is why the guard's
+ * `poolSize` is explicitly provisional: the guard types every log entry in isolation and
+ * never reads one field of the document against another — "a bound is not an integrity
+ * check". Reading the log to answer a question about the config is exactly the kind of
+ * cross-field reasoning this module is allowed to do and that one is not.
+ *
+ * **The log's `pool/built` and `draft/started` entries gain their seeds.** This is not
+ * bookkeeping. `isPoolBuiltAction` requires `seed` and `megaCapableCount`, so a v1 entry
+ * left as it was folds to "ignored" — and a restored Phase 1 draft would open with an
+ * empty pool, no error message, and every cell unavailable. `0` is the honest value: no
+ * second draw was ever rolled, so there is no seed to record.
+ *
+ * Never mutates its argument. Every object it returns is a fresh literal, because the
+ * caller in the persistence path is holding the parsed record and re-reads it afterwards.
+ */
+function migrateV1ToV2(doc: TournamentDoc): TournamentDoc {
+  const { config } = doc;
+
+  return {
+    schemaVersion: 2,
+    id: doc.id,
+    createdAt: doc.createdAt,
+    config: {
+      formatLabel: config.formatLabel,
+      players: config.players.map((player) => ({ id: player.id, name: player.name })),
+      rounds: config.rounds,
+      rosterVersion: config.rosterVersion,
+      rosterChecksum: config.rosterChecksum,
+      poolSize: recordedPoolSize(doc.log) ?? config.players.length * config.rounds,
+      bans: [...V1_CONFIG_DEFAULTS.bans],
+      banMode: V1_CONFIG_DEFAULTS.banMode,
+      megasRequiredPerTeam: V1_CONFIG_DEFAULTS.megasRequiredPerTeam,
+      dualMegaChoices: [...V1_CONFIG_DEFAULTS.dualMegaChoices],
+      depth: V1_CONFIG_DEFAULTS.depth,
+    },
+    rng: { seed: doc.rng.seed, cursor: doc.rng.cursor },
+    log: doc.log.map((action) => {
+      // The declared type says these fields are there. The VALUE is a version 1 action, so
+      // they are not, and the cast is what makes that gap visible instead of letting the
+      // compiler assert its way past it — `TournamentDoc` describes version 2, and this
+      // function's whole job is the input that does not match it yet.
+      const raw = action as unknown as Record<string, unknown>;
+
+      if (action.type === 'pool/built') {
+        return {
+          ...action,
+          seed: numberOrZero(raw['seed']),
+          megaCapableCount: numberOrZero(raw['megaCapableCount']),
+        };
+      }
+
+      if (action.type === 'draft/started') {
+        return { ...action, seed: numberOrZero(raw['seed']) };
+      }
+
+      return action;
+    }),
+  };
+}
+
 export function migrate(doc: TournamentDoc): MigrateResult {
   const version = doc.schemaVersion;
 
@@ -77,16 +171,23 @@ export function migrate(doc: TournamentDoc): MigrateResult {
     return { ok: false, reason: 'unknownSchema' };
   }
 
-  if (SUPPORTED_SCHEMA_VERSIONS.includes(version)) {
-    // Version 1 is the current version, so there is nothing to do and the document is
-    // returned by identity. When version 2 arrives, this becomes a chain of small
-    // upgrade steps and each one gets its own test.
-    return { ok: true, doc };
+  // The list is the gate, and stays the gate. Asking it first is what keeps it from
+  // decaying into documentation: a version cannot be readable here without being on it.
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(version)) {
+    return {
+      ok: false,
+      reason: version > SCHEMA_VERSION ? 'newerSchema' : 'unknownSchema',
+    };
   }
 
-  if (version > SCHEMA_VERSION) {
-    return { ok: false, reason: 'newerSchema' };
-  }
+  // The chain of small upgrade steps this file's older comment predicted. Each version
+  // gets one arm and one test; the current version is the passthrough, and it returns the
+  // document by IDENTITY because a passthrough that rebuilt it would be doing undisclosed
+  // work that a caller comparing references would notice.
+  if (version === 2) return { ok: true, doc };
+  if (version === 1) return { ok: true, doc: migrateV1ToV2(doc) };
 
+  // Reachable only by adding a version to the list without giving it an arm. Refusing is
+  // the right answer to that: a version this function cannot name is one it cannot fold.
   return { ok: false, reason: 'unknownSchema' };
 }

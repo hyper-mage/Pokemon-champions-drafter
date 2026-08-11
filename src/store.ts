@@ -26,6 +26,7 @@ import { now } from './adapters/clock';
 import { newId, newSeed } from './adapters/id';
 import { isOwner } from './adapters/tab-lock';
 import { draftStarted, poolBuilt, type Action, type Intent } from './core/actions';
+import { migrate } from './core/migrate';
 import {
   initialState,
   SCHEMA_VERSION,
@@ -229,21 +230,29 @@ export function createTournament(
 }
 
 /**
- * Adopt a document that already exists — a restored autosave today, an imported file in
- * plan 01-10.
+ * Adopt a document that already exists — a restored autosave, or an imported file.
+ *
+ * The version question goes to `migrate` rather than being answered here with a
+ * comparison. That is the difference between "this build cannot read this document" and
+ * "this build cannot read this document YET", and the two now have different answers: a
+ * schema 1 tournament is UPGRADED and adopted, while one from a build newer than this is
+ * still refused rather than half-loaded. `apply` tolerates action types it has never heard
+ * of, but a whole document shape it does not understand is a different question, and
+ * answering that one optimistically is how a good save gets replaced by a broken one.
+ *
+ * What gets adopted is `migrate`'s output, never the argument. For a version 1 document
+ * those are different objects, and publishing the argument would put a document the
+ * reducer cannot fully fold into the signal every component reads.
  *
  * The state is re-folded from scratch rather than trusted, because the log is the truth
- * and the folded state is only ever a cache of it. A document from a schema this build
- * does not recognise is refused rather than half-loaded: `apply` tolerates action types
- * it has never heard of, but a whole document shape it does not understand is a
- * different question, and answering it optimistically is how a good save gets replaced
- * by a broken one.
+ * and the folded state is only ever a cache of it.
  */
 export function adoptTournament(doc: TournamentDoc): boolean {
-  if (doc.schemaVersion !== SCHEMA_VERSION) return false;
+  const migrated = migrate(doc);
+  if (!migrated.ok) return false;
 
-  docSignal.value = doc;
-  stateSignal.value = fold(doc);
+  docSignal.value = migrated.doc;
+  stateSignal.value = fold(migrated.doc);
   return true;
 }
 
