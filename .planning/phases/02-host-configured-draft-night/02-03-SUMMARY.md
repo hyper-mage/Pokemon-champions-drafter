@@ -200,6 +200,15 @@ Ready. This plan deliberately front-loaded the shared pieces the rest of the pha
 
 No blockers. `npm run verify` exits 0.
 
+## Self-Check: PASSED
+
+- All 16 claimed source and test files exist and are tracked by git (`git ls-files` returns all 16, plus this summary).
+- All four claimed commits exist on `worktree-agent-a70adcd8aa54d64c5`: `acf9df2`, `b0878a5`, `4d055bd`, `fb23272`.
+- `npm run verify` exits 0 (`check:pure`, `check:nohtml`, 424 tests, build).
+- `git diff --stat package.json` is empty; `package-lock.json` untouched; runtime dependencies still exactly `preact` and `@preact/signals`.
+- No file under `src/ui/` outside `tokens.css` declares a raw hex value.
+- `STATE.md` and `ROADMAP.md` are untouched, as required in worktree mode. `REQUIREMENTS.md` was also left to the orchestrator: it is a shared file and other plans in this wave claim `DRFT-` ids, so a per-worktree edit would conflict on merge. The ids this plan completes are in `requirements-completed` above.
+
 ---
 *Phase: 02-host-configured-draft-night, plan 03*
 *Completed: 2026-08-11*
