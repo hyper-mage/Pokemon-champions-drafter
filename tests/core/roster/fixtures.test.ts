@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import committedSnapshot from '../../../public/data/roster.mb.json';
 import { transform } from '../../../src/core/roster/transform';
 import type { RawSpecies, RosterEntry, RosterSnapshot } from '../../../src/core/roster/types';
+import { toSearchKey } from '../../../src/core/search';
 
 const snapshot = committedSnapshot as unknown as RosterSnapshot;
 const byId = new Map<string, RosterEntry>(snapshot.entries.map((entry) => [entry.id, entry]));
@@ -287,6 +288,87 @@ describe('names that break string parsing', () => {
   it('has an id equal to toID(name) for every entry', () => {
     for (const entry of snapshot.entries) {
       expect(entry.name.toLowerCase().replace(/[^a-z0-9]+/g, '')).toBe(entry.id);
+    }
+  });
+});
+
+describe('roster tripwire — regulation M-B', () => {
+  /**
+   * This block exists to make a regeneration announce itself.
+   *
+   * The committed snapshot's `validUntil` is 2026-09-02 and Champions regulations rotate
+   * roughly every two and a half months. Every feasibility ceiling Phase 2 computes is a
+   * function of these figures: the largest party the roster can seat, the point at which
+   * bans starve the Mega requirement, and the number of types the filter bar renders. A
+   * regeneration that quietly changed any of them would leave a gate that is subtly wrong
+   * rather than obviously broken — and a subtly wrong gate is discovered by a group of
+   * friends sat around a screen, not by a build.
+   *
+   * The numbers live HERE and never in `src/`. D-17 removes the player cap entirely, and
+   * nothing in the application may hardcode a roster figure; pinning them in a test is how
+   * they stay checkable without becoming a constant.
+   */
+
+  it('holds 235 draftable entries', () => {
+    expect(snapshot.entries).toHaveLength(235);
+    expect(snapshot.counts.draftable).toBe(235);
+  });
+
+  it('holds 74 Mega-capable draftable entries', () => {
+    expect(snapshot.entries.filter((entry) => entry.megaCapable)).toHaveLength(74);
+  });
+
+  it('holds exactly two dual-Mega species, and they are Charizard and Raichu', () => {
+    const dual = snapshot.entries
+      .filter((entry) => entry.megaFormes.length > 1)
+      .map((entry) => entry.id)
+      .sort();
+
+    expect(dual).toEqual(['charizard', 'raichu']);
+  });
+
+  it('spans 18 distinct types, and no entry carries more than two', () => {
+    const types = new Set<string>();
+    for (const entry of snapshot.entries) {
+      expect(entry.types.length, `${entry.id} type count`).toBeLessThanOrEqual(2);
+      expect(entry.types.length, `${entry.id} type count`).toBeGreaterThanOrEqual(1);
+      for (const type of entry.types) types.add(type);
+    }
+
+    expect(types.size).toBe(18);
+  });
+
+  it('keeps every base-stat total between 288 and 600', () => {
+    for (const entry of snapshot.entries) {
+      const total = Object.values(entry.baseStats).reduce((sum, stat) => sum + stat, 0);
+      expect(total, `${entry.id} base-stat total`).toBeGreaterThanOrEqual(288);
+      expect(total, `${entry.id} base-stat total`).toBeLessThanOrEqual(600);
+    }
+  });
+
+  it('keeps every single base stat at three digits or fewer', () => {
+    for (const entry of snapshot.entries) {
+      for (const [stat, value] of Object.entries(entry.baseStats)) {
+        expect(value, `${entry.id} ${stat}`).toBeLessThanOrEqual(200);
+      }
+    }
+  });
+
+  it('keeps the longest display name at 20 characters', () => {
+    const longest = Math.max(...snapshot.entries.map((entry) => entry.name.length));
+
+    expect(longest).toBe(20);
+  });
+
+  it('normalizes every name back to its own id, for entries and Mega formes alike', () => {
+    // DRFT-08 matches against `name` rather than `id` on purpose — the equality is an
+    // optimization, not a correctness dependency. This assertion is what makes a rotation
+    // that breaks it fail loudly here instead of making search silently miss a species.
+    for (const entry of snapshot.entries) {
+      expect(toSearchKey(entry.name), `${entry.id} name`).toBe(entry.id);
+      for (const mega of entry.megaFormes) {
+        expect(toSearchKey(mega.name), `${mega.id} name`).toBe(mega.id);
+      }
     }
   });
 });
