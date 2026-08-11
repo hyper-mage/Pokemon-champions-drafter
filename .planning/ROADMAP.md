@@ -108,9 +108,9 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — feasibility gate, constrained pool draw, shared pool predicates, roster tripwire
-- [ ] 02-02-PLAN.md — schema version 2, widened config, v1 migration at all three comparison sites
-- [ ] 02-03-PLAN.md — type pills, base stats, three display densities, the view-preference adapter
+- [x] 02-01-PLAN.md — feasibility gate, constrained pool draw, shared pool predicates, roster tripwire
+- [x] 02-02-PLAN.md — schema version 2, widened config, v1 migration at all three comparison sites
+- [x] 02-03-PLAN.md — type pills, base stats, three display densities, the view-preference adapter
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -196,7 +196,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
-| 2. Host-Configured Draft Night | 0/3 | Not started | - |
+| 2. Host-Configured Draft Night | 3/8 | In Progress|  |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |

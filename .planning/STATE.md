@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 2 planned — 8 plans, 6 waves, checker passed after revision
-last_updated: "2026-08-10T23:53:06.787Z"
-last_activity: 2026-08-10 -- Phase 2 planning complete
+stopped_at: Phase 2 planned — 8 plans across 6 waves, plan-checker passed after revision
+last_updated: "2026-08-11T13:32:10.540Z"
+last_activity: 2026-08-11 -- Phase 02 execution started
 progress:
   total_phases: 5
   completed_phases: 1
@@ -21,14 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** A group of friends can run an entire draft tournament — rules, bans, picks, swaps, brackets, results — start to finish inside the tool, without anyone reaching for a spreadsheet or a Discord message to track state.
-**Current focus:** Phase 2 — host configured draft night
+**Current focus:** Phase 02 — host-configured-draft-night
 
 ## Current Position
 
-Phase: 2
+Phase: 02 (host-configured-draft-night) — EXECUTING
+Plan: 1 of 8
 Plans: 8 of 8 written, 6 waves
-Status: Ready to execute
-Last activity: 2026-08-10 -- Phase 2 planning complete
+Status: Executing Phase 02
+Last activity: 2026-08-11 -- Phase 02 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -131,6 +132,7 @@ locked decisions tracing to an implementing task.
    each verified content-covered by hand (D-15 → 02-01+02-04; D-18/19 →
    02-06 `SplitPanes`; D-20 → 02-03 `view-prefs.ts`; D-25/26/28/30/31 →
    02-03). Gate measures citation location, not coverage.
+
 2. **02-06 Task 3 is knowingly over the 30% per-task context budget** (~35%,
    12 files). Left whole on purpose: a confirm on `Abandon draft` while
    `Re-roll pool` commits silently is an inconsistency, not a partial
