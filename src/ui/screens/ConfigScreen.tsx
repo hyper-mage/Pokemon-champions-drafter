@@ -2,7 +2,11 @@ import { useCallback, useMemo, useState } from 'preact/hooks';
 
 import { newId, newSeed } from '../../adapters/id';
 import { drawPool } from '../../core/draw';
-import { checkFeasibility, poolSizeForPreset } from '../../core/feasibility';
+import {
+  checkFeasibility,
+  poolSizeForPreset,
+  type PoolPreset,
+} from '../../core/feasibility';
 import type {
   DualMegaChoice,
   DualMegaForme,
@@ -102,6 +106,40 @@ function megasRequiredHelper(players: number, megasPerTeam: number): string {
   return `0 means no Mega requirement. A requirement of ${megasPerTeam} needs at least ${players * megasPerTeam} Mega-capable Pokémon in the pool.`;
 }
 
+/**
+ * Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen — DRFT-02, D-05.
+ *
+ * The labels carry the multiplication sign rather than the letter x, matching the copy
+ * table and the arithmetic the feasibility reasons are written in.
+ */
+const POOL_PRESET_OPTIONS: readonly SegmentedOption<PoolPreset>[] = [
+  { value: 'exact', label: 'Exact' },
+  { value: 'x1_5', label: '1.5×' },
+  { value: 'x2', label: '2×' },
+];
+
+/**
+ * What `Exact` means, in the numbers currently on screen.
+ *
+ * Fixed on Exact regardless of which preset is selected, per the copy table: it is the
+ * sentence that explains the degenerate case the warning severity exists for, and the
+ * other two presets are described by being multiples of it.
+ */
+function poolSizeHelper(players: number, rounds: number): string {
+  return `Exact is ${players} players × ${rounds} rounds = ${players * rounds} Pokémon, with nothing left over.`;
+}
+
+/**
+ * The draw readout — 02-UI-SPEC §2.
+ *
+ * Both numbers come from the `drawPool` result: `ids.length`, never the requested size,
+ * and `megaCapableCount`, never a recount of the roster. It is a pure derivation of
+ * (config, seed), so it is stable unless one of those changes.
+ */
+function drawReadout(poolSize: number, megaCapableCount: number): string {
+  return `Pool: ${poolSize} Pokémon — ${megaCapableCount} Mega-capable`;
+}
+
 export interface ConfigScreenProps {
   /** The loaded roster snapshot. Supplies the regulation the format label is prefilled from. */
   snapshot: RosterSnapshot;
@@ -150,6 +188,24 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
    */
   const [dualMegaChoices, setDualMegaChoices] = useState<DualMegaChoice[]>([]);
 
+  const [poolPreset, setPoolPreset] = useState<PoolPreset>('exact');
+
+  /**
+   * The override's RAW text, or `null` for "not overriding" — D-05, D-06.
+   *
+   * Two states rather than one, because an empty string and an untouched field are
+   * different answers and the gate must be able to tell them apart. While this is `null`
+   * the field DISPLAYS the preset and follows it, so adding a player or switching to `2×`
+   * moves the number in front of the host. The moment they type, the string is theirs and
+   * the preset stops driving it.
+   *
+   * Emptying the field therefore lands on `''`, not back on `null`: the host has deleted
+   * the pool size, and the gate says so. Falling back to the preset on empty would make
+   * the F-08 case unreachable through the one field it is about — and would make `abc`,
+   * which a number input sanitizes to the empty string, silently satisfiable.
+   */
+  const [poolOverride, setPoolOverride] = useState<string | null>(null);
+
   /**
    * The starting order is rolled ON MOUNT, not on a click.
    *
@@ -174,7 +230,7 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
    * collision `src/store.ts` predicted one phase early, closed structurally rather than by
    * remembering to pass the right cursor.
    */
-  const [poolSeed] = useState(() => newSeed());
+  const [poolSeed, setPoolSeed] = useState(() => newSeed());
 
   const order = useMemo(
     () =>
@@ -210,13 +266,29 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
     [entries],
   );
 
+  /** What the selected preset asks for, before the host overrides it — DRFT-02. */
+  const presetPoolSize = useMemo(
+    () => poolSizeForPreset(players.length, ROUNDS, poolPreset),
+    [players.length, poolPreset],
+  );
+
+  /** The string the field shows: the host's text, or the preset while there is none. */
+  const poolOverrideValue = poolOverride ?? String(presetPoolSize);
+
   /**
-   * Exact, for now. Plan 02-05 replaces this line with the preset control and the free
-   * numeric override; the derivation and the default it computes are already right.
+   * The size the gate judges and the draw is asked for — `null` when it is unusable.
+   *
+   * The parse happens once, HERE, and `null` is what reaches `checkFeasibility`. Reading
+   * the raw string arithmetically instead is the highest-severity defect the research
+   * found: `Number('')` is 0, `Number('  ')` is 0, and `Number('4e')` is NaN — and NaN
+   * silently passes BOTH the too-large and the too-small comparisons, because every
+   * IEEE-754 relational comparison with NaN is false. The gate would then report all-clear
+   * and Start would enable on a configuration with no pool. That is why
+   * `poolSizeNotAnInteger` sits above every arithmetic blocker in the precedence order.
    */
   const poolSize = useMemo(
-    () => poolSizeForPreset(players.length, ROUNDS, 'exact'),
-    [players.length],
+    () => (poolOverride === null ? presetPoolSize : parseNumericField(poolOverride)),
+    [poolOverride, presetPoolSize],
   );
 
   /**
@@ -246,7 +318,7 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
    * refuses on the same condition.
    */
   const draw = useMemo(() => {
-    if (feasibility.blocked) return null;
+    if (feasibility.blocked || poolSize === null) return null;
     return drawPool({ candidates: entries, size: poolSize, megasRequired: 0, seed: poolSeed });
   }, [feasibility.blocked, entries, poolSize, poolSeed]);
 
@@ -269,6 +341,20 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
 
   const handleRandomize = useCallback(() => {
     setOrderSeed(newSeed());
+  }, []);
+
+  /**
+   * A NEW seed, never an advanced cursor — D-07.
+   *
+   * That is what keeps the pool draw and the order roll off one stream, which is the
+   * collision `src/store.ts` warns about, and it is why re-rolling the pool provably
+   * cannot disturb the starting order rather than merely not disturbing it today.
+   *
+   * Plan 02-09 puts a confirmation in front of this (D-36). It is already a single call
+   * site taking no argument, so that plan inserts a dialog rather than reshaping anything.
+   */
+  const handleRerollPool = useCallback(() => {
+    setPoolSeed(newSeed());
   }, []);
 
   /** The forme a row is showing. Absent means `Either`, which is the default. */
@@ -316,7 +402,7 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
    * stored name should agree rather than carry it into the board and every export.
    */
   const handleStart = useCallback(() => {
-    if (feasibility.blocked || draw === null) return;
+    if (feasibility.blocked || draw === null || poolSize === null) return;
 
     const config: TournamentConfig = {
       formatLabel: formatLabel.trim(),
@@ -452,6 +538,52 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
             ))}
           </>
         )}
+      </fieldset>
+
+      {/*
+        LAST, and the position is load-bearing rather than tidy: this is the only group
+        whose readout reflects every group above it (02-UI-SPEC §2). Plan 02-07 inserts
+        `Bans` BEFORE it, not after.
+      */}
+      <fieldset class="config-screen__group">
+        <legend class="config-screen__legend">Pool</legend>
+
+        <SegmentedControl
+          legend="Pool size"
+          name="pool-size-preset"
+          options={POOL_PRESET_OPTIONS}
+          value={poolPreset}
+          onChange={setPoolPreset}
+        />
+
+        <p class="config-screen__note">{poolSizeHelper(players.length, ROUNDS)}</p>
+
+        <NumericField
+          label="Pool size override"
+          value={poolOverrideValue}
+          onInput={setPoolOverride}
+          min={1}
+          max={entries.length}
+        />
+
+        {/*
+          Rendered only while the configuration is satisfiable. A readout computed from a
+          size the gate refused would be a number the host cannot act on, sitting beside a
+          sentence telling them the size is wrong.
+        */}
+        {draw !== null && (
+          <p class="config-screen__readout">
+            {drawReadout(draw.ids.length, draw.megaCapableCount)}
+          </p>
+        )}
+
+        <button
+          type="button"
+          class="config-screen__reroll"
+          onClick={handleRerollPool}
+        >
+          Re-roll pool
+        </button>
       </fieldset>
 
       <FeasibilityBar
