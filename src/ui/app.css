@@ -27,13 +27,84 @@ body {
  * The cap tightened from Phase 1's 1600px (02-UI-SPEC §Two-Pane Geometry → "The shell
  * changes"): a config form and a landing screen do not want a 1600px measure, and both
  * are now real screens rather than a hypothetical. This does NOT constrain the draft
- * board — plan 02-08 introduces a separate full-bleed `.draft-shell` for the two-pane
- * screen, which drops the cap entirely so the board pane gets every pixel it can.
+ * board — `.draft-shell` below is the full-bleed shell the two-pane screen uses instead,
+ * and it drops the cap entirely so the board pane gets every pixel it can.
+ *
+ * The config screen keeps THIS shell and keeps page scroll, which is what leaves
+ * `FeasibilityBar`'s pinned bar working untouched.
  */
 .app-shell {
   max-width: 1200px;
   margin-inline: auto;
   padding: var(--space-4);
+}
+
+/*
+ * The draft shell — full-bleed, exactly one viewport tall, and the only screen that does
+ * not scroll as a page.
+ *
+ * No `max-width` and no `margin-inline`, which is the whole point. Phase 1 capped the
+ * shell "so a wide monitor does not stretch the pool grid into an unreadable band", and
+ * that reason evaporates under a 60/40 split: the pool no longer reaches the viewport
+ * edge, and the board needs every pixel it can get. The arithmetic is why the cap could
+ * not simply be raised — at the old 1600px cap the board pane is 611 wide and a per-round
+ * cell is 64; full-bleed on a 1920-wide screen the same pane is 739 and the cell is 86,
+ * which is the number the sprite-only board chip decision rests on (BoardGrid.css).
+ *
+ * The height uses the DYNAMIC viewport unit, not the static one, so mobile browser chrome
+ * cannot clip the bottom pane — the static unit is measured against the LARGEST viewport,
+ * which on a phone is the one you get after the address bar has already covered the last
+ * row. The static unit is deliberately not written out here even as a counter-example: it
+ * is a substring nobody should find in this file.
+ *
+ * No sticky-head offset is named here or anywhere else. The height of the head is never
+ * written down, so it cannot go stale the day the top bar gains a button.
+ */
+.draft-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  padding: var(--space-4);
+}
+
+/*
+ * Everything above the panes keeps its natural height and only the region holding them
+ * grows. `flex: none` rather than the default, because the default lets a flex item
+ * SHRINK — and a top bar squeezed by a tall board is a top bar whose buttons overlap.
+ */
+.draft-shell > *,
+.draft-shell .sticky-head {
+  flex: none;
+}
+
+/*
+ * The flex chain has to pass THROUGH the draft region for the panes to size and scroll at
+ * all, so this wrapper cannot stay entirely undeclared.
+ *
+ * That is not a violation of the rule below it, and the distinction is the point:
+ * `display: flex` and a minimum height create no containing block, unlike the five
+ * properties that rule names. The styleless-wrapper prohibition is about containing
+ * blocks and about the read-only state carrying no colour signal, and both hold here in
+ * substance rather than only in letter.
+ */
+.draft-shell > .draft-region {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/*
+ * The adopted-document feasibility notice. Deliberately NOT --color-danger: nothing is
+ * broken and nothing is blocked — the draft runs — so it takes the same muted treatment
+ * as the load status above. The destructive colour stays reserved for the two surfaces
+ * that own it.
+ */
+.draft-notice {
+  margin: var(--space-2) 0 0;
+  max-width: 60ch;
+  font: var(--text-label);
+  color: var(--color-text-muted);
 }
 
 /*

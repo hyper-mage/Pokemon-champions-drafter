@@ -16,7 +16,9 @@ import {
   type RosterBundle,
 } from './adapters/roster-source';
 import { claimOwnership, disposeTabLock } from './adapters/tab-lock';
+import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
 import { pickMade } from './core/actions';
+import { checkFeasibility } from './core/feasibility';
 import { parseTournamentFile } from './core/import-guard';
 import type { TournamentDoc } from './core/model';
 import type { RosterEntry } from './core/roster/types';
@@ -41,6 +43,7 @@ import { ImportConfirmDialog } from './ui/components/ImportConfirmDialog';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid } from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
+import { SplitPanes } from './ui/components/SplitPanes';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
 import { CompletedDraft } from './ui/screens/CompletedDraft';
@@ -94,6 +97,18 @@ const IMPORT_WRONG_SHAPE =
   'That file is not a Champions Drafter tournament. Choose a .json file this app exported.';
 const IMPORT_NEWER_SCHEMA =
   'This tournament was saved by a newer version of the app. Reload the page and try again.';
+
+/**
+ * The adopted-document notice — the one place an imported or resumed tournament's
+ * arithmetic becomes visible to the host.
+ *
+ * `{reason}` is `problems[0].message`, which already ends in a full stop, so nothing is
+ * punctuated here. Composed rather than written as JSX prose, for the reason
+ * `ImportConfirmDialog` gives: JSX collapses whitespace between text lines.
+ */
+function adoptedNotice(reason: string): string {
+  return `This tournament's configuration no longer adds up: ${reason} The draft still runs, but it may run out of Pokémon before every team is full.`;
+}
 
 /**
  * What the live region says after a successful import.
@@ -320,6 +335,89 @@ export function App() {
   const turnPlayerName =
     state === null || turn === null ? null : selectPlayerName(state, turn.playerId);
 
+  /*
+    The host's stored pane preference, read synchronously in a state initializer so the
+    first paint is already the pane they left. Read in an effect instead, the draft would
+    render split and then jump.
+
+    This holds the STORED preference. What renders is `pane` below, which additionally
+    scopes `pool` out of a live draft — see there.
+  */
+  const [storedPane, setStoredPane] = useState<PaneState>(() => loadViewPrefs().pane);
+
+  /*
+    All three pane states become available once the draft is over, and that is exactly
+    when eight stacked export panels want the full width. While a draft is running,
+    `pool-full` would put the board behind a toggle, which ROADMAP criterion 5 forbids.
+  */
+  const poolExpandable = complete;
+
+  /*
+    The rendered pane. A stored `pool` is silently forced to `split` while a draft is
+    running: no warning, no announcement, nothing for the host to dismiss. That is the
+    second, independent half of the T-02-24 mitigation — `loadViewPrefs` already refuses
+    any value outside the union, and this refuses a legitimate value in the one situation
+    where honouring it would hide the board.
+
+    Derived here rather than inside `SplitPanes`, which must never hold an opinion about
+    which of its states are available; and derived rather than coerced in the initializer
+    above, because `App` mounts on the LANDING screen — there is no draft in progress at
+    the moment that initializer runs, so a coercion there would inspect a state that does
+    not exist yet and let a stored `pool` through on resume.
+
+    The two values cannot drift at a write: `handlePaneChange` persists the value it was
+    handed, which is always the value about to render.
+  */
+  const pane: PaneState = storedPane === 'pool' && !poolExpandable ? 'split' : storedPane;
+
+  const handlePaneChange = useCallback((next: PaneState) => {
+    setStoredPane(next);
+    // Density is read back rather than held here. This screen does not own that
+    // preference, and holding a copy of it is how the pool and the board end up writing
+    // each other's settings.
+    saveViewPrefs({ density: loadViewPrefs().density, pane: next });
+  }, []);
+
+  /*
+    THE ADOPTED-DOCUMENT NOTICE, and the four facts that make it a notice rather than a
+    guard.
+
+    1. Pool-dry mid-draft is STRUCTURALLY IMPOSSIBLE once `pool/built` carries N distinct
+       ids with N >= players x rounds. `canApply` rejects duplicate pool ids
+       (reduce.ts:137), the rotation length is exactly the player count (reduce.ts:146),
+       each accepted pick removes exactly one distinct id (reduce.ts:167,
+       selectors.ts:40), and `selectCurrentTurn` returns null after players x rounds picks
+       (selectors.ts:82, :105). The final picker therefore chooses from N - p*r + 1
+       options, which is at least one.
+    2. The only route to a pool that cannot fill every team is a hand-edited or hostile
+       import, and `import-guard` deliberately performs no referential integrity check —
+       "A bound is not an integrity check" (import-guard.ts:317-319). That posture is
+       intact; this notice exists INSTEAD of changing it, per 02-RESEARCH Open Question 3.
+    3. Therefore no defensive mid-draft pool-dry handling and no "out of Pokémon" empty
+       state may be added anywhere. The blocker above is the guarantee, and defensive code
+       for an unreachable state is code nobody can ever test.
+    4. It runs for EVERY document, not only adopted ones. A document this session started
+       passed the same gate at Start and will produce nothing here, and an "was this
+       adopted?" flag would be a piece of state that can go stale.
+  */
+  const feasibilityNotice = useMemo(() => {
+    if (state === null || entries.length === 0) return null;
+
+    const result = checkFeasibility({
+      playerNames: state.config.players.map((player) => player.name),
+      rounds: state.config.rounds,
+      poolSize: state.poolIds.length,
+      megasRequiredPerTeam: state.config.megasRequiredPerTeam,
+      bannedIds: state.config.bans,
+      entries,
+    });
+
+    if (!result.blocked) return null;
+
+    const primary = result.problems[0];
+    return primary === undefined ? null : adoptedNotice(primary.message);
+  }, [state, entries]);
+
   // Undo's live-region announcement names the species that came back. The store holds
   // the document and the document holds ids, so the display name has to arrive from
   // here, where the roster snapshot already is. Falling back to the id keeps the
@@ -482,7 +580,13 @@ export function App() {
   const storageBlockedMidDraft = storageOk && savingBlocked.value && !writeFailureAcknowledged;
 
   return (
-    <div class="app-shell">
+    /*
+      The draft screen is the one screen that is not a scrolling page: it is exactly one
+      viewport tall and its two panes scroll inside it, so the board is on screen at every
+      moment. Every other screen keeps the capped, centred, page-scrolling shell — which
+      is what leaves `FeasibilityBar`'s pinned bar on the config screen untouched.
+    */
+    <div class={screen.name === 'draft' ? 'draft-shell' : 'app-shell'}>
       <LiveRegion />
 
       {/*
@@ -553,6 +657,12 @@ export function App() {
             TopBar and TurnBanner are both specified as sticky at the top of the
             viewport, so they stick as one block rather than fighting over the same
             pixel. See TopBar.css.
+
+            `position: sticky` on this head is a no-op now that the panes own the
+            scrolling — there is no page scroll left for it to stick against. It is left
+            in place rather than deleted: removing it means editing TopBar.css for no
+            behavioural gain, and it re-engages verbatim if a later phase reintroduces
+            page scroll on this screen.
           */}
           <div class="sticky-head">
             <TopBar
@@ -576,45 +686,59 @@ export function App() {
               picks={selectPickCount(state)}
               teams={state.config.players.length}
             />
+
+            {feasibilityNotice !== null && (
+              <p class="draft-notice" role="status">
+                {feasibilityNotice}
+              </p>
+            )}
           </div>
 
-          <BoardGrid
-            players={state.config.players}
-            rounds={state.config.rounds}
-            teams={selectTeams(state)}
-            currentTurn={turn}
-            entryById={entryById}
-            spriteMeta={load.bundle.spriteMeta}
-            pickCount={selectPickCount(state)}
-            // False until the pane state exists. The board is not expandable yet, so
-            // there is no state in which a name should render.
-            showName={false}
-            firstPlayerName={turnPlayerName}
-          />
-
           {/*
-            The completed-draft screen takes the POOL's place and nothing else. TopBar
-            and BoardGrid above stay mounted, so `Undo last pick` is still one click away
-            — a host who spots a wrong final pick on this screen must be able to unwind
-            it, and the board remains the completed record.
+            The completed-draft screen takes the POOL's place and nothing else. The head
+            and the board stay exactly where they are, so `Undo last pick` is still one
+            click away — a host who spots a wrong final pick on this screen must be able
+            to unwind it, and the board remains the completed record.
           */}
-          {complete ? (
-            <CompletedDraft
-              players={state.config.players}
-              teams={selectTeams(state)}
-              entryById={entryById}
-              checkpointReached={complete}
-              checkpointDismissed={checkpointDismissed}
-              onDownload={handleDownload}
-              onDismissCheckpoint={() => setCheckpointDismissed(true)}
-            />
-          ) : (
-            <PoolGrid
-              entries={availableEntries}
-              spriteMeta={load.bundle.spriteMeta}
-              onPick={handlePick}
-            />
-          )}
+          <SplitPanes
+            pane={pane}
+            onPaneChange={handlePaneChange}
+            poolExpandable={poolExpandable}
+            pool={
+              complete ? (
+                <CompletedDraft
+                  players={state.config.players}
+                  teams={selectTeams(state)}
+                  entryById={entryById}
+                  checkpointReached={complete}
+                  checkpointDismissed={checkpointDismissed}
+                  onDownload={handleDownload}
+                  onDismissCheckpoint={() => setCheckpointDismissed(true)}
+                />
+              ) : (
+                <PoolGrid
+                  entries={availableEntries}
+                  spriteMeta={load.bundle.spriteMeta}
+                  onPick={handlePick}
+                />
+              )
+            }
+            board={
+              <BoardGrid
+                players={state.config.players}
+                rounds={state.config.rounds}
+                teams={selectTeams(state)}
+                currentTurn={turn}
+                entryById={entryById}
+                spriteMeta={load.bundle.spriteMeta}
+                pickCount={selectPickCount(state)}
+                // Names in `board-full`, none in `split`. One expression, so the two
+                // pane states cannot each grow their own answer.
+                showName={pane === 'board'}
+                firstPlayerName={turnPlayerName}
+              />
+            }
+          />
         </div>
       )}
 

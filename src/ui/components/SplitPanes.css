@@ -1,0 +1,143 @@
+/*
+ * SplitPanes — the pool and the board, side by side, each scrolling in its own track.
+ *
+ * --- THREE LOAD-BEARING ZEROES ---
+ *
+ * `min-height: 0` on the grid and again on each scroll track, and `min-width: 0` on each
+ * pane. None of the three is defensive. A flex item's default minimum height is `auto`,
+ * which means "never shrink below my content": without it both panes grow the page
+ * instead of scrolling, `100dvh` on the shell above stops meaning anything, and the board
+ * leaves the screen — which is the exact failure ROADMAP criterion 5 forbids. The
+ * horizontal twin is the same story: inside a grid track, a pane that will not shrink
+ * below its content stops the board's name ellipsis and the pool's grid reflow from ever
+ * engaging.
+ *
+ * --- THE ONE RAW RATIO ---
+ *
+ * The 60/40 split below is a raw length in the sense the styling convention means, and it
+ * is the second of exactly two 02-UI-SPEC sanctions for this phase. It has the same
+ * standing as BoardGrid's label column: this one layout's geometry, not a value the token
+ * table covers, recorded here in the format `BoardGrid.css` established. At 1920 CSS
+ * pixels full-bleed it makes the board pane 739 wide and the per-round cell 86 — the
+ * figure the sprite-only chip decision rests on.
+ *
+ * The pane states set a CUSTOM PROPERTY rather than the template itself. That keeps the
+ * layout rule in one place, and it means the narrow-viewport query below can override the
+ * template with a single-class selector instead of having to out-specify an attribute
+ * selector for every state.
+ *
+ * --- A PROHIBITION, NOT A PREFERENCE ---
+ *
+ * None of the five containing-block-creating properties that `app.css` names in its
+ * `.draft-region` comment may be declared on `.draft-panes`, `.pane` or `.pane__scroll`.
+ * Any one of them silently kills a `position: sticky` descendant, which is precisely why
+ * `.draft-region` is styleless in the first place. The rule is stated here rather than
+ * assumed, because this file is the one most likely to attract a compositing hint from
+ * someone optimising a scroll.
+ *
+ * The pane change is deliberately not animated. No width transition and no slide:
+ * animating a grid template is expensive, and the `prefers-reduced-motion` block in
+ * `app.css` is blunt by design and would have to grow a special case for it. The change
+ * is instant, which is also what a host clicking mid-draft wants.
+ */
+
+.draft-panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: var(--panes-columns, 60fr 40fr);
+}
+
+/*
+ * An expanded side takes everything; the collapsed side keeps exactly one target's worth
+ * of width, so its restore button is never smaller than a control is allowed to be.
+ */
+.draft-panes[data-pane='pool'] {
+  --panes-columns: 1fr var(--target-min);
+}
+
+.draft-panes[data-pane='board'] {
+  --panes-columns: var(--target-min) 1fr;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.pane__chrome {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pane__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/*
+ * The collapsed strip. Its button is set vertically so a full label fits a column one
+ * target wide — truncating `Show the draft board` to `Show…` would leave the host
+ * guessing at the only way back.
+ */
+.pane-collapsed {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: var(--target-min);
+  overflow: hidden;
+}
+
+.pane__button {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-label);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.pane__button:hover {
+  background: var(--color-surface-raised);
+}
+
+.pane-collapsed .pane__button {
+  writing-mode: vertical-rl;
+  min-width: var(--target-min);
+  padding: var(--space-3) 0;
+}
+
+/*
+ * --- BELOW 80rem: ONE COLUMN, POOL FIRST ---
+ *
+ * 80rem is 1280 CSS pixels at the default root size, written in rem rather than as a
+ * pixel literal so no raw length enters this file beyond the sanctioned ratio above. A
+ * viewport at 200% zoom on a 1920-wide screen is 960 CSS pixels and lands in this same
+ * query, so the zoom case needs no accommodation of its own.
+ *
+ * 02-UI-SPEC's §Responsive behaviour asks for the BOARD first here. Its §Interaction &
+ * Accessibility Baseline separately requires DOM order to equal visual order with no CSS
+ * reordering, so that WCAG 1.3.2 and 2.4.3 hold trivially. Below this width the two rules
+ * contradict each other and one has to lose.
+ *
+ * The ordering preference loses. Criterion 5 — "the board visible at every moment" — is
+ * satisfied either way: both rows live inside the same `100dvh` grid and scroll
+ * independently, so the board is on screen regardless of which row is on top. The focus-
+ * order rule is a WCAG conformance requirement and has no second way to be satisfied.
+ * This width is also explicitly "not a target platform" in that same section, which is
+ * what makes the preference a preference.
+ */
+@media (max-width: 80rem) {
+  .draft-panes {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 40vh);
+  }
+}
