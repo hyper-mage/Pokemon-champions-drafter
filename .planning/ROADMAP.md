@@ -118,7 +118,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-05-PLAN.md — Mega rules and Pool config groups, free numeric fields, the constrained draw
+- [x] 02-05-PLAN.md — Mega rules and Pool config groups, free numeric fields, the constrained draw
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -196,7 +196,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
-| 2. Host-Configured Draft Night | 4/8 | In Progress|  |
+| 2. Host-Configured Draft Night | 5/8 | In Progress|  |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
