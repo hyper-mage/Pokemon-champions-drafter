@@ -319,8 +319,30 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
    */
   const draw = useMemo(() => {
     if (feasibility.blocked || poolSize === null) return null;
-    return drawPool({ candidates: entries, size: poolSize, megasRequired: 0, seed: poolSeed });
-  }, [feasibility.blocked, entries, poolSize, poolSeed]);
+
+    // `p × k`, never `k` — D-08. The quota is the number of Mega-capable entries the
+    // WHOLE pool needs, because every player must be able to field `k` of them.
+    //
+    // Safe to run synchronously on every keystroke because `drawPool` is a two-stage
+    // partition draw: O(L), exactly `size` generator draws, no loop bound. Reject-and-
+    // redraw was rejected rather than merely not chosen — at 8 players requiring 4 Megas
+    // each on an Exact pool the probability a uniform 48-draw satisfies the constraint is
+    // 1.56 × 10^-8, about sixty-four million expected redraws, and that configuration
+    // passes every feasibility blocker. Do not replace this with a retry loop.
+    return drawPool({
+      candidates: entries,
+      size: poolSize,
+      megasRequired: players.length * (megasRequiredPerTeam ?? 0),
+      seed: poolSeed,
+    });
+  }, [
+    feasibility.blocked,
+    entries,
+    poolSize,
+    players.length,
+    megasRequiredPerTeam,
+    poolSeed,
+  ]);
 
   const handleChangeName = useCallback((id: string, name: string) => {
     setPlayers((current) =>
@@ -429,6 +451,12 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
       config,
       poolIds: draw.ids,
       poolSeed,
+      // Materialized into `pool/built` — D-09. Phase 3's RULE-09 gate reads THIS number
+      // rather than recomputing against a roster that may since have rotated, and it must
+      // handle the day the two disagree: Champions regulations rotate roughly every 2.5
+      // months, and a species that leaves the roster does not leave a saved tournament.
+      // It is the drawn set's own count, never an echo of what was requested, so an
+      // importer cannot infer a guarantee the pool does not hold.
       megaCapableCount: draw.megaCapableCount,
       order,
       orderSeed,
