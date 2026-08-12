@@ -347,6 +347,24 @@ export function App() {
     abandonTournament();
 
     setSaved(null);
+
+    // PER-TOURNAMENT, NOT PER-SESSION — and the distinction only came into existence when
+    // abandon did. `checkpointDismissed`'s own comment argues that a dismissal should last
+    // "the session", which was right when a session held exactly one tournament; abandon
+    // made a session able to hold several, and a host who clicked `Not now` on tournament A
+    // would then complete tournament B and never be offered the checkpoint at all — the
+    // phase's only milestone surface, missing with nothing to explain it.
+    //
+    // `filtersCleared` and `importFlow` are the same shape at lower stakes: a suffix and an
+    // error sentence, both about a draft that no longer exists.
+    //
+    // `probeAcknowledged` and `writeFailureAcknowledged` deliberately stay. They are facts
+    // about this BROWSER's storage, not about the tournament, and re-asking the host to
+    // acknowledge a quota that is still full would be a nag rather than news.
+    setCheckpointDismissed(false);
+    setFiltersCleared(false);
+    setImportFlow({ status: 'idle' });
+
     setConfirm({ kind: 'idle' });
     setScreen({ name: 'landing' });
   }, []);

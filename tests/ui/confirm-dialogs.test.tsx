@@ -78,6 +78,10 @@ import { draftStarted, pickMade, poolBuilt, type Action, type Intent } from '../
 import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
 import { selectPickCount } from '../../src/core/selectors';
 import { getDoc, getState } from '../../src/store';
+import {
+  CHECKPOINT_DISMISS,
+  CHECKPOINT_HEADING,
+} from '../../src/ui/components/CheckpointPrompt';
 import { announce } from '../../src/ui/components/LiveRegion';
 import {
   ABANDON_CONFIRM,
@@ -132,7 +136,7 @@ function configOf(playerCount: number): TournamentConfig {
   };
 }
 
-function seedSavedDraft(options: { players?: number; picks?: number } = {}): void {
+function makeDoc(options: { players?: number; picks?: number; id?: string } = {}): TournamentDoc {
   const playerCount = options.players ?? 2;
   const pickCount = options.picks ?? 0;
   const config = configOf(playerCount);
@@ -166,16 +170,23 @@ function seedSavedDraft(options: { players?: number; picks?: number } = {}): voi
     );
   }
 
-  const doc: TournamentDoc = {
+  return {
     schemaVersion: SCHEMA_VERSION,
-    id: 'confirm-dialogs-fixture',
+    id: options.id ?? 'confirm-dialogs-fixture',
     createdAt: 1_770_000_000_000,
     config,
     rng: { seed: 0x5f3a91c2, cursor: 0 },
     log,
   };
+}
 
-  expect(saveTournament(doc)).toBe(true);
+function seedSavedDraft(options: { players?: number; picks?: number } = {}): void {
+  expect(saveTournament(makeDoc(options))).toBe(true);
+}
+
+/** Two players × six rounds, every slot filled — a tournament that has reached the milestone. */
+function completedDoc(): TournamentDoc {
+  return makeDoc({ players: 2, picks: 12, id: 'confirm-dialogs-second-fixture' });
 }
 
 function claimLock(): void {
@@ -277,6 +288,58 @@ async function reachConfig(): Promise<void> {
 function pickCount(): number {
   const state = getState();
   return state === null ? -1 : selectPickCount(state);
+}
+
+/** Drive a real `change` on whichever file input the current screen renders. */
+async function importFile(file: File): Promise<void> {
+  const input = host.querySelector<HTMLInputElement>('input[type="file"]');
+  expect(input).not.toBeNull();
+  if (input === null) return;
+
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+
+  await act(async () => {
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    // `readJsonFile` awaits `file.text()`, so the flow spans two microtasks before the
+    // document reaches the store.
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+/** A second finished tournament, through the landing screen's `Import JSON…` door. */
+async function importCompletedTournament(): Promise<void> {
+  const doc = completedDoc();
+  await importFile(
+    new File([JSON.stringify(doc)], 'second.json', { type: 'application/json' }),
+  );
+}
+
+/** Verbatim from `app.tsx`, which holds it as a module constant and does not export it. */
+const IMPORT_WRONG_SHAPE =
+  'That file is not a Champions Drafter tournament. Choose a .json file this app exported.';
+
+/** Landing → config → every row named → Start. The route that creates a document. */
+async function startAFreshTournament(): Promise<void> {
+  await click(buttonNamed('New tournament'));
+
+  const names = Array.from(host.querySelectorAll<HTMLInputElement>('.player-list__name'));
+  expect(names.length).toBeGreaterThan(1);
+
+  await act(async () => {
+    names.forEach((input, index) => {
+      input.value = `Player ${index + 1}`;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await Promise.resolve();
+  });
+
+  const start = host.querySelector<HTMLButtonElement>('.feasibility-bar__start');
+  expect(start?.hasAttribute('aria-disabled')).toBe(false);
+  await click(start ?? undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -401,6 +464,53 @@ describe('abandoning a draft', () => {
     await click(buttonNamed('Abandon draft'));
 
     expect(dialogText()).toContain('This discards 1 pick across 1 player.');
+  });
+
+  /**
+   * Abandon made a SESSION able to hold several tournaments, and the flags did not notice.
+   *
+   * `checkpointDismissed`'s comment argues for "the session", which was right when a
+   * session held one tournament. It gates the completed-draft checkpoint — the phase's
+   * only milestone surface — so a host who waved it away on tournament A and then finished
+   * tournament B in the same session was never offered it for B, with nothing on screen to
+   * explain the absence.
+   */
+  it('offers the completion checkpoint again for the next tournament', async () => {
+    // Two players × six rounds: this document is already finished.
+    await reachDraft({ players: 2, picks: 12 });
+    expect(host.textContent).toContain(CHECKPOINT_HEADING);
+
+    await click(buttonNamed(CHECKPOINT_DISMISS));
+    expect(host.textContent).not.toContain(CHECKPOINT_HEADING);
+
+    await click(buttonNamed('Abandon draft'));
+    await click(dialogButtonNamed(ABANDON_CONFIRM.confirmLabel));
+    expect(getDoc()).toBeNull();
+
+    // A second, equally finished tournament, arriving through the landing screen's own
+    // front door rather than through a state poke.
+    await importCompletedTournament();
+
+    expect(host.textContent).toContain(CHECKPOINT_HEADING);
+  });
+
+  it('drops the previous tournament’s import error on the way out', async () => {
+    await reachDraft({ picks: 3 });
+
+    await importFile(new File(['not json at all'], 'bad.json', { type: 'application/json' }));
+    expect(host.textContent).toContain(IMPORT_WRONG_SHAPE);
+
+    await click(buttonNamed('Abandon draft'));
+    await click(dialogButtonNamed(ABANDON_CONFIRM.confirmLabel));
+
+    // Configured and started rather than imported, deliberately: a successful import
+    // clears the flag on its own, so it is the one route back to a draft that would hide
+    // the defect this test is about.
+    await startAFreshTournament();
+
+    expect(host.querySelector('.draft-region')).not.toBeNull();
+    // An answer to a question asked about a draft that no longer exists.
+    expect(host.textContent).not.toContain(IMPORT_WRONG_SHAPE);
   });
 });
 
