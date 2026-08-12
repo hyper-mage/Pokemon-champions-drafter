@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'preact/hooks';
 
 import { newId, newSeed } from '../../adapters/id';
+import { bannedEntries } from '../../core/bans';
 import { drawPool } from '../../core/draw';
 import {
   checkFeasibility,
@@ -21,11 +22,14 @@ import {
   REROLL_ORDER_CONFIRM,
   REROLL_POOL_CONFIRM,
 } from '../confirm-copy';
+import { BanChipList } from '../components/BanChipList';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { FeasibilityBar } from '../components/FeasibilityBar';
+import { announce } from '../components/LiveRegion';
 import { NumericField, parseNumericField } from '../components/NumericField';
 import { PlayerList, type PlayerDraft } from '../components/PlayerList';
 import { SegmentedControl, type SegmentedOption } from '../components/SegmentedControl';
+import { TypeaheadField } from '../components/TypeaheadField';
 
 import './ConfigScreen.css';
 
@@ -51,12 +55,19 @@ import './ConfigScreen.css';
  * changes made *before* the tournament exists are pre-document form state; everything
  * after is an action".
  *
+ * The BANLIST is the field that most looks like it wants an action and most does not. It
+ * is edited from two surfaces, it changes the gate's arithmetic on every click, and it is
+ * the one config value a host will be tempted to revise mid-draft — but it is still pre-
+ * document form state, written once at Start through `createTournament`. The action
+ * vocabulary in `actions.ts` has no ban member at all, and adding one would be a Phase 3
+ * schema decision rather than a convenience.
+ *
  * ## Group order
  *
- * Groups 1 (`Players`), 2 (`Tournament`) and 3 (`Mega rules`) are here. Plan 02-07 inserts
- * `Bans` as group 4 — each at its declared position in the 02-UI-SPEC table rather than
- * appended, because the table's order is the reason the pool readout is last: it is the
- * only group whose readout reflects every group above it.
+ * Groups 1 (`Players`), 2 (`Tournament`), 3 (`Mega rules`), 4 (`Bans`) and 5 (`Pool`) — each
+ * at its declared position in the 02-UI-SPEC table rather than appended, because the table's
+ * order is the reason the pool readout is last: it is the only group whose readout reflects
+ * every group above it.
  */
 
 /**
@@ -110,6 +121,34 @@ const DUAL_MEGA_HEADING = 'Dual-Mega species';
  */
 function megasRequiredHelper(players: number, megasPerTeam: number): string {
   return `0 means no Mega requirement. A requirement of ${megasPerTeam} needs at least ${players * megasPerTeam} Mega-capable Pokémon in the pool.`;
+}
+
+/** Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen — BAN-02. */
+const BAN_FIELD_LABEL = 'Ban a Pokémon by name';
+const BAN_FIELD_PLACEHOLDER = 'Name';
+
+/**
+ * `1 ban` / `{n} bans`, and the reason it is a helper rather than a template.
+ *
+ * 02-UI-SPEC gives the announcement as `{name} banned. {n} bans.`, which renders "1 bans" on
+ * the first ban — and the first ban is the one every host makes. S-5 requires a
+ * singular/plural helper for every interpolated count, `importConfirmBody` set the precedent
+ * in Phase 1, and 02-06 made the same call on `REMOVE_PLAYER_CONFIRM`. Every other character
+ * of the announcement is verbatim.
+ */
+function banCountPhrase(count: number): string {
+  return count === 1 ? '1 ban' : `${count} bans`;
+}
+
+/**
+ * The live-region sentence for a ban or an unban — 02-UI-SPEC §Live-region announcements.
+ *
+ * Composed in ONE place so the typeahead and the grid cannot announce differently for the
+ * same action. Two surfaces writing one list is D-10; two surfaces describing one write
+ * differently is how a host learns to distrust the region.
+ */
+function banAnnouncement(name: string, banned: boolean, count: number): string {
+  return `${name} ${banned ? 'banned' : 'unbanned'}. ${banCountPhrase(count)}.`;
 }
 
 /**
@@ -194,6 +233,16 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
    */
   const [dualMegaChoices, setDualMegaChoices] = useState<DualMegaChoice[]>([]);
 
+  /**
+   * The banlist — one flat list of species ids, two input surfaces over it (D-10).
+   *
+   * An ARRAY of ids, never a `Set`. It is written into `TournamentConfig.bans` at Start and
+   * the document must survive `JSON.stringify` → `JSON.parse` unchanged (CLAUDE.md
+   * §Serializability), which undo, autosave and file export all depend on. The `Set`s below
+   * are computation-local and none of them is ever stored.
+   */
+  const [bans, setBans] = useState<string[]>([]);
+
   const [poolPreset, setPoolPreset] = useState<PoolPreset>('exact');
 
   /**
@@ -272,6 +321,86 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
     [entries],
   );
 
+  /**
+   * Membership, tested by id — CLAUDE.md §Identity. Computation-local and never stored.
+   *
+   * One `Set` with three consumers: the idempotence check in `applyBan`, the draw's candidate
+   * filter, and (from Task 2) the ban grid's pressed state. Building a second one somewhere
+   * else would be a second answer to "is this species banned".
+   */
+  const bannedIdSet = useMemo(() => new Set(bans), [bans]);
+
+  /**
+   * The banned roster entries, name-sorted — the ONE ban derivation on this screen.
+   *
+   * Every ban count on this screen reads THIS array's length. The length of the raw banlist
+   * state is not that number: a duplicate written by the second input surface would inflate
+   * it and an id the roster no longer carries would count toward it (02-RESEARCH F-10).
+   * `bannedEntries`'s own doc block records the equality with `checkFeasibility`'s
+   * `banCount`, and a core test pins it.
+   */
+  const banned = useMemo(() => bannedEntries(entries, bans), [entries, bans]);
+
+  /**
+   * BAN-08, and this is the only place it is enforced.
+   *
+   * `DrawInput.candidates` is documented "roster entries in DISPLAY order, bans already
+   * removed by the caller" — this is that caller. A banned species is therefore absent from
+   * `pool/built.ids`, therefore absent from `selectAvailablePool`, therefore absent from the
+   * pool's DOM: not dimmed, not struck, not rendered (D-13).
+   *
+   * The ban grid in the group below is the OPPOSITE surface deliberately, and the two are not
+   * in conflict — one shows what you are excluding, the other shows what is left.
+   */
+  const drawCandidates = useMemo(
+    () => entries.filter((entry) => !bannedIdSet.has(entry.id)),
+    [entries, bannedIdSet],
+  );
+
+  /**
+   * The ONE write path for the banlist, and the reason this is not three handlers.
+   *
+   * It is idempotent: a call whose `next` already matches current membership returns having
+   * done nothing. That is 02-RESEARCH F-10's mitigation made structural — the grid TOGGLES
+   * and the typeahead ADDS, so without it a name typed after a grid click on the same species
+   * lands in the array twice and every length-based count reads one too many.
+   *
+   * The early return also decides the announcement. A repeat selection would have produced a
+   * byte-identical string, which `LiveRegion` drops anyway, so saying nothing costs nothing
+   * and states the intent rather than relying on that limitation.
+   */
+  const applyBan = useCallback(
+    (entry: RosterEntry, next: boolean) => {
+      if (bannedIdSet.has(entry.id) === next) return;
+
+      const nextBans = next
+        ? [...bans, entry.id]
+        : bans.filter((id) => id !== entry.id);
+
+      setBans(nextBans);
+      // Composed from the roster-intersected length, not from `nextBans.length`, so the
+      // announcement quotes the same figure the gate does.
+      announce(banAnnouncement(entry.name, next, bannedEntries(entries, nextBans).length));
+    },
+    [bans, bannedIdSet, entries],
+  );
+
+  /*
+    The grid's half of D-10 — `toggleBan`, calling `applyBan(entry, !isBanned)` — arrives
+    with the ban grid that consumes it, immediately below. Declaring it before then would be
+    a local nothing reads, which `noUnusedLocals` refuses.
+  */
+
+  const handleRemoveBan = useCallback(
+    (entry: RosterEntry) => applyBan(entry, false),
+    [applyBan],
+  );
+
+  const handleAddBan = useCallback(
+    (entry: RosterEntry) => applyBan(entry, true),
+    [applyBan],
+  );
+
   /** What the selected preset asks for, before the host overrides it — DRFT-02. */
   const presetPoolSize = useMemo(
     () => poolSizeForPreset(players.length, ROUNDS, poolPreset),
@@ -309,12 +438,14 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
         rounds: ROUNDS,
         poolSize,
         megasRequiredPerTeam,
-        // Arrives with plan 02-07. Empty is the honest value today rather than a
-        // stand-in: nothing on this screen can yet ban anything.
-        bannedIds: [],
+        // The WHOLE of the gate integration. No ban warning, no ban-specific message and no
+        // second validation path: `checkFeasibility` already counts by set membership and
+        // already carries `poolTooLarge`, `tooManyPlayersForRoster` and `notEnoughMegas` with
+        // the ban figures interpolated. One predicate, two consumers.
+        bannedIds: bans,
         entries,
       }),
-    [players, poolSize, megasRequiredPerTeam, entries],
+    [players, poolSize, megasRequiredPerTeam, bans, entries],
   );
 
   /**
@@ -336,14 +467,14 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
     // 1.56 × 10^-8, about sixty-four million expected redraws, and that configuration
     // passes every feasibility blocker. Do not replace this with a retry loop.
     return drawPool({
-      candidates: entries,
+      candidates: drawCandidates,
       size: poolSize,
       megasRequired: players.length * (megasRequiredPerTeam ?? 0),
       seed: poolSeed,
     });
   }, [
     feasibility.blocked,
-    entries,
+    drawCandidates,
     poolSize,
     players.length,
     megasRequiredPerTeam,
@@ -480,7 +611,8 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
       rosterVersion: snapshot.regulation,
       rosterChecksum: snapshot.checksum,
       poolSize,
-      bans: [],
+      // A fresh copy, so the document does not share an array with this screen's state.
+      bans: [...bans],
       banMode: 'hostBanlist',
       // `?? 0` is unreachable: `feasibility.blocked` is false here, and a null field is
       // itself a blocker. It exists because the compiler cannot see that, and inventing a
@@ -521,6 +653,7 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
     players,
     snapshot,
     poolSize,
+    bans,
     megasRequiredPerTeam,
     dualMegaChoicesForConfig,
     depth,
@@ -616,9 +749,36 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
       </fieldset>
 
       {/*
+        Group 4, between `Mega rules` and `Pool` — 02-UI-SPEC §2's declared order.
+
+        Its internal order is: the ban mode control, then the field, then the chips, then
+        `Clear the banlist`, then the grid. The mode reads first because it is what the rest
+        of the group MEANS; the grid reads last because it is the whole roster and everything
+        above it is a sentence long.
+      */}
+      <fieldset class="config-screen__group">
+        <legend class="config-screen__legend">Bans</legend>
+
+        {/*
+          `candidates` is the FULL entry list, not the entries minus the banlist. Filtering
+          the banned ones out would make `No Pokémon matches "{query}".` false for a species
+          that plainly does match and is simply already banned — and the idempotent
+          `applyBan` already makes selecting one a no-op.
+        */}
+        <TypeaheadField
+          id="config-ban"
+          label={BAN_FIELD_LABEL}
+          placeholder={BAN_FIELD_PLACEHOLDER}
+          candidates={entries}
+          onSelect={handleAddBan}
+        />
+
+        <BanChipList banned={banned} onRemove={handleRemoveBan} />
+      </fieldset>
+
+      {/*
         LAST, and the position is load-bearing rather than tidy: this is the only group
-        whose readout reflects every group above it (02-UI-SPEC §2). Plan 02-07 inserts
-        `Bans` BEFORE it, not after.
+        whose readout reflects every group above it (02-UI-SPEC §2).
       */}
       <fieldset class="config-screen__group">
         <legend class="config-screen__legend">Pool</legend>

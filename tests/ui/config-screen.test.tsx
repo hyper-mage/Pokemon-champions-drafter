@@ -363,9 +363,11 @@ describe('the player rows', () => {
 
     expect(nameInputs()).toHaveLength(5);
 
-    const labels = Array.from(host.querySelectorAll('label.visually-hidden')).map(
-      (label) => label.textContent,
-    );
+    // Scoped to the player list. The screen has more than one visually-hidden label since
+    // 02-07 — the ban field carries one too — and this assertion is about the rows.
+    const labels = Array.from(
+      host.querySelectorAll('.player-list label.visually-hidden'),
+    ).map((label) => label.textContent);
     expect(labels).toEqual([
       'Player 1 name',
       'Player 2 name',
