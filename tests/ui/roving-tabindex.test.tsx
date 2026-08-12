@@ -299,3 +299,91 @@ describe('focus arriving by mouse', () => {
     expect(activeIndex()).toBe(5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A consumer that miscounts, which is the failure the hook cannot detect
+// ---------------------------------------------------------------------------
+
+/** `count` and the rendered set deliberately disagree, which no consumer may do. */
+function MiscountingHarness({ count, rendered }: { count: number; rendered: number }) {
+  const rove = useRovingTabindex<HTMLDivElement>({ count });
+
+  return (
+    <div class="harness" ref={rove.containerRef} onKeyDown={rove.onKeyDown}>
+      {Array.from({ length: rendered }, (_, index) => (
+        <button
+          key={index}
+          type="button"
+          tabIndex={rove.tabIndexAt(index)}
+          onFocus={() => rove.onItemFocus(index)}
+        >
+          {`item ${index}`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** One item wrapping a second button, which the pool grid's cells could grow. */
+function NestedButtonHarness() {
+  const rove = useRovingTabindex<HTMLDivElement>({ count: 3 });
+
+  return (
+    <div class="harness" ref={rove.containerRef} onKeyDown={rove.onKeyDown}>
+      {Array.from({ length: 3 }, (_, index) => (
+        <button
+          key={index}
+          type="button"
+          tabIndex={rove.tabIndexAt(index)}
+          onFocus={() => rove.onItemFocus(index)}
+        >
+          {`item ${index}`}
+          {index === 0 && <button type="button" tabIndex={-1}>{'nested'}</button>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+describe('a count that does not match the rendered set', () => {
+  /**
+   * THE ASSERTION THIS FIX EXISTS FOR.
+   *
+   * `setStored` used to run before the lookup, so an index no element occupies became the
+   * active one — and `tabIndexAt` then answers -1 for every rendered button, which takes
+   * the whole group out of the tab order. The only way back is a mouse click on an item,
+   * which is not a recovery a keyboard host has.
+   *
+   * The consumer here is wrong, and that is the point: the hook cannot verify `count`
+   * against the DOM in advance, so its behaviour when told a lie has to be safe.
+   */
+  it('keeps the tab stop on a real item when count overstates the set', () => {
+    act(() => {
+      render(<MiscountingHarness count={6} rendered={3} />, host);
+    });
+
+    expect(tabIndexes()).toEqual([0, -1, -1]);
+
+    // `End` computes index 5 from `count`. Nothing renders there.
+    press('End');
+
+    expect(tabIndexes().filter((value) => value === 0)).toHaveLength(1);
+    expect(activeIndex()).toBe(0);
+  });
+
+  it('counts only direct children, so a nested button cannot renumber the set', () => {
+    act(() => {
+      render(<NestedButtonHarness />, host);
+    });
+
+    // Four buttons in the tree, three items in the toolbar.
+    expect(buttons()).toHaveLength(4);
+
+    press('ArrowRight');
+
+    // Item 1 — which a descendant search would have numbered 2, moving every arrow key
+    // one item further off than the last for the rest of the session.
+    const items = [...container().querySelectorAll<HTMLElement>(':scope > button')];
+    expect(document.activeElement).toBe(items[1]);
+  });
+});

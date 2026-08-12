@@ -5,7 +5,7 @@ import {
   type MegaFilterMode,
   type PoolFilters,
 } from '../../core/search';
-import { TYPE_CODES, typeDisplay } from '../type-codes';
+import { TYPE_CODES, typeDisplay, type TypeDisplay } from '../type-codes';
 import { useRovingTabindex } from '../use-roving-tabindex';
 
 import { SegmentedControl, type SegmentedOption } from './SegmentedControl';
@@ -72,8 +72,23 @@ const MEGA_OPTIONS: readonly SegmentedOption<MegaFilterMode>[] = [
  * 02-03 built `TYPE_CODES` as the closed enumeration and its own test pins its key set
  * equal to the roster's distinct type set — so iterating it is both correct today and the
  * single place that changes the day a regulation adds a nineteenth type.
+ *
+ * THE DISPLAY IS RESOLVED HERE, NOT IN THE MAP BELOW, and that is what makes `count` and
+ * the rendered buttons the same array by construction. A type with no map entry renders no
+ * button — matching `TypePill`'s stated posture that a missing control is a visible absence
+ * somebody notices, where an uncoloured one reads as a styling bug and gets ignored — and
+ * filtering it out at this point means the hook is never told about a button that is not
+ * there. Told otherwise, an arrow key moves the tab stop onto a position no element
+ * occupies and the whole toolbar leaves the tab order.
  */
-const FILTER_TYPES = Object.keys(TYPE_CODES);
+interface FilterType {
+  type: string;
+  display: TypeDisplay;
+}
+
+const FILTER_TYPES: readonly FilterType[] = Object.keys(TYPE_CODES)
+  .map((type) => ({ type, display: typeDisplay(type) }))
+  .filter((row): row is FilterType => row.display !== null);
 
 export function FilterBar({ value, onChange, density }: FilterBarProps) {
   // One row that wraps visually, so no column count is injected: the horizontal rules are
@@ -142,13 +157,7 @@ export function FilterBar({ value, onChange, density }: FilterBarProps) {
         ref={rove.containerRef}
         onKeyDown={rove.onKeyDown}
       >
-        {FILTER_TYPES.map((type, index) => {
-          const display = typeDisplay(type);
-          // A type with no map entry renders no button rather than a broken one, matching
-          // `TypePill`'s stated posture: a missing control is a visible absence somebody
-          // notices, an uncoloured one reads as a styling bug and gets ignored.
-          if (display === null) return null;
-
+        {FILTER_TYPES.map(({ type, display }, index) => {
           const showName = density === 'full';
 
           return (

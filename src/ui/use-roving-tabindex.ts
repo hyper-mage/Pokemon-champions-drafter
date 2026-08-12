@@ -53,7 +53,14 @@ import type { RefObject } from 'preact';
  */
 
 export interface RovingTabindexOptions {
-  /** How many focusable items are rendered right now. Shrinking clamps the active index. */
+  /**
+   * How many focusable items are rendered right now. Shrinking clamps the active index.
+   *
+   * It must equal the number of DIRECT button children of the container. The hook cannot
+   * verify that, so it fails closed instead: a move onto a position no element occupies is
+   * refused rather than stored (see `focusItem`). Derive it from the same array you map,
+   * as `FilterBar` does, rather than from a constant that happens to agree today.
+   */
   count: number;
   /**
    * Columns in the rendered layout. Injected rather than measured — see above. Omit for a
@@ -83,7 +90,12 @@ export interface RovingTabindex<T extends HTMLElement = HTMLElement> {
   onKeyDown: (event: KeyboardEvent) => void;
   /** Attach to every item. Keeps the active index in step with focus arriving by mouse. */
   onItemFocus: (index: number) => void;
-  /** Move the active item and focus it. For restoring focus when the set changes. */
+  /**
+   * Move the active item and focus it. For restoring focus when the set changes.
+   *
+   * A no-op when no item occupies `index`, deliberately: moving the tab stop onto a
+   * position nothing renders takes the whole group out of the tab order.
+   */
   focusItem: (index: number) => void;
 }
 
@@ -110,19 +122,36 @@ export function useRovingTabindex<T extends HTMLElement = HTMLElement>({
   const activeIndex = count === 0 ? 0 : Math.min(stored, count - 1);
 
   function itemAt(index: number): HTMLElement | null {
-    // By POSITION among the container's focusable button descendants, which is what makes
-    // the hook indifferent to what its consumer renders: eighteen filter pills here, and
-    // pool cells in the later consumer, are both just buttons in order.
-    return containerRef.current?.querySelectorAll<HTMLElement>('button')[index] ?? null;
+    // By POSITION among the container's DIRECT button children, which is what makes the
+    // hook indifferent to what its consumer renders: eighteen filter pills here, and pool
+    // cells in the later consumer, are both just buttons in order.
+    //
+    // `:scope >` rather than a descendant search, and the difference is not cosmetic. A
+    // descendant search counts a button nested INSIDE an item — the pool grid's cells are
+    // the declared second consumer, and a cell that ever grows a control of its own would
+    // silently renumber the whole set, so every arrow key would land one item further off
+    // than the last. Scoping to children makes the item set the same thing the consumer
+    // laid out.
+    return containerRef.current?.querySelectorAll<HTMLElement>(':scope > button')[index] ?? null;
   }
 
   function focusItem(index: number): void {
+    const item = itemAt(index);
+
+    // FAIL CLOSED. `setStored` used to run unconditionally, so a `count` larger than the
+    // rendered set moved `activeIndex` onto a position no element occupies — and
+    // `tabIndexAt` then returns -1 for EVERY rendered button, which drops the whole group
+    // out of the tab order with no way back except a mouse click on one of the items. A
+    // hook whose failure mode is "keyboard users cannot reach this toolbar at all" must
+    // not have one that is reachable from a consumer miscounting by one.
+    if (item === null) return;
+
     setStored(index);
     // Focusing before the re-render is deliberate. The target still carries tabindex="-1"
     // at this instant, and a negative tabindex refuses the TAB SEQUENCE, never a
     // programmatic focus call — so the first arrow key lands on the right item in the same
     // frame rather than one after it.
-    itemAt(index)?.focus();
+    item.focus();
   }
 
   function onKeyDown(event: KeyboardEvent): void {
