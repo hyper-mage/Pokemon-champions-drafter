@@ -99,6 +99,25 @@
 }
 
 /*
+ * A filled slot the current roster has no entry for — a species this regulation dropped.
+ *
+ * The id, rendered as text, because there is no sprite and no name to draw. Muted rather
+ * than danger-coloured: nothing is wrong with the tournament, the roster simply moved on,
+ * and `--color-danger` is reserved for the two surfaces that own it. Ellipsised on the
+ * same three properties `.board__label` and `.mon-chip__name` use, so a long id narrows
+ * the cell rather than widening the column.
+ */
+.board__cell-missing {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+/*
  * The single cell about to be filled. One of exactly three sanctioned uses of the
  * accent. The tint is decorative — the border carries the signal, and the turn banner
  * states the same fact in words.

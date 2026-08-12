@@ -57,8 +57,30 @@ export function TeamStrip({
 
         return (
           <div class={className} key={`${player.id}-${index}`}>
-            {entry !== undefined && (
+            {entry !== undefined ? (
               <MonChip entry={entry} spriteMeta={spriteMeta} showName={showName} />
+            ) : (
+              /*
+                A FILLED SLOT WHOSE SPECIES THIS ROSTER NO LONGER CARRIES.
+
+                Champions regulations rotate roughly every 2.5 months and `bans.ts` states
+                that a saved tournament outliving a species is "the ordinary case rather
+                than an attack", so this is reachable without anything going wrong. Before
+                this branch the cell took `board__cell--filled` and rendered nothing —
+                indistinguishable from an unfilled slot except that it was styled as
+                filled, which is the worst of both readings.
+
+                The id is the fallback for the same reason `resolveSpeciesName` in
+                `app.tsx` falls back to it: core holds ids, the roster holds names, and an
+                id the host can read out is worth more than an empty box. Rendered
+                unconditionally rather than behind `showName`, because in `split` the chip's
+                sprite carries the name and here there is no sprite to carry anything.
+              */
+              monId !== null && (
+                <span class="board__cell-missing" title={monId}>
+                  {monId}
+                </span>
+              )
             )}
           </div>
         );

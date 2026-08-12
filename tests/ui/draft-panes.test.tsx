@@ -455,3 +455,92 @@ describe('the adopted-document feasibility notice', () => {
     expect(host.querySelector('.draft-notice')).toBeNull();
   });
 });
+
+/**
+ * A saved tournament whose pool names species this roster no longer carries — WR-06.
+ *
+ * Not a hostile file and not a hand edit. CLAUDE.md records that Champions regulations
+ * rotate roughly every 2.5 months, and `bans.ts` calls a document outliving a species "the
+ * ordinary case rather than an attack". `dropped-0` is picked, so both surfaces that
+ * resolve an id through the roster are exercised: the pool, which loses a cell, and the
+ * board, which used to render an empty box styled as a filled one.
+ */
+function seedDriftedDraft(dropped: number): void {
+  const kept = 24 - dropped;
+  const poolIds = [
+    ...Array.from({ length: dropped }, (_, index) => `dropped-${index}`),
+    ...Array.from({ length: kept }, (_, index) => `mon-${index}`),
+  ];
+
+  const doc: TournamentDoc = {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'draft-panes-drift-fixture',
+    createdAt: 1_770_000_000_000,
+    config: configOf(24),
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log: [
+      stamp(poolBuilt(poolIds, 'mb', 'test-checksum', 23, 0), 0),
+      stamp(draftStarted(['p1', 'p2'], 13), 1),
+      // Picked before the regulation rotated, which is the only way this slot exists.
+      stamp(pickMade({ playerId: 'p1', monId: 'dropped-0', round: 1, pickIndex: 0 }), 2),
+    ],
+  };
+
+  expect(saveTournament(doc)).toBe(true);
+}
+
+async function reachDriftedDraft(dropped: number): Promise<void> {
+  seedDriftedDraft(dropped);
+  claimLock();
+  await mountApp();
+  await click(buttonNamed('Resume saved draft'));
+}
+
+function noticeTexts(): string[] {
+  return Array.from(host.querySelectorAll('[role="status"].draft-notice')).map(
+    (notice) => notice.textContent ?? '',
+  );
+}
+
+describe('a roster that has moved on from the document', () => {
+  it('says how many pool entries this roster no longer carries', async () => {
+    await reachDriftedDraft(2);
+
+    // Nothing else on screen can reveal the shortfall: `availableEntries` drops the
+    // missing ids and the pool's `{n} available` count follows the render, so the grid
+    // agrees with itself about a number that is quietly two short.
+    expect(noticeTexts()).toContain(
+      "2 Pokémon in this tournament's pool are not in the current roster. They are missing" +
+        ' from the pool, and a board slot holding one shows its id instead. Use Download JSON' +
+        ' to keep the record.',
+    );
+  });
+
+  it('says it in the singular at one', async () => {
+    await reachDriftedDraft(1);
+
+    expect(noticeTexts()).toContain(
+      "1 Pokémon in this tournament's pool is not in the current roster. It is missing from" +
+        ' the pool, and a board slot holding it shows its id instead. Use Download JSON to' +
+        ' keep the record.',
+    );
+  });
+
+  it('shows the id in a filled board slot rather than an empty box', async () => {
+    await reachDriftedDraft(2);
+
+    const filled = Array.from(host.querySelectorAll('.board__cell--filled'));
+    expect(filled).toHaveLength(1);
+
+    // Styled as filled and rendering nothing was visually indistinguishable from an
+    // unfilled slot, on the surface whose whole job is recording who has what.
+    expect(filled[0]?.textContent).toBe('dropped-0');
+    expect(filled[0]?.querySelector('.mon-chip')).toBeNull();
+  });
+
+  it('stays silent for a document every id of which the roster still carries', async () => {
+    await reachDraft({ picks: 2 });
+
+    expect(noticeTexts()).toHaveLength(0);
+  });
+});

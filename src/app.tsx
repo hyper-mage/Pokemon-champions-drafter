@@ -136,6 +136,38 @@ function adoptedNotice(reason: string): string {
 }
 
 /**
+ * What the host is told when the roster has moved on from the document.
+ *
+ * NOT in the 02-UI-SPEC copywriting table — flagged here as an amendment rather than
+ * edited into the spec, exactly as `importAnnouncement` below is. The table has no row for
+ * it because no plan in the phase surfaced the case, and the case is not exotic: CLAUDE.md
+ * records that Champions regulations rotate roughly every 2.5 months, and `bans.ts` calls a
+ * saved tournament outliving a species "the ordinary case rather than an attack".
+ *
+ * Two surfaces resolve a stored id through the roster and render nothing on a miss. The
+ * pool grid drops the cell — and the `{n} available` count follows the render, so the
+ * screen agrees with itself about a number that is quietly wrong — and a board cell for a
+ * dropped species used to render as an empty box styled as filled. The board half is fixed
+ * in `TeamStrip`; this sentence is the part no amount of per-cell fallback can supply,
+ * because a pool entry that is gone leaves nothing behind to annotate.
+ *
+ * The next action is the honest one. Nothing in the app can restore a species the
+ * regulation dropped, so what the host can do is keep the record — which is what
+ * `Download JSON` in the top bar is for, named here in the words it wears there.
+ *
+ * Both forms are written out rather than interpolated around a plural helper, following
+ * `LandingScreen.savedDraftDescription`: the two sentences differ in three places, and a
+ * visible grammar error reads as a tool that was not finished.
+ */
+function rosterDriftNotice(missing: number): string {
+  if (missing === 1) {
+    return "1 Pokémon in this tournament's pool is not in the current roster. It is missing from the pool, and a board slot holding it shows its id instead. Use Download JSON to keep the record.";
+  }
+
+  return `${missing} Pokémon in this tournament's pool are not in the current roster. They are missing from the pool, and a board slot holding one shows its id instead. Use Download JSON to keep the record.`;
+}
+
+/**
  * What the live region says after a successful import.
  *
  * NOT in the UI-SPEC copywriting table — the table covers both failure sentences and the
@@ -503,6 +535,28 @@ export function App() {
     const primary = result.problems[0];
     return primary === undefined ? null : adoptedNotice(primary.message);
   }, [state, entries]);
+
+  /**
+   * How far the current roster has drifted from what this document recorded — WR-06.
+   *
+   * Counted ONCE, here, where the roster and the document meet, rather than inferred from
+   * either surface that suffers from it. Neither could report it anyway: `availableEntries`
+   * above drops the missing ids and the pool's `{n} available` count follows the render, so
+   * the screen agrees with itself about a number that is quietly short; and a board cell
+   * only ever sees the one id it was handed.
+   *
+   * Against `state.poolIds`, which is the fold of what `pool/built` materialized — the
+   * architecture's own reason for recording actual ids rather than an instruction to
+   * rebuild is that a regulation rotation must not silently reinterpret a tournament. This
+   * is the sentence that makes "not silently" true.
+   *
+   * Zero while the roster is still loading, because `entries.length === 0` would otherwise
+   * report the whole pool as missing on the first render after resume.
+   */
+  const missingFromRoster = useMemo(() => {
+    if (state === null || entries.length === 0) return 0;
+    return state.poolIds.reduce((total, id) => (entryById.has(id) ? total : total + 1), 0);
+  }, [state, entryById, entries.length]);
 
   /**
    * The banned species' names, for the top-bar disclosure — D-13.
@@ -914,6 +968,17 @@ export function App() {
             {feasibilityNotice !== null && (
               <p class="draft-notice" role="status">
                 {feasibilityNotice}
+              </p>
+            )}
+
+            {/*
+              A second notice rather than a clause folded into the first. The two describe
+              unrelated facts — one is arithmetic the host authored, the other is the
+              roster moving underneath it — and either can hold without the other.
+            */}
+            {missingFromRoster > 0 && (
+              <p class="draft-notice" role="status">
+                {rosterDriftNotice(missingFromRoster)}
               </p>
             )}
           </div>
