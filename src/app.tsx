@@ -16,7 +16,7 @@ import {
   ROSTER_LOAD_FAILURE_MESSAGE,
   type RosterBundle,
 } from './adapters/roster-source';
-import { claimOwnership, disposeTabLock } from './adapters/tab-lock';
+import { claimOwnership, disposeTabLock, notifyAbandoned } from './adapters/tab-lock';
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
 import { pickMade } from './core/actions';
 import { bannedEntries } from './core/bans';
@@ -286,6 +286,40 @@ export function App() {
   );
 
   /**
+   * Let go of the tournament this tab is holding — the LOCAL half of abandoning.
+   *
+   * Two routes reach it and they must do the same thing: the host confirming the dialog in
+   * this tab, and `onAbandoned` arriving from the tab where they confirmed it. Written once
+   * rather than twice, because a secondary that performed three of these four steps would
+   * keep the abandoned draft alive in the one place nobody is looking at it — and would
+   * write it back on promotion.
+   *
+   * THE ORDER IS LOAD-BEARING AND IS NOT OBVIOUS. `startAutosave`'s teardown function ends
+   * in `flush()`, which writes any pending debounced document — so tearing the autosave
+   * down AFTER the storage key has gone puts the draft straight back. The teardown goes
+   * first, deliberately.
+   *
+   * Storage itself is NOT touched here. Removing the record is the owning tab's job and it
+   * does it once; a secondary reaching for `clearSaved()` would be a second tab deleting a
+   * key it does not own, on a timeline nothing coordinates.
+   *
+   * `setSaved(null)` is the piece easiest to miss. The landing screen offers
+   * `Resume saved draft` from a snapshot, so without it the host would abandon a draft and
+   * be offered it back on the very next screen.
+   */
+  const discardTournament = useCallback(() => {
+    stopAutosaveRef.current?.();
+    stopAutosaveRef.current = null;
+    autosaveStartedRef.current = false;
+
+    abandonTournament();
+
+    setSaved(null);
+    setConfirm({ kind: 'idle' });
+    setScreen({ name: 'landing' });
+  }, []);
+
+  /**
    * Engage the tab lock — PERS-03 / D-12.
    *
    * Runs once, independently of the roster load, because ownership is a property of the
@@ -298,6 +332,11 @@ export function App() {
    * false, so no autosave can race in front of it with this tab's stale copy. On a
    * remote save it is what keeps a read-only board live rather than frozen at the moment
    * the tab opened.
+   *
+   * `onAbandoned` is the third callback and the only one that is not about reading: there
+   * is nothing left to read. It runs the same local teardown the tab that confirmed the
+   * dialog ran, which is what stops a secondary from being the last thing alive holding a
+   * tournament the host was told nothing recovers.
    */
   useEffect(() => {
     const adoptWhateverIsNewer = (): void => {
@@ -315,9 +354,14 @@ export function App() {
     claimOwnership({
       onPromote: adoptWhateverIsNewer,
       onRemoteSave: adoptWhateverIsNewer,
+      onAbandoned: discardTournament,
     });
 
     return disposeTabLock;
+    // Empty, and it stays empty. The cleanup DISPOSES the lock, so a dependency that ever
+    // moved would tear the ownership protocol down and re-run it mid-draft.
+    // `discardTournament` is a `useCallback` with no dependencies of its own, which is what
+    // makes leaving it out of this list correct rather than merely convenient.
   }, []);
 
   const ownership = useOwnership();
@@ -560,31 +604,28 @@ export function App() {
   }, []);
 
   /**
-   * Both halves of abandoning, plus the two pieces of bookkeeping that would otherwise
-   * bring the draft back.
+   * Abandoning, in the tab where the host confirmed it — all three halves.
    *
-   * THE ORDER IS LOAD-BEARING AND IS NOT OBVIOUS. `startAutosave`'s teardown function
-   * ends in `flush()`, which writes any pending debounced document — so tearing the
-   * autosave down AFTER clearing storage puts the draft straight back. The teardown goes
-   * first, deliberately: it flushes a document that is about to be deleted anyway, and
-   * `clearSaved` then removes exactly one storage key with nothing left to race it.
+   * `discardTournament` is the local one and carries the ordering argument; `clearSaved`
+   * is the storage one; `notifyAbandoned` is the one this tab owes every OTHER tab.
    *
-   * `setSaved(null)` is the piece easiest to miss. The landing screen offers
-   * `Resume saved draft` from a probe taken at boot, so without it the host would abandon
-   * a draft and be offered it back on the very next screen.
+   * THE SEQUENCE IS THE FIX FOR A CROSS-TAB DEFECT AND EACH STEP HAS TO BE WHERE IT IS.
+   * The local teardown runs first because its `flush()` would otherwise write the draft
+   * back after the key was removed. `clearSaved` runs before the announcement because the
+   * receiving tab is entitled to go and look, and a nudge sent while the record is still
+   * there would hand a secondary back the very document it was being told to let go of.
+   *
+   * Without the announcement a secondary keeps the abandoned tournament in memory with no
+   * banner and no visible difference, `loadIfNewer()` on takeover finds no record and so
+   * reports "nothing newer", and that tab's first autosave re-creates the key with the
+   * tournament the host destroyed — which makes `ABANDON_CONFIRM`'s "Nothing recovers it"
+   * false whenever a second tab is open.
    */
   const confirmAbandon = useCallback(() => {
-    stopAutosaveRef.current?.();
-    stopAutosaveRef.current = null;
-    autosaveStartedRef.current = false;
-
-    abandonTournament();
+    discardTournament();
     clearSaved();
-
-    setSaved(null);
-    setConfirm({ kind: 'idle' });
-    setScreen({ name: 'landing' });
-  }, []);
+    notifyAbandoned();
+  }, [discardTournament]);
 
   const confirmUndo = useCallback(() => {
     setConfirm({ kind: 'idle' });

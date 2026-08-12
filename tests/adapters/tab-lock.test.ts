@@ -28,6 +28,7 @@ import {
   disposeTabLock,
   HEARTBEAT_INTERVAL_MS,
   isOwner,
+  notifyAbandoned,
   ownershipState,
   requestTakeover,
   STALE_THRESHOLD_MS,
@@ -757,6 +758,102 @@ describe('the saved nudge', () => {
     // ...and the write itself, not a separate call the UI has to remember to make, is
     // what tells the watching tab to look again.
     expect(onRemoteSave).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Telling the other tab the draft is gone
+// ---------------------------------------------------------------------------
+
+describe('the abandoned announcement', () => {
+  it('tells a secondary to let go of the tournament', () => {
+    const bus = makeBus();
+    const a = boot(createTabLock({ tabId: 'a', channel: bus.connect() }));
+
+    const onAbandoned = vi.fn();
+    boot(createTabLock({ tabId: 'b', channel: bus.connect(), onAbandoned }));
+
+    a.notifyAbandoned();
+
+    // Without this the second tab holds the destroyed tournament indefinitely — no
+    // banner, no announcement, nothing on screen that differs — and writes it back to
+    // storage on its first autosave after `Take over drafting here`.
+    expect(onAbandoned).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not sent by a tab that does not own the lock', () => {
+    const bus = makeBus();
+    boot(createTabLock({ tabId: 'a', channel: bus.connect() }));
+
+    const onAbandoned = vi.fn();
+    const b = boot(createTabLock({ tabId: 'b', channel: bus.connect(), onAbandoned }));
+
+    // A secondary cannot have abandoned anything: the top bar is inside the `inert`
+    // draft region, so the dialog that reaches `clearSaved` is unreachable there.
+    b.notifyAbandoned();
+    expect(onAbandoned).not.toHaveBeenCalled();
+  });
+
+  it('does not disturb the saved nudge, which is a different message', () => {
+    const bus = makeBus();
+    const a = boot(createTabLock({ tabId: 'a', channel: bus.connect() }));
+
+    const onRemoteSave = vi.fn();
+    const onAbandoned = vi.fn();
+    boot(createTabLock({ tabId: 'b', channel: bus.connect(), onRemoteSave, onAbandoned }));
+
+    a.notifySaved();
+    expect(onRemoteSave).toHaveBeenCalledTimes(1);
+    expect(onAbandoned).not.toHaveBeenCalled();
+
+    a.notifyAbandoned();
+    expect(onAbandoned).toHaveBeenCalledTimes(1);
+    // "Re-read the record" and "there is no record" must never be the same nudge: the
+    // first sends the receiver to storage, and the second is what makes going there
+    // pointless.
+    expect(onRemoteSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts as proof of life, so it clears a stale flag', () => {
+    const bus = makeBus();
+    const aChannel = bus.connect();
+    const a = boot(createTabLock({ tabId: 'a', channel: aChannel }));
+    const b = boot(createTabLock({ tabId: 'b', channel: bus.connect() }));
+
+    aChannel.setMuted(true);
+    vi.advanceTimersByTime(STALE_THRESHOLD_MS);
+    expect(b.state().stale).toBe(true);
+
+    // It is the tournament that is gone, not the tab. Leaving the stale sentence up
+    // would invite a takeover of a tab that is demonstrably still answering.
+    aChannel.setMuted(false);
+    a.notifyAbandoned();
+
+    expect(b.state().stale).toBe(false);
+    expect(b.isOwner()).toBe(false);
+  });
+
+  it('reaches a secondary through the application-level export', () => {
+    const bus = makeBus();
+
+    // This tab owns the lock, which is what `notifyAbandoned()` requires of it.
+    claimOwnership({ channel: bus.connect() });
+    vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+
+    const onAbandoned = vi.fn();
+    boot(createTabLock({ tabId: 'zzz-watcher', channel: bus.connect(), onAbandoned }));
+
+    // `app.tsx` calls the module-level function, not a lock instance, so that is the
+    // path asserted here.
+    notifyAbandoned();
+
+    expect(onAbandoned).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when no lock has been engaged', () => {
+    // A build that never calls `claimOwnership` has no secondaries to tell, and must not
+    // throw on the way past.
+    expect(() => notifyAbandoned()).not.toThrow();
   });
 });
 

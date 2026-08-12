@@ -68,6 +68,28 @@ vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
   return { ...actual, loadRoster: () => Promise.resolve(fixture.bundle) };
 });
 
+/**
+ * A recorder wrapped around the one function whose CALL ORDER is the fix.
+ *
+ * It records what the tournament key held at the instant the announcement went out, which
+ * is the only way to assert "after `clearSaved()`" from outside `confirmAbandon` — a spy
+ * that merely counted calls would pass just as happily with the two lines swapped, and
+ * swapping them is precisely the bug: a secondary nudged while the record is still there
+ * goes and reads back the document it was being told to let go of.
+ */
+const lockSpy = vi.hoisted(() => ({ abandonedWithKey: vi.fn<(raw: string | null) => void>() }));
+
+vi.mock('../../src/adapters/tab-lock', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/adapters/tab-lock')>();
+  return {
+    ...actual,
+    notifyAbandoned: (): void => {
+      lockSpy.abandonedWithKey(localStorage.getItem('champions-drafter:tournament'));
+      actual.notifyAbandoned();
+    },
+  };
+});
+
 import { App } from '../../src/app';
 import { save as saveTournament } from '../../src/adapters/persistence';
 import { CLAIM_WINDOW_MS, claimOwnership, disposeTabLock } from '../../src/adapters/tab-lock';
@@ -76,13 +98,17 @@ import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../..
 import { selectPickCount } from '../../src/core/selectors';
 import { getState } from '../../src/store';
 import { announce } from '../../src/ui/components/LiveRegion';
+import { ABANDON_CONFIRM } from '../../src/ui/confirm-copy';
 
 // ---------------------------------------------------------------------------
+
+const TOURNAMENT_KEY = 'champions-drafter:tournament';
 
 let host: HTMLDivElement;
 
 beforeEach(() => {
   localStorage.clear();
+  lockSpy.abandonedWithKey.mockClear();
   // `announce` writes a module-level signal that outlives every render.
   announce('');
   host = document.createElement('div');
@@ -195,6 +221,20 @@ function pickCount(): number {
   return state === null ? -1 : selectPickCount(state);
 }
 
+/**
+ * A button INSIDE the open dialog.
+ *
+ * Scoped rather than searched page-wide because the trigger and the confirming button
+ * share a label by design: `Abandon draft` names the top-bar control and the button that
+ * carries it out. A page-wide lookup finds the trigger and re-opens the dialog.
+ */
+function dialogButtonNamed(name: string): HTMLButtonElement | undefined {
+  const dialog = host.querySelector('[role="alertdialog"]');
+  return Array.from(dialog?.querySelectorAll('button') ?? []).find(
+    (button) => (button.textContent ?? '').trim() === name,
+  );
+}
+
 // ---------------------------------------------------------------------------
 
 describe('Resume saved draft adopts the record as it is NOW', () => {
@@ -230,5 +270,52 @@ describe('Resume saved draft adopts the record as it is NOW', () => {
 
     expect(pickCount()).toBe(2);
     expect(host.querySelector('.draft-region')).not.toBeNull();
+  });
+});
+
+describe('abandoning tells the other tabs', () => {
+  async function abandonAConfirmedDraft(): Promise<void> {
+    saveTournament(docWith(3));
+    claimLock();
+    await mountApp();
+    await click(buttonNamed('Resume saved draft'));
+
+    await click(buttonNamed('Abandon draft'));
+    await click(dialogButtonNamed(ABANDON_CONFIRM.confirmLabel));
+  }
+
+  it('announces the abandon on the channel, exactly once', async () => {
+    await abandonAConfirmedDraft();
+
+    // `clearSaved` removes a key and says nothing. A secondary therefore has no way to
+    // learn this happened except by being told, and being told is what stops it holding
+    // the destroyed tournament and writing it back after `Take over drafting here`.
+    expect(lockSpy.abandonedWithKey).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces it AFTER the record has gone, so a secondary that looks finds nothing', async () => {
+    await abandonAConfirmedDraft();
+
+    // The argument is what the tournament key held at the instant of the announcement.
+    // Announcing first leaves a window in which the nudged tab reads back the record that
+    // is about to be deleted — the ordering is the fix, not the call.
+    expect(lockSpy.abandonedWithKey.mock.calls[0]?.[0]).toBeNull();
+    expect(localStorage.getItem(TOURNAMENT_KEY)).toBeNull();
+  });
+
+  it('says nothing when the host keeps the draft', async () => {
+    saveTournament(docWith(3));
+    claimLock();
+    await mountApp();
+    await click(buttonNamed('Resume saved draft'));
+
+    await click(buttonNamed('Abandon draft'));
+    await click(dialogButtonNamed(ABANDON_CONFIRM.safeLabel));
+
+    // The safe button is the whole point of the dialog. Announcing here would empty every
+    // other tab over a draft nobody abandoned.
+    expect(lockSpy.abandonedWithKey).not.toHaveBeenCalled();
+    expect(pickCount()).toBe(3);
+    expect(localStorage.getItem(TOURNAMENT_KEY)).not.toBeNull();
   });
 });

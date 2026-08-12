@@ -94,7 +94,23 @@ export type LockMessageType =
    * copy of it that could disagree with the stored record. This is a nudge, not a datum:
    * the receiver goes and looks.
    */
-  | 'saved';
+  | 'saved'
+  /**
+   * The host threw the tournament away. There is nothing left to re-read.
+   *
+   * This is the one message a secondary cannot work out for itself, and the reason it
+   * exists is the shape of what happens without it. `clearSaved()` removes one
+   * `localStorage` key and — unlike `save()` — announces nothing, so a secondary keeps the
+   * destroyed tournament in memory with no banner and no visible difference. When the host
+   * later takes over in that tab, `loadIfNewer()` finds no record at all, returns null
+   * meaning "nothing newer", and the secondary's first autosave re-creates the key with
+   * the tournament the host deliberately destroyed. `ABANDON_CONFIRM` says "Nothing
+   * recovers it"; this message is what makes that sentence true with a second tab open.
+   *
+   * Like `saved`, it carries no payload: an abandon is not a datum either, and the
+   * receiver's whole response is to let go of what it is holding.
+   */
+  | 'abandoned';
 
 export interface LockMessage {
   readonly type: LockMessageType;
@@ -163,6 +179,14 @@ export interface TabLockOptions {
    * a host glancing at the second screen would be reading a stale board.
    */
   onRemoteSave?: () => void;
+  /**
+   * The owning tab abandoned the tournament. Only ever called on a secondary.
+   *
+   * The receiver's job is to drop what it holds, exactly as the tab that confirmed the
+   * dialog did. A secondary that kept its copy would be holding the only surviving version
+   * of a draft the host was told nothing recovers — and would write it back on promotion.
+   */
+  onAbandoned?: () => void;
 }
 
 export interface TabLock {
@@ -176,6 +200,8 @@ export interface TabLock {
   state(): OwnershipState;
   /** Tell secondaries the stored document moved. No-op unless this tab owns the lock. */
   notifySaved(): void;
+  /** Tell secondaries the tournament is gone. No-op unless this tab owns the lock. */
+  notifyAbandoned(): void;
   /** Announce departure and stop heartbeating. For `pagehide`. */
   release(): void;
   /** Stop every timer and close the channel. For unmount, and for tests. */
@@ -441,6 +467,15 @@ export function createTabLock(options: TabLockOptions = {}): TabLock {
         noteOwnerAlive();
         options.onRemoteSave?.();
         return;
+
+      case 'abandoned':
+        // Same shape as `saved`, including the proof of life: the tab that abandoned is
+        // still open and still owns the lock — it is the tournament that is gone, not the
+        // tab — so leaving a stale flag up would invite a takeover nobody needs.
+        if (status === 'owner') return;
+        noteOwnerAlive();
+        options.onAbandoned?.();
+        return;
     }
   }
 
@@ -485,6 +520,11 @@ export function createTabLock(options: TabLockOptions = {}): TabLock {
   function notifySaved(): void {
     if (status !== 'owner') return;
     post('saved');
+  }
+
+  function notifyAbandoned(): void {
+    if (status !== 'owner') return;
+    post('abandoned');
   }
 
   function release(): void {
@@ -554,6 +594,7 @@ export function createTabLock(options: TabLockOptions = {}): TabLock {
     isOwner: () => status === 'idle' || status === 'owner',
     state: snapshot,
     notifySaved,
+    notifyAbandoned,
     release,
     dispose,
   };
@@ -601,6 +642,8 @@ export interface ClaimOptions {
   onPromote?: () => void;
   /** The owner wrote; re-read storage so a read-only view keeps up. */
   onRemoteSave?: () => void;
+  /** The owner threw the tournament away; let go of the copy this tab is holding. */
+  onAbandoned?: () => void;
   /** Test seam. Omit in the application; the real channel is opened for you. */
   channel?: LockChannel | null;
 }
@@ -618,6 +661,7 @@ export function claimOwnership(options: ClaimOptions = {}): void {
   lock = createTabLock({
     ...(options.onPromote === undefined ? {} : { onPromote: options.onPromote }),
     ...(options.onRemoteSave === undefined ? {} : { onRemoteSave: options.onRemoteSave }),
+    ...(options.onAbandoned === undefined ? {} : { onAbandoned: options.onAbandoned }),
     ...(options.channel === undefined ? {} : { channel: options.channel }),
     onDegraded: reportDegraded,
   });
@@ -656,6 +700,20 @@ export function isOwner(): boolean {
  */
 export function notifySaved(): void {
   lock?.notifySaved();
+}
+
+/**
+ * Announce that the tournament was thrown away. Called by the tab that confirmed it.
+ *
+ * Call it AFTER the storage key has been removed, never before. The receiving tab's
+ * handler is free to look at storage, and a nudge that arrives while the record is still
+ * there would hand a secondary back the document it was being told to let go of.
+ *
+ * A no-op when no lock is engaged, matching `notifySaved`: a build that never calls
+ * `claimOwnership` has no secondaries to tell.
+ */
+export function notifyAbandoned(): void {
+  lock?.notifyAbandoned();
 }
 
 /** The current ownership state, for a component's initial render. */
