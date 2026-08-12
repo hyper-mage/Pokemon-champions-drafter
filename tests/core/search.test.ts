@@ -18,11 +18,16 @@ import { describe, expect, it } from 'vitest';
 
 import committedSnapshot from '../../public/data/roster.mb.json';
 import {
+  compileFilters,
+  hasActiveFilters,
+  matchesFilters,
   matchesMega,
   matchesName,
   matchesTypes,
+  NO_FILTERS,
   toSearchKey,
   type MegaFilterMode,
+  type PoolFilters,
 } from '../../src/core/search';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 
@@ -184,5 +189,148 @@ describe('the predicates compose', () => {
     );
 
     expect(filtered.map((candidate) => candidate.name)).toEqual(['Rotom-Wash']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The composed chain — what the filter bar actually calls
+// ---------------------------------------------------------------------------
+
+/** The names a whole filter state selects, which is what `PoolGrid` would render. */
+function selected(filters: PoolFilters): string[] {
+  const compiled = compileFilters(filters);
+  return ENTRIES.filter((candidate) => matchesFilters(candidate, compiled)).map(
+    (candidate) => candidate.name,
+  );
+}
+
+describe('NO_FILTERS', () => {
+  it('is the neutral value on every field', () => {
+    expect(NO_FILTERS).toEqual({ query: '', types: [], matchAll: false, mega: 'all' });
+  });
+
+  it('selects the whole roster', () => {
+    expect(selected(NO_FILTERS)).toHaveLength(ENTRIES.length);
+  });
+});
+
+describe('compileFilters', () => {
+  it('normalizes the query once, and leaves the raw text the host typed alone', () => {
+    const filters: PoolFilters = { ...NO_FILTERS, query: 'Mr. Rime' };
+
+    expect(compileFilters(filters).key).toBe('mrrime');
+    // The UI keeps what was typed in the field; only the compiled copy is normalized.
+    expect(filters.query).toBe('Mr. Rime');
+  });
+
+  it('copies the other three fields through untouched', () => {
+    const filters: PoolFilters = {
+      query: 'rotom',
+      types: ['Water', 'Electric'],
+      matchAll: true,
+      mega: 'nonMega',
+    };
+    const compiled = compileFilters(filters);
+
+    expect(compiled.types).toEqual(['Water', 'Electric']);
+    expect(compiled.matchAll).toBe(true);
+    expect(compiled.mega).toBe('nonMega');
+  });
+
+  it('mutates neither its argument nor NO_FILTERS', () => {
+    const filters: PoolFilters = { query: 'Mr. Rime', types: ['Water'], matchAll: true, mega: 'mega' };
+    const before = JSON.stringify(filters);
+    const neutralBefore = JSON.stringify(NO_FILTERS);
+
+    const compiled = compileFilters(filters);
+    for (const candidate of ENTRIES) matchesFilters(candidate, compiled);
+
+    expect(JSON.stringify(filters)).toBe(before);
+    expect(JSON.stringify(NO_FILTERS)).toBe(neutralBefore);
+  });
+});
+
+describe('matchesFilters', () => {
+  it('matches every committed entry under the neutral filters', () => {
+    const compiled = compileFilters(NO_FILTERS);
+
+    for (const candidate of ENTRIES) {
+      expect(matchesFilters(candidate, compiled), candidate.id).toBe(true);
+    }
+  });
+
+  it('finds Rotom and all five appliances from one query', () => {
+    expect(selected({ ...NO_FILTERS, query: 'rotom' }).sort()).toEqual([
+      'Rotom',
+      'Rotom-Fan',
+      'Rotom-Frost',
+      'Rotom-Heat',
+      'Rotom-Mow',
+      'Rotom-Wash',
+    ]);
+  });
+
+  it('matches inside a name rather than only at its start', () => {
+    expect(selected({ ...NO_FILTERS, query: 'wash' })).toEqual(['Rotom-Wash']);
+    expect(selected({ ...NO_FILTERS, query: 'aqua' })).toContain('Tauros-Paldea-Aqua');
+  });
+
+  /**
+   * The conjunction, asserted as a conjunction rather than as three separate calls.
+   *
+   * Each half alone selects something; together they select nothing. A `matchesFilters`
+   * that ORed its clauses, or that dropped one of them, would still pass every
+   * single-clause assertion above.
+   */
+  it('ANDs the three predicates rather than merely calling all of them', () => {
+    const rotom = selected({ ...NO_FILTERS, query: 'rotom' });
+    const megas = selected({ ...NO_FILTERS, mega: 'mega' });
+    const both = selected({ ...NO_FILTERS, query: 'rotom', mega: 'mega' });
+
+    expect(rotom.length).toBeGreaterThan(0);
+    expect(megas.length).toBeGreaterThan(0);
+    expect(both).toEqual([]);
+  });
+
+  it('composes the type selection with the query, in both type modes', () => {
+    expect(selected({ ...NO_FILTERS, query: 'rotom', types: ['Water'], matchAll: false })).toEqual([
+      'Rotom-Wash',
+    ]);
+    expect(
+      selected({ ...NO_FILTERS, types: ['Water', 'Flying'], matchAll: true }).length,
+    ).toBeLessThan(selected({ ...NO_FILTERS, types: ['Water', 'Flying'], matchAll: false }).length);
+  });
+
+  it('partitions the roster exactly between the two Mega settings', () => {
+    const mega = selected({ ...NO_FILTERS, mega: 'mega' }).length;
+    const nonMega = selected({ ...NO_FILTERS, mega: 'nonMega' }).length;
+
+    expect(mega).toBe(snapshot.counts.megaCapableSpecies);
+    expect(mega + nonMega).toBe(ENTRIES.length);
+  });
+});
+
+describe('hasActiveFilters', () => {
+  it('is false for the neutral value', () => {
+    expect(hasActiveFilters(NO_FILTERS)).toBe(false);
+  });
+
+  it('is true when any one control is away from neutral', () => {
+    expect(hasActiveFilters({ ...NO_FILTERS, query: 'w' })).toBe(true);
+    expect(hasActiveFilters({ ...NO_FILTERS, types: ['Water'] })).toBe(true);
+    expect(hasActiveFilters({ ...NO_FILTERS, mega: 'mega' })).toBe(true);
+    expect(hasActiveFilters({ ...NO_FILTERS, mega: 'nonMega' })).toBe(true);
+  });
+
+  /**
+   * The one deliberate omission, asserted so nobody "fixes" it.
+   *
+   * With fewer than two selected types the AND and the OR behaviours are identical, so a
+   * `matchAll` that is true on its own changes nothing a host can see. Calling it active
+   * would put a `Clear filters` button on screen that visibly clears nothing.
+   */
+  it('ignores matchAll on its own, because on its own it is unobservable', () => {
+    expect(hasActiveFilters({ ...NO_FILTERS, matchAll: true })).toBe(false);
+    expect(selected({ ...NO_FILTERS, matchAll: true })).toHaveLength(ENTRIES.length);
   });
 });

@@ -380,9 +380,14 @@ describe('the density control itself', () => {
   });
 
   it('checks exactly the current level', () => {
-    const checked = [...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')].filter(
-      (input) => input.checked,
-    );
+    // Scoped to the density radio GROUP. 02-08 adds a second segmented control to this
+    // same header — `Mega capability`, which is checked at `All` by default — so a
+    // page-wide query would count two checked radios and report the filter bar as this
+    // control's bug. The group name is what the assertion was always about: `exactly one
+    // of THIS control's options`.
+    const checked = [
+      ...container.querySelectorAll<HTMLInputElement>('input[name="pool-density"]'),
+    ].filter((input) => input.checked);
 
     expect(checked).toHaveLength(1);
     expect(checked[0]!.value).toBe('standard');

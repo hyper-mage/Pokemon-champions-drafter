@@ -348,6 +348,12 @@ export function App() {
 
   // The pool the grid renders is the selector's output, so a picked species leaves the
   // DOM on the same render that recorded it: not greyed, not disabled, removed.
+  //
+  // Since 02-08 that distinction is load-bearing rather than incidental: this selector
+  // REMOVES a drafted species, and the pool filter HIDES an undrafted one. Two mechanisms,
+  // two lifetimes — a filtered species comes back the moment the filter clears and a
+  // drafted one never does, which `tests/ui/pool-search.test.tsx` pins in a test named for
+  // exactly that.
   const availableEntries = useMemo(() => {
     if (state === null) return entries;
     return selectAvailablePool(state)
@@ -480,6 +486,27 @@ export function App() {
   const closeConfirm = useCallback(() => setConfirm({ kind: 'idle' }), []);
 
   /**
+   * Did the pick that caused the current turn also clear active pool filters — D-35.
+   *
+   * `PoolGrid` owns the filter state and this is the single fact that has to leave it. It
+   * exists so the news travels ON the turn announcement rather than as a second one that
+   * would overwrite it.
+   *
+   * Written afresh by every pick, so the pick path is self-correcting: a turn that cleared
+   * nothing writes `false` just as loudly as one that cleared something. Undo is the one
+   * turn change that does NOT go through this handler, which is why it is also the one
+   * that needs an explicit write — see both undo paths below.
+   */
+  const [filtersCleared, setFiltersCleared] = useState(false);
+
+  const handlePoolPick = useCallback((entry: RosterEntry, meta: { filtersCleared: boolean }) => {
+    // Before the dispatch, so the flag and the turn it describes land in one render
+    // rather than in two, the first of which would announce the turn without its suffix.
+    setFiltersCleared(meta.filtersCleared);
+    handlePick(entry);
+  }, []);
+
+  /**
    * The single gate both undo paths pass through — D-37, and the mitigation for Pitfall 6.
    *
    * `TopBar` calls this from the `Undo last pick` button AND from its `document`-level
@@ -496,6 +523,10 @@ export function App() {
 
     const crossing = undoCrossesRoundBoundary(currentDoc, currentState);
     if (crossing === null || !crossing.crosses) {
+      // An undo changes whose turn it is without clearing anything, so a flag left over
+      // from the pick being undone would ride the next turn announcement and claim
+      // something that did not happen.
+      setFiltersCleared(false);
       undo(resolveSpeciesName);
       return;
     }
@@ -550,6 +581,9 @@ export function App() {
 
   const confirmUndo = useCallback(() => {
     setConfirm({ kind: 'idle' });
+    // Same reason as the direct path above: this is the second of the two routes an undo
+    // takes, and both are turn changes that no pick caused.
+    setFiltersCleared(false);
     undo(resolveSpeciesName);
   }, [resolveSpeciesName]);
 
@@ -813,6 +847,7 @@ export function App() {
               complete={complete}
               picks={selectPickCount(state)}
               teams={state.config.players.length}
+              filtersCleared={filtersCleared}
             />
 
             {feasibilityNotice !== null && (
@@ -847,7 +882,7 @@ export function App() {
                 <PoolGrid
                   entries={availableEntries}
                   spriteMeta={load.bundle.spriteMeta}
-                  onPick={handlePick}
+                  onPick={handlePoolPick}
                   // Not a ban surface. `null` rather than an empty set, so a draft cell
                   // cannot report an unpressed toggle state it does not have.
                   bannedIds={null}

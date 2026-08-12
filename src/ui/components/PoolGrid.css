@@ -5,6 +5,10 @@
  * pool in Phase 2 leaves its remaining cells at their normal size instead of
  * stretching two survivors across the whole row.
  *
+ * That sentence stopped being a prediction in 02-08. The filter bar is now real, `wash`
+ * really does leave one survivor, and auto-fill is what keeps that survivor a cell
+ * rather than a banner. Nothing was added to .pool__grid to achieve it.
+ *
  * The grid reflows on its own at any width, which is what carries the 200%-zoom
  * requirement — there is no fixed-width child to force the page to scroll sideways.
  */
@@ -56,6 +60,51 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--cell-min), 1fr));
   gap: var(--space-2);
+}
+
+/*
+ * --- The filter empty states ---
+ *
+ * Rendered in place of the grid, never beside it, so the pane holds one answer rather
+ * than an empty grid plus an explanation of it.
+ *
+ * Deliberately NOT --color-danger. Nothing is broken and nothing is blocked: the host
+ * typed something that matches nothing, and the destructive colour stays reserved for the
+ * two surfaces that own it.
+ */
+.pool__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.pool__empty-heading {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+.pool__empty-body {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--color-text-muted);
+}
+
+.pool__empty-action {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-label);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.pool__empty-action:hover {
+  background: var(--color-surface-raised);
 }
 
 /*

@@ -44,6 +44,10 @@ describe('the turn banner mid-draft', () => {
   it('names the round, the round count and the player from props', () => {
     act(() => {
       render(
+        // `filtersCleared` is required rather than optional, so every call site states
+        // which case it is. This file is about the VISIBLE banner, which is identical
+        // either way — the suffix is announcement-only, and 02-08's
+        // `pool-filter-announce.test.tsx` is where it is asserted.
         <TurnBanner
           round={1}
           rounds={6}
@@ -51,6 +55,7 @@ describe('the turn banner mid-draft', () => {
           complete={false}
           picks={0}
           teams={6}
+          filtersCleared={false}
         />,
         host,
       );
@@ -69,6 +74,7 @@ describe('the turn banner mid-draft', () => {
           complete={false}
           picks={5}
           teams={3}
+          filtersCleared={false}
         />,
         host,
       );
@@ -88,6 +94,7 @@ describe('the turn banner mid-draft', () => {
           complete={false}
           picks={0}
           teams={6}
+          filtersCleared={false}
         />,
         host,
       );
@@ -101,7 +108,15 @@ describe('the turn banner on completion', () => {
   it('counts the picks and the teams from props', () => {
     act(() => {
       render(
-        <TurnBanner round={null} rounds={6} playerName={null} complete picks={36} teams={6} />,
+        <TurnBanner
+          round={null}
+          rounds={6}
+          playerName={null}
+          complete
+          picks={36}
+          teams={6}
+          filtersCleared={false}
+        />,
         host,
       );
     });
@@ -112,7 +127,15 @@ describe('the turn banner on completion', () => {
   it('does not fall back to Phase 1s twelve picks and two teams', () => {
     act(() => {
       render(
-        <TurnBanner round={null} rounds={6} playerName={null} complete picks={48} teams={8} />,
+        <TurnBanner
+          round={null}
+          rounds={6}
+          playerName={null}
+          complete
+          picks={48}
+          teams={8}
+          filtersCleared={false}
+        />,
         host,
       );
     });
