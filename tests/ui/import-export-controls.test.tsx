@@ -80,10 +80,11 @@ describe('the top bar file controls', () => {
     act(() => {
       render(
         <TopBar
-          resolveSpeciesName={(monId) => monId}
           onDownload={noop}
           onImportFile={noop}
           importError={null}
+          onRequestUndo={noop}
+          onRequestAbandon={noop}
           {...overrides}
         />,
         host,
@@ -192,11 +193,16 @@ describe('the top bar file controls', () => {
 // ---------------------------------------------------------------------------
 
 describe('the replace-draft confirmation', () => {
-  function drawDialog(pickCount: number, handlers: { confirm?: () => void; cancel?: () => void }) {
+  function drawDialog(
+    pickCount: number,
+    handlers: { confirm?: () => void; cancel?: () => void },
+    playerCount = 2,
+  ) {
     act(() => {
       render(
         <ImportConfirmDialog
           pickCount={pickCount}
+          playerCount={playerCount}
           onConfirm={handlers.confirm ?? (() => undefined)}
           onCancel={handlers.cancel ?? (() => undefined)}
         />,
@@ -230,19 +236,32 @@ describe('the replace-draft confirmation', () => {
     expect(host.querySelector('[role="alertdialog"]')).not.toBeNull();
     expect(host.textContent).toContain(IMPORT_CONFIRM_HEADING);
     expect(host.textContent).toContain('7 picks');
-    expect(host.textContent).toContain('cannot be recovered unless you have already downloaded it');
+    // 02-UI-SPEC §11 replaced the Phase 1 sentence. It names the same stakes and points
+    // at the same remedy, but it puts the remedy in the imperative: download it first.
+    expect(host.textContent).toContain(
+      'Download the current tournament JSON first if you want to keep it.',
+    );
   });
 
   it('says "1 pick", not "1 picks"', () => {
     // Reachable: the dialog shows whenever the draft has at least one pick. The UI-SPEC
     // writes the slot as `{n} picks`, and rendering that literally is a visible grammar
     // error in the one dialog that destroys work.
-    drawDialog(1, {});
+    //
+    // THE BODY STRING CHANGED IN 02-06. 02-UI-SPEC §11 gives every confirm's body
+    // literally and overrides the Component inventory row that said this one was
+    // unchanged; the composer also gained a player count, and both counts pluralise. The
+    // contract and its assertion move together, or the next reader trusts the wrong one.
+    drawDialog(1, {}, 3);
 
-    expect(host.textContent).toContain('— 1 pick —');
+    expect(host.textContent).toContain('— 1 pick across 3 players.');
     expect(host.textContent).not.toContain('1 picks');
-    expect(importConfirmBody(1)).toContain('The draft in progress — 1 pick — will be replaced');
-    expect(importConfirmBody(2)).toContain('The draft in progress — 2 picks — will be replaced');
+    expect(importConfirmBody(1, 2)).toBe(
+      'This replaces the current draft — 1 pick across 2 players. Download the current tournament JSON first if you want to keep it.',
+    );
+    expect(importConfirmBody(2, 1)).toBe(
+      'This replaces the current draft — 2 picks across 1 player. Download the current tournament JSON first if you want to keep it.',
+    );
   });
 
   it('routes each button to its own outcome', () => {
@@ -284,8 +303,10 @@ describe('the replace-draft confirmation', () => {
     const replace = buttonLabelled(REPLACE_LABEL);
     const keep = buttonLabelled(KEEP_LABEL);
 
-    expect(replace?.className).toContain('import-confirm__replace');
-    expect(keep?.className).not.toContain('import-confirm__replace');
+    // The class moved to `ConfirmDialog` in 02-06, which is now the only component that
+    // renders `Dialog` for a confirmation. The rule it names is the same rule.
+    expect(replace?.className).toContain('confirm-dialog__confirm--danger');
+    expect(keep?.className).not.toContain('confirm-dialog__confirm--danger');
   });
 });
 

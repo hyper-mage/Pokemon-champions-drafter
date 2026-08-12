@@ -222,6 +222,19 @@ function dialogButtons(): HTMLButtonElement[] {
   return Array.from(dialog()?.querySelectorAll('button') ?? []);
 }
 
+/**
+ * A button INSIDE the open dialog.
+ *
+ * Scoped rather than searched page-wide because the trigger and the confirming button
+ * legitimately share a label: the copywriting contract gives `Abandon draft` to the top
+ * bar control AND to the button that carries it out, which is correct — the host reads
+ * the same verb both times. A page-wide lookup finds the trigger first and re-opens the
+ * dialog instead of confirming it.
+ */
+function dialogButtonNamed(name: string): HTMLButtonElement | undefined {
+  return dialogButtons().find((button) => (button.textContent ?? '').trim() === name);
+}
+
 async function pressCtrlZ(): Promise<void> {
   await act(async () => {
     document.dispatchEvent(
@@ -231,9 +244,19 @@ async function pressCtrlZ(): Promise<void> {
   });
 }
 
+/**
+ * Escape, dispatched on the backdrop where `Dialog` listens for it.
+ *
+ * Not on `document`: `Dialog` binds `onKeyDown` to `.dialog-backdrop` and relies on focus
+ * being trapped inside it, so a `document`-level dispatch would prove nothing about the
+ * path a real keystroke takes.
+ */
 async function pressEscape(): Promise<void> {
+  const backdrop = host.querySelector('.dialog-backdrop');
+  expect(backdrop).not.toBeNull();
+
   await act(async () => {
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    backdrop?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await Promise.resolve();
   });
 }
@@ -295,7 +318,7 @@ describe('undo asks only when it reaches into an earlier round', () => {
     expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
     expect(pickCount()).toBe(2);
 
-    await click(buttonNamed(UNDO_BOUNDARY_CONFIRM.confirmLabel));
+    await click(dialogButtonNamed(UNDO_BOUNDARY_CONFIRM.confirmLabel));
 
     expect(pickCount()).toBe(1);
     expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(0);
@@ -352,7 +375,7 @@ describe('abandoning a draft', () => {
       'This discards 3 picks across 2 players. Nothing recovers it unless you have already downloaded the tournament JSON.',
     );
 
-    await click(buttonNamed(ABANDON_CONFIRM.safeLabel));
+    await click(dialogButtonNamed(ABANDON_CONFIRM.safeLabel));
 
     expect(getDoc()).not.toBeNull();
     expect(pickCount()).toBe(3);
@@ -363,7 +386,7 @@ describe('abandoning a draft', () => {
     await reachDraft({ picks: 3 });
 
     await click(buttonNamed('Abandon draft'));
-    await click(buttonNamed(ABANDON_CONFIRM.confirmLabel));
+    await click(dialogButtonNamed(ABANDON_CONFIRM.confirmLabel));
 
     expect(getDoc()).toBeNull();
     expect(localStorage.getItem(TOURNAMENT_KEY)).toBeNull();
@@ -392,7 +415,7 @@ describe('the config screen confirms its three destructive actions', () => {
     expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
     expect(dialogText()).toContain('The pool everyone has been looking at is discarded.');
 
-    await click(buttonNamed(REROLL_POOL_CONFIRM.safeLabel));
+    await click(dialogButtonNamed(REROLL_POOL_CONFIRM.safeLabel));
 
     expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(0);
     expect(host.querySelector('.config-screen__readout')?.textContent ?? '').toBe(readoutBefore);
@@ -406,7 +429,7 @@ describe('the config screen confirms its three destructive actions', () => {
     expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
     expect(dialogText()).toContain('The order on screen is discarded.');
 
-    await click(buttonNamed(REROLL_ORDER_CONFIRM.safeLabel));
+    await click(dialogButtonNamed(REROLL_ORDER_CONFIRM.safeLabel));
     expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(0);
   });
 
@@ -426,8 +449,8 @@ describe('the config screen confirms its three destructive actions', () => {
     await click(buttonNamed('Remove Ada'));
 
     expect(dialogText()).toContain('Remove Ada?');
-    expect(buttonNamed(REMOVE_PLAYER_CONFIRM.confirmLabel('Ada'))).toBeDefined();
-    expect(buttonNamed(REMOVE_PLAYER_CONFIRM.safeLabel('Ada'))).toBeDefined();
+    expect(dialogButtonNamed(REMOVE_PLAYER_CONFIRM.confirmLabel('Ada'))).toBeDefined();
+    expect(dialogButtonNamed(REMOVE_PLAYER_CONFIRM.safeLabel('Ada'))).toBeDefined();
   });
 
   it('drops the re-numbering clause when nobody sits below the removed row', async () => {

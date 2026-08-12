@@ -185,6 +185,30 @@ export function save(doc: TournamentDoc): boolean {
   return true;
 }
 
+/**
+ * Remove the saved tournament — the storage half of abandoning a draft (D-36).
+ *
+ * It removes EXACTLY ONE KEY BY NAME, never iterates storage, and never calls the blunt
+ * wipe-everything method — which is deliberately not named here even as a counter-example,
+ * because it is a substring nobody should find in this file. This origin also holds the
+ * canary's probe key and the host's view preferences, and abandoning a draft is not a
+ * reason to lose a density setting. A host who throws away a tournament and finds their
+ * sprite size reset would reasonably conclude the tool clears more than it says it does.
+ *
+ * Silent on failure, and deliberately does NOT raise `savingBlocked`. That signal means
+ * "this browser will not save your draft" and it fires a banner the host must read. A
+ * removal that could not be performed is not that: there is nothing left to save, and the
+ * in-memory document is already gone.
+ */
+export function clearSaved(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Nothing to do and nothing to say. The record either was not there or cannot be
+    // reached, and in both cases the host has already been told the draft is gone.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------

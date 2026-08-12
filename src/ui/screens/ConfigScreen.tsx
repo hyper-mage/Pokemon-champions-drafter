@@ -16,6 +16,12 @@ import type {
 import type { RosterEntry, RosterSnapshot } from '../../core/roster/types';
 import { selectStartingOrder } from '../../core/selectors';
 import { createTournament } from '../../store';
+import {
+  REMOVE_PLAYER_CONFIRM,
+  REROLL_ORDER_CONFIRM,
+  REROLL_POOL_CONFIRM,
+} from '../confirm-copy';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { FeasibilityBar } from '../components/FeasibilityBar';
 import { NumericField, parseNumericField } from '../components/NumericField';
 import { PlayerList, type PlayerDraft } from '../components/PlayerList';
@@ -354,9 +360,15 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
     setPlayers((current) => [...current, { id: newId(), name: '' }]);
   }, []);
 
-  // Plan 02-09 inserts a confirmation in front of both of these (D-36). Both are already
-  // single call sites taking exactly the argument a dialog would carry through, so that
-  // plan adds a dialog rather than reshaping this component or `PlayerList`.
+  /*
+    The three destructive config actions and their confirms — D-36.
+
+    Every one of these commit functions is EXACTLY what it was before 02-06. That is the
+    whole point of how 02-04 and 02-05 wired them: each is a single call site taking
+    precisely the argument a dialog carries through, so this plan puts a dialog in FRONT
+    of them rather than reshaping this component or `PlayerList`. The request functions
+    below open the dialog; these commit.
+  */
   const handleRemove = useCallback((id: string) => {
     setPlayers((current) => current.filter((player) => player.id !== id));
   }, []);
@@ -372,12 +384,47 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
    * collision `src/store.ts` warns about, and it is why re-rolling the pool provably
    * cannot disturb the starting order rather than merely not disturbing it today.
    *
-   * Plan 02-09 puts a confirmation in front of this (D-36). It is already a single call
-   * site taking no argument, so that plan inserts a dialog rather than reshaping anything.
+   * A confirmation sits in front of this (D-36) and its body is above; the seam is
+   * unchanged, because this was already a single call site taking no argument.
    */
   const handleRerollPool = useCallback(() => {
     setPoolSeed(newSeed());
   }, []);
+
+  /*
+    Which confirmation is open. Same discriminated-union shape as `app.tsx`'s, and the
+    same rule: it holds the RESOLVED consequence, never the intent. `removePlayer` carries
+    the name and the number of rows below it because both are facts about the list as it
+    was when the host clicked, and the dialog must state the world it was opened against.
+  */
+  const [confirm, setConfirm] = useState<
+    | { kind: 'idle' }
+    | { kind: 'rerollPool' }
+    | { kind: 'rerollOrder' }
+    | { kind: 'removePlayer'; id: string; name: string; below: number }
+  >({ kind: 'idle' });
+
+  const closeConfirm = useCallback(() => setConfirm({ kind: 'idle' }), []);
+
+  const requestRemove = useCallback(
+    (id: string) => {
+      const index = players.findIndex((player) => player.id === id);
+      if (index === -1) return;
+
+      setConfirm({
+        kind: 'removePlayer',
+        id,
+        // An unnamed row has nothing to put in six interpolations, and `Remove ?` is
+        // worse than a positional fallback.
+        name: (players[index]?.name ?? '').trim() || `Player ${index + 1}`,
+        below: players.length - index - 1,
+      });
+    },
+    [players],
+  );
+
+  const requestRandomize = useCallback(() => setConfirm({ kind: 'rerollOrder' }), []);
+  const requestRerollPool = useCallback(() => setConfirm({ kind: 'rerollPool' }), []);
 
   /** The forme a row is showing. Absent means `Either`, which is the default. */
   const formeFor = useCallback(
@@ -495,8 +542,8 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
           order={order}
           onChangeName={handleChangeName}
           onAdd={handleAdd}
-          onRemove={handleRemove}
-          onRandomize={handleRandomize}
+          onRemove={requestRemove}
+          onRandomize={requestRandomize}
         />
       </fieldset>
 
@@ -608,7 +655,7 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
         <button
           type="button"
           class="config-screen__reroll"
-          onClick={handleRerollPool}
+          onClick={requestRerollPool}
         >
           Re-roll pool
         </button>
@@ -621,6 +668,57 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
         poolSize={poolSize}
         onStart={handleStart}
       />
+
+      {/*
+        At the screen root. This screen has no `inert` region — that is the draft screen's
+        problem — so a dialog needs no special placement here, only somewhere it is not a
+        child of a fieldset.
+      */}
+      {confirm.kind === 'rerollPool' && (
+        <ConfirmDialog
+          heading={REROLL_POOL_CONFIRM.heading}
+          body={REROLL_POOL_CONFIRM.body(poolSize ?? 0)}
+          confirmLabel={REROLL_POOL_CONFIRM.confirmLabel}
+          safeLabel={REROLL_POOL_CONFIRM.safeLabel}
+          tone={REROLL_POOL_CONFIRM.tone}
+          onConfirm={() => {
+            closeConfirm();
+            handleRerollPool();
+          }}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {confirm.kind === 'rerollOrder' && (
+        <ConfirmDialog
+          heading={REROLL_ORDER_CONFIRM.heading}
+          body={REROLL_ORDER_CONFIRM.body(players.length)}
+          confirmLabel={REROLL_ORDER_CONFIRM.confirmLabel}
+          safeLabel={REROLL_ORDER_CONFIRM.safeLabel}
+          tone={REROLL_ORDER_CONFIRM.tone}
+          onConfirm={() => {
+            closeConfirm();
+            handleRandomize();
+          }}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {confirm.kind === 'removePlayer' && (
+        <ConfirmDialog
+          heading={REMOVE_PLAYER_CONFIRM.heading(confirm.name)}
+          body={REMOVE_PLAYER_CONFIRM.body(confirm.name, confirm.below)}
+          confirmLabel={REMOVE_PLAYER_CONFIRM.confirmLabel(confirm.name)}
+          safeLabel={REMOVE_PLAYER_CONFIRM.safeLabel(confirm.name)}
+          tone={REMOVE_PLAYER_CONFIRM.tone}
+          onConfirm={() => {
+            const id = confirm.id;
+            closeConfirm();
+            handleRemove(id);
+          }}
+          onSafe={closeConfirm}
+        />
+      )}
     </div>
   );
 }

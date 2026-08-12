@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import { downloadJson, readJsonFile, tournamentFilename } from './adapters/file-io';
 import {
+  clearSaved,
   load as loadSavedTournament,
   loadIfNewer,
   probeStorage,
@@ -30,15 +31,20 @@ import {
   selectPlayerName,
   selectTeams,
 } from './core/selectors';
+import { undoCrossesRoundBoundary, type RoundBoundaryCrossing } from './core/undo';
 import {
+  abandonTournament,
   adoptTournament,
   dispatch,
   draftState,
   getDoc,
   getState,
   subscribe,
+  undo,
 } from './store';
+import { ABANDON_CONFIRM, UNDO_BOUNDARY_CONFIRM } from './ui/confirm-copy';
 import { BoardGrid } from './ui/components/BoardGrid';
+import { ConfirmDialog } from './ui/components/ConfirmDialog';
 import { ImportConfirmDialog } from './ui/components/ImportConfirmDialog';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid } from './ui/components/PoolGrid';
@@ -83,6 +89,24 @@ type ImportFlow =
   | { status: 'idle' }
   | { status: 'failed'; message: string }
   | { status: 'confirm'; doc: TournamentDoc };
+
+/**
+ * Which confirmation is open — D-36 / D-37.
+ *
+ * In the same style as `LoadState` and `ImportFlow`, and holding the RESOLVED CONSEQUENCE
+ * rather than the intent. `abandon` carries the counts the body sentence names; `undo`
+ * carries the crossing the predicate returned and the display name resolved from it. Both
+ * were computed at the moment the host asked, so the dialog states the world it was opened
+ * against and cannot drift from it while it is on screen.
+ *
+ * That shape is `ImportFlow`'s, which holds an already-validated document rather than the
+ * file it came from, for the same reason: the only question a dialog should ask is the one
+ * the host can actually answer.
+ */
+type Confirm =
+  | { kind: 'idle' }
+  | { kind: 'abandon'; picks: number; players: number }
+  | { kind: 'undo'; crossing: RoundBoundaryCrossing; playerName: string };
 
 /**
  * Verbatim from the approved UI-SPEC copywriting table.
@@ -210,7 +234,11 @@ export function App() {
   // A `useState` initializer rather than an effect for the same reason the canary is one:
   // an effect runs after the first paint, and a `Resume saved draft` button that appears a
   // frame late is a button the host has already decided is not there.
-  const [saved] = useState<TournamentDoc | null>(() =>
+  //
+  // Settable since 02-06: abandoning a draft clears the saved record, and a landing
+  // screen still offering to resume it would hand the host back the thing they just
+  // threw away.
+  const [saved, setSaved] = useState<TournamentDoc | null>(() =>
     probe.ok ? loadSavedTournament() : null,
   );
 
@@ -427,6 +455,88 @@ export function App() {
     (monId: string) => entryById.get(monId)?.name ?? monId,
     [entryById],
   );
+
+  // -------------------------------------------------------------------------
+  // DRFT-13 — a confirm in front of every destructive action
+  // -------------------------------------------------------------------------
+
+  const [confirm, setConfirm] = useState<Confirm>({ kind: 'idle' });
+
+  const closeConfirm = useCallback(() => setConfirm({ kind: 'idle' }), []);
+
+  /**
+   * The single gate both undo paths pass through — D-37, and the mitigation for Pitfall 6.
+   *
+   * `TopBar` calls this from the `Undo last pick` button AND from its `document`-level
+   * Ctrl+Z listener, which is registered outside the `inert` draft region. Putting the
+   * question here rather than on the button is the whole reason the two cannot diverge.
+   *
+   * The cheap case stays cheap: undoing a pick in the round the draft is standing in is
+   * still one click and no dialog, exactly as D-10 shipped it.
+   */
+  const handleRequestUndo = useCallback(() => {
+    const currentDoc = getDoc();
+    const currentState = getState();
+    if (currentDoc === null || currentState === null) return;
+
+    const crossing = undoCrossesRoundBoundary(currentDoc, currentState);
+    if (crossing === null || !crossing.crosses) {
+      undo(resolveSpeciesName);
+      return;
+    }
+
+    setConfirm({
+      kind: 'undo',
+      crossing,
+      // Core holds ids and never a display name. Falling back to the id keeps the
+      // sentence honest rather than empty for a document referencing a player the
+      // config no longer lists.
+      playerName: selectPlayerName(currentState, crossing.playerId) ?? crossing.playerId,
+    });
+  }, [resolveSpeciesName]);
+
+  const handleRequestAbandon = useCallback(() => {
+    const currentState = getState();
+    if (currentState === null) return;
+
+    setConfirm({
+      kind: 'abandon',
+      picks: selectPickCount(currentState),
+      players: currentState.config.players.length,
+    });
+  }, []);
+
+  /**
+   * Both halves of abandoning, plus the two pieces of bookkeeping that would otherwise
+   * bring the draft back.
+   *
+   * THE ORDER IS LOAD-BEARING AND IS NOT OBVIOUS. `startAutosave`'s teardown function
+   * ends in `flush()`, which writes any pending debounced document — so tearing the
+   * autosave down AFTER clearing storage puts the draft straight back. The teardown goes
+   * first, deliberately: it flushes a document that is about to be deleted anyway, and
+   * `clearSaved` then removes exactly one storage key with nothing left to race it.
+   *
+   * `setSaved(null)` is the piece easiest to miss. The landing screen offers
+   * `Resume saved draft` from a probe taken at boot, so without it the host would abandon
+   * a draft and be offered it back on the very next screen.
+   */
+  const confirmAbandon = useCallback(() => {
+    stopAutosaveRef.current?.();
+    stopAutosaveRef.current = null;
+    autosaveStartedRef.current = false;
+
+    abandonTournament();
+    clearSaved();
+
+    setSaved(null);
+    setConfirm({ kind: 'idle' });
+    setScreen({ name: 'landing' });
+  }, []);
+
+  const confirmUndo = useCallback(() => {
+    setConfirm({ kind: 'idle' });
+    undo(resolveSpeciesName);
+  }, [resolveSpeciesName]);
 
   // -------------------------------------------------------------------------
   // PERS-04 / PERS-05 — the tournament as a file
@@ -666,10 +776,11 @@ export function App() {
           */}
           <div class="sticky-head">
             <TopBar
-              resolveSpeciesName={resolveSpeciesName}
               onDownload={handleDownload}
               onImportFile={handleImportFile}
               importError={importFlow.status === 'failed' ? importFlow.message : null}
+              onRequestUndo={handleRequestUndo}
+              onRequestAbandon={handleRequestAbandon}
             />
 
             {/*
@@ -752,8 +863,39 @@ export function App() {
       {importFlow.status === 'confirm' && state !== null && (
         <ImportConfirmDialog
           pickCount={selectPickCount(state)}
+          playerCount={state.config.players.length}
           onConfirm={() => adoptImported(importFlow.doc)}
           onCancel={cancelImport}
+        />
+      )}
+
+      {/* Same placement, same reason. See the note above the import confirm. */}
+      {confirm.kind === 'abandon' && (
+        <ConfirmDialog
+          heading={ABANDON_CONFIRM.heading}
+          body={ABANDON_CONFIRM.body(confirm.picks, confirm.players)}
+          confirmLabel={ABANDON_CONFIRM.confirmLabel}
+          safeLabel={ABANDON_CONFIRM.safeLabel}
+          tone={ABANDON_CONFIRM.tone}
+          onConfirm={confirmAbandon}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {confirm.kind === 'undo' && (
+        <ConfirmDialog
+          heading={UNDO_BOUNDARY_CONFIRM.heading}
+          body={UNDO_BOUNDARY_CONFIRM.body(
+            confirm.playerName,
+            confirm.crossing.pickRound,
+            confirm.crossing.currentRound,
+            confirm.crossing.removedCount,
+          )}
+          confirmLabel={UNDO_BOUNDARY_CONFIRM.confirmLabel}
+          safeLabel={UNDO_BOUNDARY_CONFIRM.safeLabel}
+          tone={UNDO_BOUNDARY_CONFIRM.tone}
+          onConfirm={confirmUndo}
+          onSafe={closeConfirm}
         />
       )}
     </div>

@@ -261,6 +261,33 @@ export function adoptTournament(doc: TournamentDoc): boolean {
 }
 
 /**
+ * Throw the tournament away — D-36.
+ *
+ * ## Why this is not a `dispatch`
+ *
+ * An append-only log expresses corrections as compensating actions, and every other
+ * mutation in this file is one. Abandoning is not a correction to a tournament. It is the
+ * decision that there is no tournament, and there is nothing left to append to: the
+ * document itself is what goes. A `tournament/abandoned` action would have to live in a
+ * log that the same action says should not exist.
+ *
+ * ## Why it is not `isOwner()`-gated
+ *
+ * Same reason `dispatch` is not, and the long comment below `undo` argues it in full. A
+ * secondary tab abandoning its own in-memory copy writes nothing — `persistence.save`
+ * declines on the spot, which is the guarantee — so gating here would buy nothing and
+ * would make one of the two write paths inconsistent with the other.
+ *
+ * Removing the SAVED record is the caller's separate decision, taken through
+ * `persistence.clearSaved()`. The two are apart on purpose: this function is about what
+ * this tab is holding, and that one is about what the browser is keeping.
+ */
+export function abandonTournament(): void {
+  docSignal.value = null;
+  stateSignal.value = null;
+}
+
+/**
  * Unwind the most recent pick — SHEL-06 / D-10.
  *
  * This is the second write path in the file and it is deliberately not a `dispatch`.

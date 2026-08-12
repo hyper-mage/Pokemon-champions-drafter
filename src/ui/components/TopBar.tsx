@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'preact/hooks';
 
 import { isOwner } from '../../adapters/tab-lock';
 import { canUndo } from '../../core/undo';
-import { tournamentDoc, undo } from '../../store';
+import { tournamentDoc } from '../../store';
 
 import './TopBar.css';
 
@@ -37,11 +37,6 @@ import './TopBar.css';
  */
 
 export interface TopBarProps {
-  /**
-   * Display name for a species id, for the live-region announcement. Injected because
-   * the roster snapshot belongs to the app, not to the store or to this component.
-   */
-  resolveSpeciesName: (monId: string) => string;
   /** Write the current tournament out as a file. */
   onDownload: () => void;
   /** A file the host chose. Validation and every consequence belong to the caller. */
@@ -51,6 +46,16 @@ export interface TopBarProps {
    * component renders it and never composes it.
    */
   importError: string | null;
+  /**
+   * BOTH the button and the Ctrl+Z listener call this. Gating one only is Pitfall 6.
+   *
+   * The caller decides whether a confirm is warranted (D-37) and calls `store.undo`
+   * itself. That is also where the species-name resolver went: this component no longer
+   * touches the store, so it no longer needs one.
+   */
+  onRequestUndo: () => void;
+  /** Throwing the tournament away. The caller owns the confirm and both consequences. */
+  onRequestAbandon: () => void;
 }
 
 /**
@@ -70,18 +75,22 @@ function isTextEntry(target: EventTarget | null): boolean {
 }
 
 export function TopBar({
-  resolveSpeciesName,
   onDownload,
   onImportFile,
   importError,
+  onRequestUndo,
+  onRequestAbandon,
 }: TopBarProps) {
   const doc = tournamentDoc.value;
   const undoAvailable = doc !== null && canUndo(doc);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Reports the request and does nothing else. Both entry points below already funnel
+  // through this one function, so putting the D-37 gate at its FAR END covers both of
+  // them; putting it on the button would cover one and leave the other walking past.
   const handleUndo = useCallback(() => {
-    undo(resolveSpeciesName);
-  }, [resolveSpeciesName]);
+    onRequestUndo();
+  }, [onRequestUndo]);
 
   const openFilePicker = useCallback(() => {
     fileInputRef.current?.click();
@@ -123,6 +132,10 @@ export function TopBar({
       // keyboard. `store.undo()` refuses this too and that refusal is the guarantee; this
       // one is here so a secondary tab does not swallow the browser's own Ctrl+Z with the
       // `preventDefault` below.
+      //
+      // Since 02-06 the D-37 confirm sits at the FAR END of the shared request function
+      // above, which is what puts this listener and the button behind the same gate.
+      // Moving the confirm onto the button would restore the bypass exactly.
       if (!isOwner()) return;
 
       event.preventDefault();
@@ -154,6 +167,15 @@ export function TopBar({
 
         <button type="button" class="top-bar__button" onClick={openFilePicker}>
           Import JSON…
+        </button>
+
+        {/*
+          The same secondary treatment as its three neighbours. The draft screen still has
+          no accent-filled button at all, and an abandon control that shouts is one a host
+          clicks by accident — the dialog behind it is where the weight belongs, not here.
+        */}
+        <button type="button" class="top-bar__button" onClick={onRequestAbandon}>
+          Abandon draft
         </button>
 
         {/*

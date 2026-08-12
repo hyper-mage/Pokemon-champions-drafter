@@ -192,6 +192,32 @@ function removeButtons(): HTMLButtonElement[] {
   );
 }
 
+/**
+ * Click the confirming button of the open dialog — D-36.
+ *
+ * Since 02-06 the three destructive config actions each ask first, so a test about what
+ * `Randomize order` or a `Remove` button DOES has to walk through the confirm to reach
+ * the behaviour it is about.
+ *
+ * Scoped to inside the dialog, deliberately: `Remove Bo` is the label on the row's own
+ * button AND on the button that carries it out, which is correct — the host reads the
+ * same verb both times — but a page-wide lookup finds the row first and re-opens the
+ * dialog instead of confirming it.
+ */
+function confirmDialog(label: string): void {
+  const dialog = host.querySelector('[role="alertdialog"]');
+  expect(dialog).not.toBeNull();
+
+  const button = Array.from(dialog?.querySelectorAll('button') ?? []).find(
+    (element) => element.textContent?.trim() === label,
+  );
+  expect(button).toBeDefined();
+
+  act(() => {
+    button?.click();
+  });
+}
+
 function renderedOrder(): string[] {
   return Array.from(host.querySelectorAll('.player-list__order li')).map(
     (item) => item.textContent ?? '',
@@ -287,6 +313,10 @@ describe('the starting order', () => {
       buttonNamed('Randomize order')?.click();
     });
 
+    // Asking first is D-36; the seed is not drawn until the host says yes.
+    expect(renderedOrder()).toEqual(positionalNames(INITIAL_IDS, before));
+    confirmDialog('Roll a new order');
+
     expect(renderedOrder()).toEqual(positionalNames(INITIAL_IDS, after));
   });
 
@@ -374,6 +404,10 @@ describe('the player rows', () => {
     act(() => {
       removeButtons()[1]?.click();
     });
+
+    // The row is still there until the confirm is answered (D-36).
+    expect(nameInputs()).toHaveLength(4);
+    confirmDialog('Remove Bo');
 
     expect(nameInputs()).toHaveLength(3);
     expect(host.textContent).not.toContain('Remove Bo');

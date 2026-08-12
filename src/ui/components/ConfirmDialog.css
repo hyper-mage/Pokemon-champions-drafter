@@ -1,0 +1,40 @@
+/*
+ * ConfirmDialog — the confirming button's fill, and nothing else.
+ *
+ * The safe button stays the plain secondary `.dialog__action` that `Dialog.css` already
+ * declares. Only the confirming one is filled, because a modal with two filled buttons
+ * has no primary action.
+ *
+ * A modal IS the current screen while it is open, so its primary action is accent's
+ * second reserved use. `danger` replaces the accent with the destructive colour for the
+ * two of six confirms that genuinely lose work — abandoning a draft, and replacing one
+ * with an import. Losing a pool draw or a starting order is not that, and spending the
+ * destructive colour on it is how the destructive colour stops meaning anything.
+ *
+ * Consumes tokens only; declares no raw colour and no raw length the token table covers.
+ */
+
+.confirm-dialog__confirm--default {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+.confirm-dialog__confirm--danger {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-danger-ink);
+}
+
+/*
+ * Neither fill changes on hover. Colour is never the only signal, and the pointer plus
+ * the focus ring already carry the affordance — brightening a button that discards work
+ * under the cursor reads as encouragement. Phase 1's import confirm set this precedent.
+ */
+.confirm-dialog__confirm--default:hover {
+  background: var(--color-accent);
+}
+
+.confirm-dialog__confirm--danger:hover {
+  background: var(--color-danger);
+}
