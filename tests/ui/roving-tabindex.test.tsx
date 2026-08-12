@@ -48,7 +48,7 @@ function Harness({ count, columns }: { count: number; columns?: (() => number) |
   // `undefined` for an optional property, and the single-axis default is the case under
   // test in half this file.
   const options: RovingTabindexOptions = columns === undefined ? { count } : { count, columns };
-  const rove = useRovingTabindex(options);
+  const rove = useRovingTabindex<HTMLDivElement>(options);
 
   return (
     <div class="harness" ref={rove.containerRef} onKeyDown={rove.onKeyDown}>

@@ -39,6 +39,83 @@
 }
 
 /*
+ * --- The type toolbar ---
+ *
+ * One row that wraps. At full density the labels are full type names and it takes two
+ * rows; at the three-letter densities it fits one on a normal pool pane.
+ */
+.filter-bar__types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/*
+ * A filter pill is a CONTROL, so it takes --target-min in both axes rather than the
+ * shorter card-pill height token. tokens.css states that distinction beside that token
+ * itself, and this file is the reason it is stated: the card-pill height is deliberately
+ * not referenced anywhere below, and referencing it would shrink every filter pill under
+ * the minimum target size in one edit nobody would notice.
+ *
+ * The fill and the ink arrive as --pill-fill and --pill-ink, set inline by the component
+ * from the closed eighteen-entry map. This file never names a hue.
+ */
+.type-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  padding-inline: var(--space-1);
+  border: var(--border-w) solid transparent;
+  border-radius: var(--radius);
+  background: var(--pill-fill);
+  color: var(--pill-ink);
+  font: var(--text-label);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/*
+ * The pressed state is a border in --color-text, NOT a hue change.
+ *
+ * The fill already carries the type's identity, and tokens.css records that five of the
+ * eighteen fills measure between 2.48:1 and 2.97:1 against the surface precisely because
+ * the pressed state is carried by this border rather than by the fill. Colour is never the
+ * only signal here: aria-pressed and this border are the other two, and the border is
+ * declared unpressed as `transparent` above so pressing a pill never resizes it.
+ */
+.type-filter[aria-pressed='true'] {
+  border-color: var(--color-text);
+}
+
+/*
+ * --- The match-all toggle ---
+ */
+.filter-bar__match-all {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target-min);
+}
+
+.filter-bar__match-all-label {
+  font: var(--text-label);
+  cursor: pointer;
+}
+
+/*
+ * Inert, not absent. The control keeps its place and its tab stop; the muted ink and the
+ * opacity are the visual echo of aria-disabled rather than the mechanism, which is the
+ * handler's early return.
+ */
+.filter-bar__match-all-label--inert {
+  color: var(--color-text-muted);
+  opacity: 0.45;
+}
+
+/*
  * Secondary, per the UI-SPEC: hairline outline, transparent fill, plain text label. The
  * draft screen has no accent-filled control at all — the accent marks who is on the clock
  * and the next board slot, and a third accented thing would compete with both.

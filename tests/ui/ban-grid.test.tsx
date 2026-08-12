@@ -217,7 +217,11 @@ describe('PoolGrid outside ban mode', () => {
   it('puts no pressed state on a cell that is not a toggle', () => {
     mountGrid(null);
 
-    expect(host.querySelectorAll('[aria-pressed]')).toHaveLength(0);
+    // Scoped to `.mon-card`, which is what this assertion was always about. 02-08's type
+    // toolbar puts `aria-pressed` on eighteen filter buttons inside the same header, and
+    // those genuinely ARE toggles — an unscoped query here would report the filter bar
+    // working as this component's regression.
+    expect(host.querySelectorAll('.mon-card[aria-pressed]')).toHaveLength(0);
     expect(host.querySelectorAll('.mon-card--banned')).toHaveLength(0);
     expect(host.querySelectorAll('.mon-card__name--banned')).toHaveLength(0);
   });
@@ -258,7 +262,8 @@ describe('PoolGrid in ban mode', () => {
   it('marks every cell with a pressed state, true only where it is banned', () => {
     mountGrid(new Set(['venusaur']));
 
-    expect(host.querySelectorAll('[aria-pressed]')).toHaveLength(FIXTURE.length);
+    // Scoped for the same reason as the draft-mode assertion above.
+    expect(host.querySelectorAll('.mon-card[aria-pressed]')).toHaveLength(FIXTURE.length);
     expect(cardFor('Venusaur').getAttribute('aria-pressed')).toBe('true');
     expect(cardFor('Snorlax').getAttribute('aria-pressed')).toBe('false');
 
