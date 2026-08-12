@@ -85,6 +85,10 @@ describe('the top bar file controls', () => {
           importError={null}
           onRequestUndo={noop}
           onRequestAbandon={noop}
+          // No bans: this file is about the file controls, and an empty list renders no
+          // disclosure at all — which is also what keeps the control-count assertions below
+          // measuring what they were written to measure.
+          bannedNames={[]}
           {...overrides}
         />,
         host,

@@ -81,3 +81,40 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/*
+ * --- The bans disclosure (D-13) ---
+ *
+ * A native <details>. Its summary is a target in its own right, and the target-size table
+ * lists <summary> explicitly, so it takes the same minimum height as the buttons beside it.
+ *
+ * NO new colour. The disclosure is not a state signal, and the accent belongs to the
+ * next-slot highlight on the board — a second accented thing up here would compete with it
+ * for the same glance.
+ */
+.top-bar__bans {
+  position: relative;
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+}
+
+.top-bar__bans-summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+.top-bar__bans-list {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3) var(--space-5);
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--color-surface-raised);
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+  font: var(--text-label);
+}

@@ -10,6 +10,7 @@ import {
   type PoolPreset,
 } from '../../core/feasibility';
 import type {
+  BanMode,
   DualMegaChoice,
   DualMegaForme,
   TournamentConfig,
@@ -19,6 +20,7 @@ import type { RosterEntry, RosterSnapshot } from '../../core/roster/types';
 import { selectStartingOrder } from '../../core/selectors';
 import { createTournament } from '../../store';
 import {
+  CLEAR_BANLIST_CONFIRM,
   REMOVE_PLAYER_CONFIRM,
   REROLL_ORDER_CONFIRM,
   REROLL_POOL_CONFIRM,
@@ -128,6 +130,33 @@ function megasRequiredHelper(players: number, megasPerTeam: number): string {
 /** Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen — BAN-02. */
 const BAN_FIELD_LABEL = 'Ban a Pokémon by name';
 const BAN_FIELD_PLACEHOLDER = 'Name';
+
+/**
+ * The three ban modes — BAN-01, D-12. All three render; two are refused.
+ *
+ * ## The two unavailable options take the native attribute AND the ARIA one
+ *
+ * This is deliberately UNLIKE `FeasibilityBar`'s `Start draft`, which carries the ARIA state
+ * alone so it stays focusable. Do not "fix" either of them into agreement with the other.
+ *
+ * `Start draft`'s reason is COMPUTED, changes on every keystroke, and lives in a separate
+ * status element that only a focusable control can point at. These two carry a reason that
+ * is static and sits INSIDE the option's own accessible name — the visible suffix below,
+ * which 02-UI-SPEC §2 specifies and which `SegmentedControl` was built to accept from the
+ * caller rather than synthesize. A natively disabled radio is still in the accessibility
+ * tree and still announces that name, so nothing is lost by refusing the click outright.
+ *
+ * ## Why the values exist in the model today
+ *
+ * `BanMode` already carries all three (02-02), so Phase 4 enables two options rather than
+ * redesigning the control and migrating every saved tournament. Nothing in Phase 2 reads the
+ * field beyond storing it — the host banlist is the only mode this phase runs.
+ */
+const BAN_MODE_OPTIONS: readonly SegmentedOption<BanMode>[] = [
+  { value: 'hostBanlist', label: 'Host banlist' },
+  { value: 'blind', label: 'Blind — Not yet available', disabled: true },
+  { value: 'snake', label: 'Snake — Not yet available', disabled: true },
+];
 
 /**
  * `1 ban` / `{n} bans`, and the reason it is a helper rather than a template.
@@ -252,6 +281,9 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
    * are computation-local and none of them is ever stored.
    */
   const [bans, setBans] = useState<string[]>([]);
+
+  /** BAN-01. `hostBanlist` is the default and the only mode Phase 2 runs (D-12). */
+  const [banMode, setBanMode] = useState<BanMode>('hostBanlist');
 
   const [poolPreset, setPoolPreset] = useState<PoolPreset>('exact');
 
@@ -549,6 +581,7 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     | { kind: 'rerollPool' }
     | { kind: 'rerollOrder' }
     | { kind: 'removePlayer'; id: string; name: string; below: number }
+    | { kind: 'clearBans'; count: number }
   >({ kind: 'idle' });
 
   const closeConfirm = useCallback(() => setConfirm({ kind: 'idle' }), []);
@@ -572,6 +605,30 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
 
   const requestRandomize = useCallback(() => setConfirm({ kind: 'rerollOrder' }), []);
   const requestRerollPool = useCallback(() => setConfirm({ kind: 'rerollPool' }), []);
+
+  /**
+   * The fourth variant of the same union, not a second confirm mechanism.
+   *
+   * It carries the RESOLVED count — the roster-intersected figure at the moment the host
+   * asked — because the dialog must state the world it was opened against.
+   */
+  const requestClearBans = useCallback(
+    () => setConfirm({ kind: 'clearBans', count: banned.length }),
+    [banned],
+  );
+
+  /**
+   * One assignment, and everything follows from it.
+   *
+   * The chip list, the grid's pressed cells, its count line, the feasibility gate and the
+   * draw's candidate list are all derivations of this array — which is the payoff of the
+   * single write path above, and the reason clearing is a one-liner rather than five.
+   *
+   * Nothing is announced. The dialog already stated the consequence in numbers, and a chip
+   * list emptying is the visible feedback; announcing as well would describe a change the
+   * host has just authorised twice.
+   */
+  const handleClearBans = useCallback(() => setBans([]), []);
 
   /** The forme a row is showing. Absent means `Either`, which is the default. */
   const formeFor = useCallback(
@@ -629,7 +686,7 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       poolSize,
       // A fresh copy, so the document does not share an array with this screen's state.
       bans: [...bans],
-      banMode: 'hostBanlist',
+      banMode,
       // `?? 0` is unreachable: `feasibility.blocked` is false here, and a null field is
       // itself a blocker. It exists because the compiler cannot see that, and inventing a
       // number the host did not choose would be worse than the branch.
@@ -670,6 +727,7 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     snapshot,
     poolSize,
     bans,
+    banMode,
     megasRequiredPerTeam,
     dualMegaChoicesForConfig,
     depth,
@@ -775,6 +833,15 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       <fieldset class="config-screen__group">
         <legend class="config-screen__legend">Bans</legend>
 
+        {/* First, because the mode is what the rest of the group MEANS. */}
+        <SegmentedControl
+          legend="Ban mode"
+          name="ban-mode"
+          options={BAN_MODE_OPTIONS}
+          value={banMode}
+          onChange={setBanMode}
+        />
+
         {/*
           `candidates` is the FULL entry list, not the entries minus the banlist. Filtering
           the banned ones out would make `No Pokémon matches "{query}".` false for a species
@@ -790,6 +857,21 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
         />
 
         <BanChipList banned={banned} onRemove={handleRemoveBan} />
+
+        {/*
+          Not rendered while the list is empty (02-UI-SPEC §Empty and edge states), for the
+          same reason the chip list is not: a control that clears nothing is a control the
+          host has to read and dismiss on every visit to a form they have not used yet.
+        */}
+        {banned.length > 0 && (
+          <button
+            type="button"
+            class="config-screen__reroll"
+            onClick={requestClearBans}
+          >
+            Clear the banlist
+          </button>
+        )}
 
         {/*
           The second surface, over the SAME list — D-10. Every draftable entry renders here,
@@ -891,6 +973,21 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
           onConfirm={() => {
             closeConfirm();
             handleRandomize();
+          }}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {confirm.kind === 'clearBans' && (
+        <ConfirmDialog
+          heading={CLEAR_BANLIST_CONFIRM.heading}
+          body={CLEAR_BANLIST_CONFIRM.body(confirm.count)}
+          confirmLabel={CLEAR_BANLIST_CONFIRM.confirmLabel}
+          safeLabel={CLEAR_BANLIST_CONFIRM.safeLabel}
+          tone={CLEAR_BANLIST_CONFIRM.tone}
+          onConfirm={() => {
+            closeConfirm();
+            handleClearBans();
           }}
           onSafe={closeConfirm}
         />
