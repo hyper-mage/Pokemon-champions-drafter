@@ -115,3 +115,104 @@ export function matchesMega(entry: RosterEntry, mode: MegaFilterMode): boolean {
       return !entry.megaCapable;
   }
 }
+
+/**
+ * Everything the host has said about which Pokemon they want to see, in one value.
+ *
+ * Ephemeral VIEW state. It is never persisted, never appended to the log, never part of
+ * `TournamentConfig`, and never exported (D-35). Which Pokemon a player is looking at
+ * right now is a fact about a glance, not about a draft — and a filter that travelled
+ * through a JSON file would arrive at the next table as somebody else's leftover.
+ */
+export interface PoolFilters {
+  /** Raw text exactly as typed. Normalized exactly once, by `compileFilters`. */
+  query: string;
+  /** Selected type names, spelled as they appear in `RosterEntry.types`. */
+  types: readonly string[];
+  /** True = every selected type must be present (D-33's AND). False = any (the default). */
+  matchAll: boolean;
+  mega: MegaFilterMode;
+}
+
+/** `PoolFilters` with the query normalized. Built once per change, not once per entry. */
+export interface CompiledPoolFilters {
+  readonly key: string;
+  readonly types: readonly string[];
+  readonly matchAll: boolean;
+  readonly mega: MegaFilterMode;
+}
+
+/**
+ * The neutral value: no query, no types, no Mega constraint.
+ *
+ * Never mutated, and nothing here or in the UI mutates it. Filter state is replaced
+ * wholesale — every control calls `onChange` with a fresh object rather than editing the
+ * one it was handed — so this constant is safe to hand out as an initial value and safe
+ * to hand back as a reset.
+ */
+export const NO_FILTERS: PoolFilters = {
+  query: '',
+  types: [],
+  matchAll: false,
+  mega: 'all',
+};
+
+/**
+ * Normalize the query once, and carry the other three fields through unchanged.
+ *
+ * The split between this and `matchesFilters` exists for one reason: `matchesName`'s own
+ * doc comment instructs its caller to normalize once per keystroke rather than once per
+ * candidate, and this is where that instruction is obeyed. A `matchesFilters` that took
+ * raw text would do the same work a few hundred times over on every character typed.
+ */
+export function compileFilters(filters: PoolFilters): CompiledPoolFilters {
+  return {
+    key: toSearchKey(filters.query),
+    types: filters.types,
+    matchAll: filters.matchAll,
+    mega: filters.mega,
+  };
+}
+
+/**
+ * The one composed predicate: name AND types AND Mega.
+ *
+ * It holds no matching logic of its own. Three calls to the three predicates above, ANDed
+ * — which is what keeps the pool filter and the ban typeahead the same matcher rather
+ * than two that agree today.
+ *
+ * ## The Phase 3 seam, written down so it is inherited rather than redesigned
+ *
+ * A round's own pool restriction joins HERE. It adds one field to `PoolFilters` and
+ * `CompiledPoolFilters` and one clause to this function, and it changes no UI file —
+ * because a round restriction is a rule the compiled schedule imposes, not a preference
+ * the host is expressing, so it gets no widget in `FilterBar`. A host must not be able to
+ * switch a rule off from a toolbar.
+ *
+ * `MegaFilterMode` does NOT gain a fourth member to carry it. That decision is 02-01's
+ * and is recorded in `matchesMega`'s own doc block above; folding a schedule's constraint
+ * into the host's control is exactly the collapse it rejects.
+ */
+export function matchesFilters(entry: RosterEntry, compiled: CompiledPoolFilters): boolean {
+  return (
+    matchesName(entry, compiled.key) &&
+    matchesTypes(entry, compiled.types, compiled.matchAll) &&
+    matchesMega(entry, compiled.mega)
+  );
+}
+
+/**
+ * Is any control away from its neutral value?
+ *
+ * Drives two things: whether `Clear filters` is on screen at all, and whether committing
+ * a pick clears anything (D-35).
+ *
+ * `matchAll` is deliberately absent from the disjunction. With fewer than two selected
+ * types the AND and the OR behaviours are identical, so a `matchAll` that is true on its
+ * own is unobservable — and calling it "active" would put a `Clear filters` button on
+ * screen that visibly clears nothing. Its own test pins the omission so nobody restores
+ * it as a fix.
+ */
+export function hasActiveFilters(filters: PoolFilters): boolean {
+  return filters.query !== '' || filters.types.length > 0 || filters.mega !== 'all';
+}
