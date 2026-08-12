@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import { downloadJson, readJsonFile, tournamentFilename } from './adapters/file-io';
 import {
+  clearSaved,
   load as loadSavedTournament,
   loadIfNewer,
   probeStorage,
@@ -16,7 +17,9 @@ import {
   type RosterBundle,
 } from './adapters/roster-source';
 import { claimOwnership, disposeTabLock } from './adapters/tab-lock';
+import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
 import { pickMade } from './core/actions';
+import { checkFeasibility } from './core/feasibility';
 import { parseTournamentFile } from './core/import-guard';
 import type { TournamentDoc } from './core/model';
 import type { RosterEntry } from './core/roster/types';
@@ -28,19 +31,25 @@ import {
   selectPlayerName,
   selectTeams,
 } from './core/selectors';
+import { undoCrossesRoundBoundary, type RoundBoundaryCrossing } from './core/undo';
 import {
+  abandonTournament,
   adoptTournament,
   dispatch,
   draftState,
   getDoc,
   getState,
   subscribe,
+  undo,
 } from './store';
+import { ABANDON_CONFIRM, UNDO_BOUNDARY_CONFIRM } from './ui/confirm-copy';
 import { BoardGrid } from './ui/components/BoardGrid';
+import { ConfirmDialog } from './ui/components/ConfirmDialog';
 import { ImportConfirmDialog } from './ui/components/ImportConfirmDialog';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid } from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
+import { SplitPanes } from './ui/components/SplitPanes';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
 import { CompletedDraft } from './ui/screens/CompletedDraft';
@@ -82,6 +91,24 @@ type ImportFlow =
   | { status: 'confirm'; doc: TournamentDoc };
 
 /**
+ * Which confirmation is open — D-36 / D-37.
+ *
+ * In the same style as `LoadState` and `ImportFlow`, and holding the RESOLVED CONSEQUENCE
+ * rather than the intent. `abandon` carries the counts the body sentence names; `undo`
+ * carries the crossing the predicate returned and the display name resolved from it. Both
+ * were computed at the moment the host asked, so the dialog states the world it was opened
+ * against and cannot drift from it while it is on screen.
+ *
+ * That shape is `ImportFlow`'s, which holds an already-validated document rather than the
+ * file it came from, for the same reason: the only question a dialog should ask is the one
+ * the host can actually answer.
+ */
+type Confirm =
+  | { kind: 'idle' }
+  | { kind: 'abandon'; picks: number; players: number }
+  | { kind: 'undo'; crossing: RoundBoundaryCrossing; playerName: string };
+
+/**
  * Verbatim from the approved UI-SPEC copywriting table.
  *
  * Two sentences for five rejection reasons, which is deliberate rather than lazy. The
@@ -94,6 +121,18 @@ const IMPORT_WRONG_SHAPE =
   'That file is not a Champions Drafter tournament. Choose a .json file this app exported.';
 const IMPORT_NEWER_SCHEMA =
   'This tournament was saved by a newer version of the app. Reload the page and try again.';
+
+/**
+ * The adopted-document notice — the one place an imported or resumed tournament's
+ * arithmetic becomes visible to the host.
+ *
+ * `{reason}` is `problems[0].message`, which already ends in a full stop, so nothing is
+ * punctuated here. Composed rather than written as JSX prose, for the reason
+ * `ImportConfirmDialog` gives: JSX collapses whitespace between text lines.
+ */
+function adoptedNotice(reason: string): string {
+  return `This tournament's configuration no longer adds up: ${reason} The draft still runs, but it may run out of Pokémon before every team is full.`;
+}
 
 /**
  * What the live region says after a successful import.
@@ -195,7 +234,11 @@ export function App() {
   // A `useState` initializer rather than an effect for the same reason the canary is one:
   // an effect runs after the first paint, and a `Resume saved draft` button that appears a
   // frame late is a button the host has already decided is not there.
-  const [saved] = useState<TournamentDoc | null>(() =>
+  //
+  // Settable since 02-06: abandoning a draft clears the saved record, and a landing
+  // screen still offering to resume it would hand the host back the thing they just
+  // threw away.
+  const [saved, setSaved] = useState<TournamentDoc | null>(() =>
     probe.ok ? loadSavedTournament() : null,
   );
 
@@ -314,6 +357,95 @@ export function App() {
   const turn = state === null ? null : selectCurrentTurn(state);
   const complete = state !== null && selectIsComplete(state);
 
+  // One local, two consumers: the turn banner's sentence and the board's empty state.
+  // Written twice they are two expressions that can be changed independently, and the
+  // board would then name a different player from the banner directly above it.
+  const turnPlayerName =
+    state === null || turn === null ? null : selectPlayerName(state, turn.playerId);
+
+  /*
+    The host's stored pane preference, read synchronously in a state initializer so the
+    first paint is already the pane they left. Read in an effect instead, the draft would
+    render split and then jump.
+
+    This holds the STORED preference. What renders is `pane` below, which additionally
+    scopes `pool` out of a live draft — see there.
+  */
+  const [storedPane, setStoredPane] = useState<PaneState>(() => loadViewPrefs().pane);
+
+  /*
+    All three pane states become available once the draft is over, and that is exactly
+    when eight stacked export panels want the full width. While a draft is running,
+    `pool-full` would put the board behind a toggle, which ROADMAP criterion 5 forbids.
+  */
+  const poolExpandable = complete;
+
+  /*
+    The rendered pane. A stored `pool` is silently forced to `split` while a draft is
+    running: no warning, no announcement, nothing for the host to dismiss. That is the
+    second, independent half of the T-02-24 mitigation — `loadViewPrefs` already refuses
+    any value outside the union, and this refuses a legitimate value in the one situation
+    where honouring it would hide the board.
+
+    Derived here rather than inside `SplitPanes`, which must never hold an opinion about
+    which of its states are available; and derived rather than coerced in the initializer
+    above, because `App` mounts on the LANDING screen — there is no draft in progress at
+    the moment that initializer runs, so a coercion there would inspect a state that does
+    not exist yet and let a stored `pool` through on resume.
+
+    The two values cannot drift at a write: `handlePaneChange` persists the value it was
+    handed, which is always the value about to render.
+  */
+  const pane: PaneState = storedPane === 'pool' && !poolExpandable ? 'split' : storedPane;
+
+  const handlePaneChange = useCallback((next: PaneState) => {
+    setStoredPane(next);
+    // Density is read back rather than held here. This screen does not own that
+    // preference, and holding a copy of it is how the pool and the board end up writing
+    // each other's settings.
+    saveViewPrefs({ density: loadViewPrefs().density, pane: next });
+  }, []);
+
+  /*
+    THE ADOPTED-DOCUMENT NOTICE, and the four facts that make it a notice rather than a
+    guard.
+
+    1. Pool-dry mid-draft is STRUCTURALLY IMPOSSIBLE once `pool/built` carries N distinct
+       ids with N >= players x rounds. `canApply` rejects duplicate pool ids
+       (reduce.ts:137), the rotation length is exactly the player count (reduce.ts:146),
+       each accepted pick removes exactly one distinct id (reduce.ts:167,
+       selectors.ts:40), and `selectCurrentTurn` returns null after players x rounds picks
+       (selectors.ts:82, :105). The final picker therefore chooses from N - p*r + 1
+       options, which is at least one.
+    2. The only route to a pool that cannot fill every team is a hand-edited or hostile
+       import, and `import-guard` deliberately performs no referential integrity check —
+       "A bound is not an integrity check" (import-guard.ts:317-319). That posture is
+       intact; this notice exists INSTEAD of changing it, per 02-RESEARCH Open Question 3.
+    3. Therefore no defensive mid-draft pool-dry handling and no "out of Pokémon" empty
+       state may be added anywhere. The blocker above is the guarantee, and defensive code
+       for an unreachable state is code nobody can ever test.
+    4. It runs for EVERY document, not only adopted ones. A document this session started
+       passed the same gate at Start and will produce nothing here, and an "was this
+       adopted?" flag would be a piece of state that can go stale.
+  */
+  const feasibilityNotice = useMemo(() => {
+    if (state === null || entries.length === 0) return null;
+
+    const result = checkFeasibility({
+      playerNames: state.config.players.map((player) => player.name),
+      rounds: state.config.rounds,
+      poolSize: state.poolIds.length,
+      megasRequiredPerTeam: state.config.megasRequiredPerTeam,
+      bannedIds: state.config.bans,
+      entries,
+    });
+
+    if (!result.blocked) return null;
+
+    const primary = result.problems[0];
+    return primary === undefined ? null : adoptedNotice(primary.message);
+  }, [state, entries]);
+
   // Undo's live-region announcement names the species that came back. The store holds
   // the document and the document holds ids, so the display name has to arrive from
   // here, where the roster snapshot already is. Falling back to the id keeps the
@@ -323,6 +455,88 @@ export function App() {
     (monId: string) => entryById.get(monId)?.name ?? monId,
     [entryById],
   );
+
+  // -------------------------------------------------------------------------
+  // DRFT-13 — a confirm in front of every destructive action
+  // -------------------------------------------------------------------------
+
+  const [confirm, setConfirm] = useState<Confirm>({ kind: 'idle' });
+
+  const closeConfirm = useCallback(() => setConfirm({ kind: 'idle' }), []);
+
+  /**
+   * The single gate both undo paths pass through — D-37, and the mitigation for Pitfall 6.
+   *
+   * `TopBar` calls this from the `Undo last pick` button AND from its `document`-level
+   * Ctrl+Z listener, which is registered outside the `inert` draft region. Putting the
+   * question here rather than on the button is the whole reason the two cannot diverge.
+   *
+   * The cheap case stays cheap: undoing a pick in the round the draft is standing in is
+   * still one click and no dialog, exactly as D-10 shipped it.
+   */
+  const handleRequestUndo = useCallback(() => {
+    const currentDoc = getDoc();
+    const currentState = getState();
+    if (currentDoc === null || currentState === null) return;
+
+    const crossing = undoCrossesRoundBoundary(currentDoc, currentState);
+    if (crossing === null || !crossing.crosses) {
+      undo(resolveSpeciesName);
+      return;
+    }
+
+    setConfirm({
+      kind: 'undo',
+      crossing,
+      // Core holds ids and never a display name. Falling back to the id keeps the
+      // sentence honest rather than empty for a document referencing a player the
+      // config no longer lists.
+      playerName: selectPlayerName(currentState, crossing.playerId) ?? crossing.playerId,
+    });
+  }, [resolveSpeciesName]);
+
+  const handleRequestAbandon = useCallback(() => {
+    const currentState = getState();
+    if (currentState === null) return;
+
+    setConfirm({
+      kind: 'abandon',
+      picks: selectPickCount(currentState),
+      players: currentState.config.players.length,
+    });
+  }, []);
+
+  /**
+   * Both halves of abandoning, plus the two pieces of bookkeeping that would otherwise
+   * bring the draft back.
+   *
+   * THE ORDER IS LOAD-BEARING AND IS NOT OBVIOUS. `startAutosave`'s teardown function
+   * ends in `flush()`, which writes any pending debounced document — so tearing the
+   * autosave down AFTER clearing storage puts the draft straight back. The teardown goes
+   * first, deliberately: it flushes a document that is about to be deleted anyway, and
+   * `clearSaved` then removes exactly one storage key with nothing left to race it.
+   *
+   * `setSaved(null)` is the piece easiest to miss. The landing screen offers
+   * `Resume saved draft` from a probe taken at boot, so without it the host would abandon
+   * a draft and be offered it back on the very next screen.
+   */
+  const confirmAbandon = useCallback(() => {
+    stopAutosaveRef.current?.();
+    stopAutosaveRef.current = null;
+    autosaveStartedRef.current = false;
+
+    abandonTournament();
+    clearSaved();
+
+    setSaved(null);
+    setConfirm({ kind: 'idle' });
+    setScreen({ name: 'landing' });
+  }, []);
+
+  const confirmUndo = useCallback(() => {
+    setConfirm({ kind: 'idle' });
+    undo(resolveSpeciesName);
+  }, [resolveSpeciesName]);
 
   // -------------------------------------------------------------------------
   // PERS-04 / PERS-05 — the tournament as a file
@@ -476,7 +690,13 @@ export function App() {
   const storageBlockedMidDraft = storageOk && savingBlocked.value && !writeFailureAcknowledged;
 
   return (
-    <div class="app-shell">
+    /*
+      The draft screen is the one screen that is not a scrolling page: it is exactly one
+      viewport tall and its two panes scroll inside it, so the board is on screen at every
+      moment. Every other screen keeps the capped, centred, page-scrolling shell — which
+      is what leaves `FeasibilityBar`'s pinned bar on the config screen untouched.
+    */
+    <div class={screen.name === 'draft' ? 'draft-shell' : 'app-shell'}>
       <LiveRegion />
 
       {/*
@@ -547,13 +767,20 @@ export function App() {
             TopBar and TurnBanner are both specified as sticky at the top of the
             viewport, so they stick as one block rather than fighting over the same
             pixel. See TopBar.css.
+
+            `position: sticky` on this head is a no-op now that the panes own the
+            scrolling — there is no page scroll left for it to stick against. It is left
+            in place rather than deleted: removing it means editing TopBar.css for no
+            behavioural gain, and it re-engages verbatim if a later phase reintroduces
+            page scroll on this screen.
           */}
           <div class="sticky-head">
             <TopBar
-              resolveSpeciesName={resolveSpeciesName}
               onDownload={handleDownload}
               onImportFile={handleImportFile}
               importError={importFlow.status === 'failed' ? importFlow.message : null}
+              onRequestUndo={handleRequestUndo}
+              onRequestAbandon={handleRequestAbandon}
             />
 
             {/*
@@ -565,46 +792,64 @@ export function App() {
             <TurnBanner
               round={turn === null ? null : turn.round}
               rounds={state.config.rounds}
-              playerName={turn === null ? null : selectPlayerName(state, turn.playerId)}
+              playerName={turnPlayerName}
               complete={complete}
               picks={selectPickCount(state)}
               teams={state.config.players.length}
             />
+
+            {feasibilityNotice !== null && (
+              <p class="draft-notice" role="status">
+                {feasibilityNotice}
+              </p>
+            )}
           </div>
 
-          <BoardGrid
-            players={state.config.players}
-            rounds={state.config.rounds}
-            teams={selectTeams(state)}
-            currentTurn={turn}
-            entryById={entryById}
-            spriteMeta={load.bundle.spriteMeta}
-            pickCount={selectPickCount(state)}
-          />
-
           {/*
-            The completed-draft screen takes the POOL's place and nothing else. TopBar
-            and BoardGrid above stay mounted, so `Undo last pick` is still one click away
-            — a host who spots a wrong final pick on this screen must be able to unwind
-            it, and the board remains the completed record.
+            The completed-draft screen takes the POOL's place and nothing else. The head
+            and the board stay exactly where they are, so `Undo last pick` is still one
+            click away — a host who spots a wrong final pick on this screen must be able
+            to unwind it, and the board remains the completed record.
           */}
-          {complete ? (
-            <CompletedDraft
-              players={state.config.players}
-              teams={selectTeams(state)}
-              entryById={entryById}
-              checkpointReached={complete}
-              checkpointDismissed={checkpointDismissed}
-              onDownload={handleDownload}
-              onDismissCheckpoint={() => setCheckpointDismissed(true)}
-            />
-          ) : (
-            <PoolGrid
-              entries={availableEntries}
-              spriteMeta={load.bundle.spriteMeta}
-              onPick={handlePick}
-            />
-          )}
+          <SplitPanes
+            pane={pane}
+            onPaneChange={handlePaneChange}
+            poolExpandable={poolExpandable}
+            pool={
+              complete ? (
+                <CompletedDraft
+                  players={state.config.players}
+                  teams={selectTeams(state)}
+                  entryById={entryById}
+                  checkpointReached={complete}
+                  checkpointDismissed={checkpointDismissed}
+                  onDownload={handleDownload}
+                  onDismissCheckpoint={() => setCheckpointDismissed(true)}
+                />
+              ) : (
+                <PoolGrid
+                  entries={availableEntries}
+                  spriteMeta={load.bundle.spriteMeta}
+                  onPick={handlePick}
+                />
+              )
+            }
+            board={
+              <BoardGrid
+                players={state.config.players}
+                rounds={state.config.rounds}
+                teams={selectTeams(state)}
+                currentTurn={turn}
+                entryById={entryById}
+                spriteMeta={load.bundle.spriteMeta}
+                pickCount={selectPickCount(state)}
+                // Names in `board-full`, none in `split`. One expression, so the two
+                // pane states cannot each grow their own answer.
+                showName={pane === 'board'}
+                firstPlayerName={turnPlayerName}
+              />
+            }
+          />
         </div>
       )}
 
@@ -618,8 +863,39 @@ export function App() {
       {importFlow.status === 'confirm' && state !== null && (
         <ImportConfirmDialog
           pickCount={selectPickCount(state)}
+          playerCount={state.config.players.length}
           onConfirm={() => adoptImported(importFlow.doc)}
           onCancel={cancelImport}
+        />
+      )}
+
+      {/* Same placement, same reason. See the note above the import confirm. */}
+      {confirm.kind === 'abandon' && (
+        <ConfirmDialog
+          heading={ABANDON_CONFIRM.heading}
+          body={ABANDON_CONFIRM.body(confirm.picks, confirm.players)}
+          confirmLabel={ABANDON_CONFIRM.confirmLabel}
+          safeLabel={ABANDON_CONFIRM.safeLabel}
+          tone={ABANDON_CONFIRM.tone}
+          onConfirm={confirmAbandon}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {confirm.kind === 'undo' && (
+        <ConfirmDialog
+          heading={UNDO_BOUNDARY_CONFIRM.heading}
+          body={UNDO_BOUNDARY_CONFIRM.body(
+            confirm.playerName,
+            confirm.crossing.pickRound,
+            confirm.crossing.currentRound,
+            confirm.crossing.removedCount,
+          )}
+          confirmLabel={UNDO_BOUNDARY_CONFIRM.confirmLabel}
+          safeLabel={UNDO_BOUNDARY_CONFIRM.safeLabel}
+          tone={UNDO_BOUNDARY_CONFIRM.tone}
+          onConfirm={confirmUndo}
+          onSafe={closeConfirm}
         />
       )}
     </div>

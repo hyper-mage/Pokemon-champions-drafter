@@ -1,0 +1,415 @@
+// @vitest-environment happy-dom
+
+/**
+ * The two-pane draft shell — ROADMAP criterion 5, and the one requirement in this phase
+ * that is about the room rather than about the arithmetic.
+ *
+ * What is asserted here: that the pool and the board are in the document AT THE SAME TIME
+ * with no tab, no toggle and no accordion; that either side expands and the choice
+ * survives a reload; that a hand-edited `pool` preference cannot hide the board while a
+ * draft is live; that a picked species leaves the pool DOM on the render that records it
+ * and cannot be picked twice; and that a document whose configuration cannot fill every
+ * team says so without blocking the draft.
+ *
+ * What this file CANNOT prove, stated rather than implied, following
+ * `read-only-shell.test.tsx`'s precedent. happy-dom performs no layout: it computes no
+ * widths, resolves no grid tracks and evaluates no media query. So the 60/40 ratio, the
+ * 86px round cell it produces, whether eight board rows fit the split pane without an
+ * internal scrollbar, and whether any chip name ellipsises at 1920px are all invisible
+ * here. Those are 02-UI-SPEC assertions 6 and 7 and they belong to this plan's
+ * human-verify checkpoint, which is where they stay.
+ */
+
+import { render } from 'preact';
+import { act } from 'preact/test-utils';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/** Hoisted so the `vi.mock` factory below can see it — `vi.mock` lifts above every import. */
+const fixture = vi.hoisted(() => {
+  const entries = Array.from({ length: 40 }, (_, index) => ({
+    id: `mon-${index}`,
+    name: `Mon ${index}`,
+    num: index + 1,
+    types: ['Normal'],
+    baseStats: { hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1 },
+    baseSpeciesId: `mon-${index}`,
+    forme: null,
+    megaCapable: false,
+    megaFormes: [],
+    spriteId: `mon-${index}`,
+    spriteMissing: true,
+  }));
+
+  return {
+    bundle: {
+      snapshot: {
+        schemaVersion: 1,
+        regulation: 'mb',
+        validFrom: '2026-01-01',
+        validUntil: '2026-12-31',
+        upstreamRef: 'test',
+        generatedAt: '2026-01-01T00:00:00Z',
+        counts: {
+          legalEntries: entries.length,
+          draftable: entries.length,
+          megaFormes: 0,
+          baseSpecies: entries.length,
+        },
+        entries,
+        checksum: 'test-checksum',
+      },
+      spriteMeta: {
+        nativeWidth: 96,
+        nativeHeight: 96,
+        byRosterId: Object.fromEntries(
+          entries.map((row) => [row.id, { pokeapiId: row.num, file: `${row.num}.png`, slug: row.id }]),
+        ),
+      },
+    },
+  };
+});
+
+vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/adapters/roster-source')>();
+  return { ...actual, loadRoster: () => Promise.resolve(fixture.bundle) };
+});
+
+import { App } from '../../src/app';
+import { save as saveTournament } from '../../src/adapters/persistence';
+import { claimOwnership, CLAIM_WINDOW_MS, disposeTabLock } from '../../src/adapters/tab-lock';
+import { draftStarted, pickMade, poolBuilt, type Action, type Intent } from '../../src/core/actions';
+import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
+import { selectPickCount } from '../../src/core/selectors';
+import { dispatch, getState } from '../../src/store';
+import { announce } from '../../src/ui/components/LiveRegion';
+
+// ---------------------------------------------------------------------------
+
+const VIEW_KEY = 'champions-drafter:view';
+
+let host: HTMLDivElement;
+
+beforeEach(() => {
+  localStorage.clear();
+  // `announce` writes a module-level signal that outlives every render.
+  announce('');
+  host = document.createElement('div');
+  document.body.append(host);
+});
+
+afterEach(() => {
+  render(null, host);
+  host.remove();
+  disposeTabLock();
+  localStorage.clear();
+});
+
+function stamp(intent: Intent, seq: number): Action {
+  return { ...intent, seq, at: 1_770_000_000_000 + seq, actorId: 'host' };
+}
+
+function configOf(poolSize: number): TournamentConfig {
+  return {
+    formatLabel: 'Champions MB',
+    players: [
+      { id: 'p1', name: 'Ada' },
+      { id: 'p2', name: 'Bo' },
+    ],
+    rounds: 6,
+    rosterVersion: 'mb',
+    rosterChecksum: 'test-checksum',
+    poolSize,
+    bans: [],
+    banMode: 'hostBanlist',
+    megasRequiredPerTeam: 0,
+    dualMegaChoices: [],
+    depth: 'draftOnly',
+  };
+}
+
+/**
+ * A saved tournament the landing screen will offer to resume.
+ *
+ * `poolSize` is a parameter because one test needs a document whose pool cannot fill
+ * every team — the only route to that state is a hand-edited or hostile file, which is
+ * exactly what this notice exists for.
+ */
+function seedSavedDraft(options: { poolSize?: number; picks?: number } = {}): void {
+  const poolSize = options.poolSize ?? 24;
+  const pickCount = options.picks ?? 0;
+
+  const log: Action[] = [
+    stamp(
+      poolBuilt(
+        Array.from({ length: poolSize }, (_, index) => `mon-${index}`),
+        'mb',
+        'test-checksum',
+        poolSize - 1,
+        0,
+      ),
+      0,
+    ),
+    stamp(draftStarted(['p1', 'p2'], 13), 1),
+  ];
+
+  for (let index = 0; index < pickCount; index += 1) {
+    log.push(
+      stamp(
+        pickMade({
+          playerId: index % 2 === 0 ? 'p1' : 'p2',
+          monId: `mon-${index}`,
+          round: Math.floor(index / 2) + 1,
+          pickIndex: index,
+        }),
+        2 + index,
+      ),
+    );
+  }
+
+  const doc: TournamentDoc = {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'draft-panes-fixture',
+    createdAt: 1_770_000_000_000,
+    config: configOf(poolSize),
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log,
+  };
+
+  expect(saveTournament(doc)).toBe(true);
+}
+
+/** Claim the tab lock so the draft region is never inert. */
+function claimLock(): void {
+  vi.useFakeTimers();
+  claimOwnership();
+  vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+  vi.useRealTimers();
+}
+
+async function mountApp(): Promise<void> {
+  await act(async () => {
+    render(<App />, host);
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+function buttonNamed(name: string): HTMLButtonElement | undefined {
+  return Array.from(host.querySelectorAll('button')).find(
+    (button) => (button.textContent ?? '').trim() === name,
+  );
+}
+
+async function click(element: HTMLElement | undefined): Promise<void> {
+  expect(element).toBeDefined();
+  await act(async () => {
+    element?.click();
+    await Promise.resolve();
+  });
+}
+
+/** Land on the draft screen through the resume route — the shortest of the three. */
+async function reachDraft(options: { poolSize?: number; picks?: number } = {}): Promise<void> {
+  seedSavedDraft(options);
+  claimLock();
+  await mountApp();
+  await click(buttonNamed('Resume saved draft'));
+}
+
+function panesRoot(): HTMLElement | null {
+  return host.querySelector('.draft-panes');
+}
+
+function liveRegionText(): string {
+  return host.querySelector('[aria-live="polite"]')?.textContent?.trim() ?? '';
+}
+
+// ---------------------------------------------------------------------------
+
+describe('the pool and the board are on screen together', () => {
+  it('renders both roots at once, with no tab and nothing hidden', async () => {
+    await reachDraft();
+
+    expect(host.querySelector('.pool')).not.toBeNull();
+    expect(host.querySelector('.board')).not.toBeNull();
+
+    // Criterion 5 is "at every moment". Any of these three would put one behind the other.
+    expect(host.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    expect(host.querySelectorAll('[role="tabpanel"]')).toHaveLength(0);
+    expect(host.querySelectorAll('.draft-panes [hidden]')).toHaveLength(0);
+  });
+
+  it('puts the draft screen in the full-bleed shell rather than the capped one', async () => {
+    await reachDraft();
+
+    expect(host.querySelector('.draft-shell')).not.toBeNull();
+    expect(host.querySelector('.app-shell')).toBeNull();
+  });
+
+  it('offers only the board expand while a draft is running', async () => {
+    await reachDraft();
+
+    // `pool-full` would hide the board, which criterion 5 forbids mid-draft.
+    expect(buttonNamed('Expand the draft board')).toBeDefined();
+    expect(buttonNamed('Expand the pool')).toBeUndefined();
+  });
+});
+
+describe('expanding a pane', () => {
+  it('expands the board, announces it, and writes the choice through', async () => {
+    await reachDraft();
+
+    await click(buttonNamed('Expand the draft board'));
+
+    expect(panesRoot()?.getAttribute('data-pane')).toBe('board');
+    expect(liveRegionText()).toBe('Draft board expanded to full width.');
+
+    const stored = JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}') as { pane?: string };
+    expect(stored.pane).toBe('board');
+  });
+
+  it('names every chip once the board is expanded, and none before', async () => {
+    await reachDraft({ picks: 4 });
+
+    expect(host.querySelectorAll('.mon-chip')).toHaveLength(4);
+    expect(host.querySelectorAll('.mon-chip__name')).toHaveLength(0);
+
+    await click(buttonNamed('Expand the draft board'));
+
+    expect(host.querySelectorAll('.mon-chip')).toHaveLength(4);
+    expect(host.querySelectorAll('.mon-chip__name')).toHaveLength(4);
+  });
+
+  it('collapses the pool to a strip that offers the way back', async () => {
+    await reachDraft();
+    await click(buttonNamed('Expand the draft board'));
+
+    const strip = host.querySelector('.pane-collapsed');
+    expect(strip).not.toBeNull();
+    expect(strip?.querySelectorAll('button')).toHaveLength(1);
+
+    const restore = buttonNamed('Show the pool');
+    expect(restore).toBeDefined();
+
+    await click(restore);
+
+    expect(panesRoot()?.getAttribute('data-pane')).toBe('split');
+    expect(liveRegionText()).toBe('Pool and draft board shown side by side.');
+  });
+
+  it('restores the stored pane on the first render, not after a correction', async () => {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ density: 'standard', pane: 'board' }));
+
+    await reachDraft();
+
+    // Read in a state initializer, so the very first paint is already the host's pane.
+    // An effect would render `split` and then jump.
+    expect(panesRoot()?.getAttribute('data-pane')).toBe('board');
+  });
+});
+
+describe('a stored pane that would hide the board', () => {
+  it('is forced to split mid-draft, silently', async () => {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ density: 'standard', pane: 'pool' }));
+
+    await reachDraft();
+
+    expect(panesRoot()?.getAttribute('data-pane')).toBe('split');
+
+    /*
+      Nothing to dismiss and nothing announced BY THE COERCION. The host set a preference
+      that is simply unavailable right now; they did not make a mistake and there is
+      nothing for them to do.
+
+      Asserted as "no pane message", not as "the region is empty": reaching the draft at
+      all makes `TurnBanner` announce whose turn it is, which is correct and is not this
+      plan's to suppress. Emptiness would be an assertion about the turn announcement
+      wearing this test's name.
+    */
+    expect(liveRegionText()).toBe('Round 1 of 6 — Ada picks');
+    for (const message of [
+      'Pool expanded to full width.',
+      'Draft board expanded to full width.',
+      'Pool and draft board shown side by side.',
+    ]) {
+      expect(liveRegionText()).not.toBe(message);
+    }
+  });
+
+  it('is honoured once the draft is over, when all three states become available', async () => {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ density: 'standard', pane: 'pool' }));
+
+    await reachDraft({ picks: 12 });
+
+    expect(panesRoot()?.getAttribute('data-pane')).toBe('pool');
+    // And the pool side's own expand control exists again.
+    expect(buttonNamed('Show the draft board')).toBeDefined();
+  });
+});
+
+describe('a picked species leaves the pool (DRFT-07)', () => {
+  it('is gone from the pool DOM on the same render that fills the board cell', async () => {
+    await reachDraft();
+
+    const before = host.querySelectorAll('.mon-card').length;
+    expect(before).toBeGreaterThan(0);
+
+    const target = Array.from(host.querySelectorAll<HTMLElement>('.mon-card')).find((card) =>
+      (card.getAttribute('aria-label') ?? '').includes('Mon 0'),
+    );
+
+    await click(target);
+
+    // Absent, not disabled and not dimmed.
+    const names = Array.from(host.querySelectorAll('.pool .mon-card')).map(
+      (card) => card.getAttribute('aria-label') ?? '',
+    );
+    expect(names.some((name) => name.includes('Mon 0'))).toBe(false);
+    expect(host.querySelectorAll('.mon-card')).toHaveLength(before - 1);
+
+    // And it is on the board.
+    expect(host.querySelectorAll('.board .mon-chip')).toHaveLength(1);
+  });
+
+  it('refuses a second pick of the same species and leaves the board unchanged', async () => {
+    await reachDraft({ picks: 1 });
+
+    const state = getState();
+    expect(state).not.toBeNull();
+    const picksBefore = selectPickCount(state!);
+
+    const result = dispatch(
+      pickMade({ playerId: 'p2', monId: 'mon-0', round: 1, pickIndex: 1 }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(selectPickCount(getState()!)).toBe(picksBefore);
+  });
+});
+
+describe('the adopted-document feasibility notice', () => {
+  it('says so when the pool cannot fill every team, and the draft still runs', async () => {
+    // 2 players x 6 rounds needs 12; this document carries 5. Unreachable through the
+    // config screen — only a hand-edited or hostile file gets here.
+    await reachDraft({ poolSize: 5 });
+
+    const notice = host.querySelector('[role="status"].draft-notice');
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent ?? '').toContain(
+      "This tournament's configuration no longer adds up: Pool is too small.",
+    );
+
+    // Not blocking: the pool is still pickable and the board is still there.
+    expect(host.querySelector('.pool')).not.toBeNull();
+    expect(host.querySelector('.board')).not.toBeNull();
+    expect(host.querySelectorAll('.mon-card').length).toBeGreaterThan(0);
+  });
+
+  it('renders nothing for a document whose configuration adds up', async () => {
+    await reachDraft();
+
+    expect(host.querySelector('.draft-notice')).toBeNull();
+  });
+});

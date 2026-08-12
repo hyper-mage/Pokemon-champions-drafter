@@ -34,7 +34,12 @@ import {
 } from '../../src/core/model';
 import { fold } from '../../src/core/reduce';
 import { selectAvailablePool, selectCurrentTurn, selectPickCount } from '../../src/core/selectors';
-import { canUndo, lastPickAction, undoLast } from '../../src/core/undo';
+import {
+  canUndo,
+  lastPickAction,
+  undoCrossesRoundBoundary,
+  undoLast,
+} from '../../src/core/undo';
 
 // ---------------------------------------------------------------------------
 // Fixtures — deliberately the same shape as tests/core/reduce.test.ts, so a reader
@@ -353,5 +358,127 @@ describe('lastPickAction', () => {
     expect(removed?.round).toBe(3);
     expect(removed?.monId).toBe(POOL[4]);
     expect(removed?.playerId).toBe('p1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// undoCrossesRoundBoundary — D-37
+//
+// The predicate that decides whether undo asks first. It lives in the pure core rather
+// than in `TopBar` because "does this undo cross a round boundary" is a rule about the
+// draft, and a UI component may not own a rule.
+// ---------------------------------------------------------------------------
+
+/** An eight-player config, for the case where a whole round is exactly eight picks. */
+const EIGHT_CONFIG: TournamentConfig = {
+  ...CONFIG,
+  players: Array.from({ length: 8 }, (_, index) => ({
+    id: `q${index + 1}`,
+    name: `Player ${index + 1}`,
+  })),
+};
+
+const EIGHT_ORDER = EIGHT_CONFIG.players.map((player) => player.id);
+
+function makeEightDoc(pickCount: number): TournamentDoc {
+  const log: Action[] = [
+    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
+    stamp(draftStarted(EIGHT_ORDER, 9), 1),
+  ];
+
+  for (let pickIndex = 0; pickIndex < pickCount; pickIndex++) {
+    log.push(
+      stamp(
+        pickMade({
+          playerId: EIGHT_ORDER[pickIndex % 8] as string,
+          monId: POOL[pickIndex] as string,
+          round: Math.floor(pickIndex / 8) + 1,
+          pickIndex,
+        }),
+        log.length,
+      ),
+    );
+  }
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'eight-player-fixture',
+    createdAt: CREATED_AT,
+    config: EIGHT_CONFIG,
+    rng: { seed: SEED, cursor: 0 },
+    log,
+  };
+}
+
+describe('undoCrossesRoundBoundary', () => {
+  it('is null when there is nothing to undo', () => {
+    const doc = makeDoc(openingLog());
+    expect(undoCrossesRoundBoundary(doc, fold(doc))).toBeNull();
+  });
+
+  it('does not cross when the pick belongs to the round the draft is on', () => {
+    // Three picks with two players: the draft is on round 2 and so is the last pick.
+    const doc = makeDoc(withPicks(openingLog(), 3));
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.crosses).toBe(false);
+    expect(crossing?.pickRound).toBe(2);
+    expect(crossing?.currentRound).toBe(2);
+  });
+
+  it('crosses when the pick belongs to the round just finished', () => {
+    // Exactly two picks with two players: round 1 is complete, the draft is on round 2,
+    // and undoing reaches back past the boundary. This is the whole of D-37.
+    const doc = makeDoc(withPicks(openingLog(), 2));
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.crosses).toBe(true);
+    expect(crossing?.pickRound).toBe(1);
+    expect(crossing?.currentRound).toBe(2);
+    expect(crossing?.playerId).toBe('p2');
+  });
+
+  it('crosses at eight players on exactly eight picks, and names the eighth', () => {
+    const doc = makeEightDoc(8);
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.crosses).toBe(true);
+    expect(crossing?.pickRound).toBe(1);
+    expect(crossing?.currentRound).toBe(2);
+    expect(crossing?.playerId).toBe(EIGHT_ORDER[7]);
+  });
+
+  it('falls back to the configured round count once the draft is complete', () => {
+    // `selectCurrentTurn` returns null from that point on, so `currentRound` has nowhere
+    // else to come from. It must not throw and must not report 0.
+    const doc = makeDoc(withPicks(openingLog(), 12));
+    const state = fold(doc);
+
+    expect(selectCurrentTurn(state)).toBeNull();
+
+    const crossing = undoCrossesRoundBoundary(doc, state);
+    expect(crossing?.currentRound).toBe(CONFIG.rounds);
+    expect(crossing?.pickRound).toBe(CONFIG.rounds);
+    // The final pick belongs to the final round, so unwinding it crosses nothing.
+    expect(crossing?.crosses).toBe(false);
+  });
+
+  it('reports one removed pick in every state reachable today', () => {
+    // `undoLast` removes exactly one, which is what makes 02-UI-SPEC §11's "picks made
+    // after it" clause dormant. The field is the seam a walk-back undo would fill, not a
+    // number waiting to be deleted.
+    for (const count of [1, 2, 3, 7, 12]) {
+      const doc = makeDoc(withPicks(openingLog(), count));
+      expect(undoCrossesRoundBoundary(doc, fold(doc))?.removedCount).toBe(1);
+    }
+  });
+
+  it('does not mutate the document it is handed', () => {
+    const doc = makeDoc(withPicks(openingLog(), 4));
+    const before = JSON.stringify(doc);
+
+    undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(JSON.stringify(doc)).toBe(before);
   });
 });

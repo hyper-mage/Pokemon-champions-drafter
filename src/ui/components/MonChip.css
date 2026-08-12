@@ -27,10 +27,24 @@
   height: var(--sprite-sm);
 }
 
+/*
+ * The name renders in board-full only — D-21 removes it in split — so this rule is read
+ * at exactly one geometry. There the per-round cell is 275px wide and 215px of it is name
+ * width; the roster's longest name is 20 characters (Tauros-Paldea-Combat) at roughly
+ * 180px when set at 18px, so it fits with room to spare. 18px is also what 02-UI-SPEC
+ * Assertion 2 requires, because a board name is the thing the mandatory 3-metre pass reads
+ * aloud, and the 14px label token cannot survive that distance. --text-body already exists;
+ * this introduces no fifth size into a scale tokens.css fixes at four.
+ *
+ * The ellipsis rules below stay even though nothing should truncate at 1920px. They are
+ * for the narrow-viewport case, and Assertion 7 is measured by a person on real hardware
+ * rather than asserted here — happy-dom performs no layout, so no test in this repository
+ * can tell the difference between a name that fits and one that does not.
+ */
 .mon-chip__name {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font: var(--text-label);
+  font: var(--text-body);
 }

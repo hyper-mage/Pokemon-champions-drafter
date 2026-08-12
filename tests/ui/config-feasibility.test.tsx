@@ -431,6 +431,19 @@ describe('Re-roll pool', () => {
       buttonNamed('Re-roll pool')?.click();
     });
 
+    // Since 02-06 the pool draw asks first (D-36), and nothing is drawn until it is
+    // answered — the readout is still the one everyone in the room has been reading.
+    expect(readout()).toBe(`Pool: 48 Pokémon — ${before.megaCapableCount} Mega-capable`);
+
+    const dialog = host.querySelector('[role="alertdialog"]');
+    expect(dialog).not.toBeNull();
+    const draw = Array.from(dialog?.querySelectorAll('button') ?? []).find(
+      (element) => element.textContent?.trim() === 'Draw a new pool',
+    );
+    act(() => {
+      draw?.click();
+    });
+
     // Two seeds, each consumed from cursor 0, each re-DRAWN rather than advanced — so
     // re-rolling the pool provably cannot disturb the order.
     expect(renderedOrder()).toEqual(orderBefore);

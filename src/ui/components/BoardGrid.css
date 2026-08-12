@@ -4,6 +4,22 @@
  * Consumes tokens only; declares no raw colour. The two raw lengths here (the label
  * column width and the scroll floor) are not values the token table covers — they are
  * this one layout's geometry, specified as such in the UI Design Contract.
+ *
+ * THE LABEL COLUMN WIDENED IN 02-06, from Phase 1's 160-pixel column to the 176px below.
+ * That buys roughly two more characters of host-authored player name at --text-heading,
+ * which matters now that names are typed by a person rather than being `Player 1`. It
+ * costs 2px on each of six round cells: 88px each becomes 86px each.
+ *
+ * 86px IS THE NUMBER THREE DECISIONS REST ON (02-UI-SPEC §Two-Pane Geometry). A
+ * sprite-only chip needs 56px — 48px of art plus its padding — and fits inside 86px with
+ * 30px of slack. A chip that also showed its name would have 22px left for the name,
+ * which is not a name. That single measurement is why board chips are sprite-only in
+ * `split` (D-21) and why expanding the board is what reveals the names rather than a
+ * density control: at full width the same cell is 275px and the name has 215px.
+ *
+ * The column template itself is NOT declared here. It arrives inline from BoardGrid.tsx,
+ * because CSS repeat() takes an integer at parse time and cannot read a custom property
+ * for its count, and the round count is derived from the tournament config.
  */
 
 .board {
@@ -35,8 +51,9 @@
 }
 
 .board__grid {
+  --board-label-w: 176px;
+
   display: grid;
-  grid-template-columns: 160px repeat(6, minmax(0, 1fr));
   gap: var(--space-2);
   align-items: stretch;
 }

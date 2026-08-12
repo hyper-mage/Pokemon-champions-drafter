@@ -27,6 +27,8 @@ export interface TeamStripProps {
   nextSlotIndex: number | null;
   entryById: ReadonlyMap<string, RosterEntry>;
   spriteMeta: SpriteMeta;
+  /** Passed through from the pane state. Nothing here branches on it. */
+  showName: boolean;
 }
 
 export function TeamStrip({
@@ -35,6 +37,7 @@ export function TeamStrip({
   nextSlotIndex,
   entryById,
   spriteMeta,
+  showName,
 }: TeamStripProps) {
   return (
     <>
@@ -54,7 +57,9 @@ export function TeamStrip({
 
         return (
           <div class={className} key={`${player.id}-${index}`}>
-            {entry !== undefined && <MonChip entry={entry} spriteMeta={spriteMeta} />}
+            {entry !== undefined && (
+              <MonChip entry={entry} spriteMeta={spriteMeta} showName={showName} />
+            )}
           </div>
         );
       })}
