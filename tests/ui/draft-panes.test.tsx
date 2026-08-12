@@ -286,9 +286,15 @@ describe('expanding a pane', () => {
     await reachDraft();
     await click(buttonNamed('Expand the draft board'));
 
-    const strip = host.querySelector('.pane-collapsed');
+    const strip = host.querySelector('.pane--collapsed');
     expect(strip).not.toBeNull();
-    expect(strip?.querySelectorAll('button')).toHaveLength(1);
+    expect(strip?.getAttribute('data-side')).toBe('pool');
+
+    // One control in the chrome, and it is the way back. The pool's own contents are
+    // still mounted underneath — see the filter test below — so the assertion is scoped
+    // to the chrome rather than to the whole strip.
+    const chrome = strip?.querySelector('.pane__chrome');
+    expect(chrome?.querySelectorAll('button')).toHaveLength(1);
 
     const restore = buttonNamed('Show the pool');
     expect(restore).toBeDefined();
@@ -297,6 +303,42 @@ describe('expanding a pane', () => {
 
     expect(panesRoot()?.getAttribute('data-pane')).toBe('split');
     expect(liveRegionText()).toBe('Pool and draft board shown side by side.');
+  });
+
+  /**
+   * "What an expand button changes is the RATIO, never the membership" — the component's
+   * own doc block, and until this test the component did the opposite.
+   *
+   * The host's search text and type filters live in `PoolGrid`'s state, so a collapse that
+   * unmounted the pool discarded them and a restore remounted at `NO_FILTERS`. There was
+   * no announcement either: the `Filters cleared.` suffix is composed on the PICK path,
+   * which is the only place D-35 says filters clear. The symptom is a host narrowing the
+   * pool to one type, glancing at the board, and finding the field empty on the way back.
+   */
+  it('keeps the pool mounted while it is collapsed, so the host keeps their filters', async () => {
+    await reachDraft();
+
+    const search = host.querySelector<HTMLInputElement>('#pool-search');
+    expect(search).not.toBeNull();
+
+    await act(async () => {
+      if (search !== null) {
+        search.value = 'Mon 1';
+        search.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      await Promise.resolve();
+    });
+
+    const filteredCount = host.querySelectorAll('.mon-card').length;
+    expect(filteredCount).toBeGreaterThan(0);
+    expect(filteredCount).toBeLessThan(40);
+
+    await click(buttonNamed('Expand the draft board'));
+    await click(buttonNamed('Show the pool'));
+
+    // The same field, still holding the same text, still narrowing the same grid.
+    expect(host.querySelector<HTMLInputElement>('#pool-search')?.value).toBe('Mon 1');
+    expect(host.querySelectorAll('.mon-card')).toHaveLength(filteredCount);
   });
 
   it('restores the stored pane on the first render, not after a correction', async () => {

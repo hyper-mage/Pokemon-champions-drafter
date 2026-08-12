@@ -84,13 +84,32 @@
  * The collapsed strip. Its button is set vertically so a full label fits a column one
  * target wide — truncating `Show the draft board` to `Show…` would leave the host
  * guessing at the only way back.
+ *
+ * --- THIS IS WHERE THE COLLAPSE HAPPENS, AND IT IS NOT AN UNMOUNT ---
+ *
+ * The collapsed side keeps its children in the document; `.pane__scroll` below is what
+ * takes them off the screen. That division is load-bearing. `PoolGrid` owns the host's
+ * search text and type filters as component state, so a collapse that removed the subtree
+ * discarded them on every board expansion — silently, because the `Filters cleared.`
+ * suffix is composed on the pick path and a layout toggle is not a pick.
+ *
+ * `display: none` rather than the `hidden` attribute: a pane is not a disclosure widget,
+ * and `draft-panes.test.tsx` asserts that nothing inside `.draft-panes` carries that
+ * attribute. Rather than `visibility: hidden` too, which would leave a strip-width column
+ * still reserving a full pool grid's worth of layout.
  */
-.pane-collapsed {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
+.pane--collapsed {
+  align-items: center;
   min-width: var(--target-min);
   overflow: hidden;
+}
+
+.pane--collapsed .pane__chrome {
+  justify-content: center;
+}
+
+.pane--collapsed .pane__scroll {
+  display: none;
 }
 
 .pane__button {
@@ -109,7 +128,7 @@
   background: var(--color-surface-raised);
 }
 
-.pane-collapsed .pane__button {
+.pane--collapsed .pane__button {
   writing-mode: vertical-rl;
   min-width: var(--target-min);
   padding: var(--space-3) 0;

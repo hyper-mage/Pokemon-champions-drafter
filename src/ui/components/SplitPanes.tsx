@@ -13,6 +13,11 @@ import './SplitPanes.css';
  * children are in the document at once and each side scrolls inside its own track. What
  * an expand button changes is the RATIO, never the membership.
  *
+ * That last sentence is enforced by `side()` below rather than merely asserted here. A
+ * collapsed side keeps its children mounted and hides the track from CSS, so any state
+ * they own survives the toggle — which is what a reader who believes this paragraph will
+ * assume, and what the component did not do until the assumption was checked.
+ *
  * It renders no heading and no chrome for its children. `PoolGrid` and `BoardGrid` keep
  * their own headings and their own roots, and the pool root keeps the density attribute
  * 02-03 put on it — deliberately not repeated on the pane wrapper here, because a density
@@ -59,13 +64,22 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
   const boardExpanded = pane === 'board';
 
   /**
-   * One side, in one of its two shapes.
+   * One side, in one of its two shapes — and it is ONE SUBTREE in both of them.
    *
-   * `collapsed` is a strip holding the control that brings the other side back;
-   * `expanded` is the pane itself, with its chrome above an independently scrolling
-   * track. The pane that is currently expanded carries no control of its own — the
-   * restore lives on the collapsed strip, where the missing content is, and two buttons
-   * saying the same thing on one screen is how a host learns to stop reading either.
+   * `collapsed` narrows the pane to a strip and swaps the control in its chrome for the
+   * one that brings the other side back; the children go on rendering either way, and CSS
+   * hides the track. That is not a stylistic preference: unmounting them discarded the
+   * pool's ephemeral state, which `PoolGrid` owns and which includes the host's search
+   * text and type filters. A host who narrowed the pool to Fire, expanded the board to
+   * check a rival's team and came back found their filters gone with no announcement —
+   * D-35's contract is that a PICK clears filters, and a layout toggle is not a pick.
+   *
+   * So the membership promise in this file's header is now a property of the markup
+   * rather than a description of it. `pane--collapsed` is the whole of the difference.
+   *
+   * The pane that is currently expanded carries no control of its own — the restore lives
+   * on the collapsed strip, where the missing content is, and two buttons saying the same
+   * thing on one screen is how a host learns to stop reading either.
    */
   function side(
     key: 'pool' | 'board',
@@ -76,22 +90,12 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
     expandedMessage: string,
     expandable: boolean,
   ) {
-    if (collapsed) {
-      return (
-        <div class="pane-collapsed" data-side={key}>
-          <button type="button" class="pane__button" onClick={() => change('split', SPLIT_MESSAGE)}>
-            {restoreLabel}
-          </button>
-        </div>
-      );
-    }
-
     // Expanded here means "this side has the whole width", which is exactly when the
     // other side is collapsed and already offers the way back.
     const isFullWidth = pane === key;
 
     return (
-      <section class="pane" data-side={key}>
+      <section class={collapsed ? 'pane pane--collapsed' : 'pane'} data-side={key}>
         {/*
           The chrome sits OUTSIDE the scroll container on purpose. A control positioned
           inside a scrolling region scrolls away with the content, and this button is the
@@ -99,14 +103,25 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
           they are deep in a long pool and cannot tell two sprites apart.
         */}
         <div class="pane__chrome">
-          {!isFullWidth && expandable && (
+          {collapsed ? (
             <button
               type="button"
               class="pane__button"
-              onClick={() => change(key, expandedMessage)}
+              onClick={() => change('split', SPLIT_MESSAGE)}
             >
-              {expandLabel}
+              {restoreLabel}
             </button>
+          ) : (
+            !isFullWidth &&
+            expandable && (
+              <button
+                type="button"
+                class="pane__button"
+                onClick={() => change(key, expandedMessage)}
+              >
+                {expandLabel}
+              </button>
+            )
           )}
         </div>
 
