@@ -3,7 +3,7 @@ phase: 02-host-configured-draft-night
 plan: 06
 subsystem: the-shared-draft-screen
 tags: [two-pane-shell, board-at-n-players, accessible-name, confirm-pattern, undo-boundary, feasibility-notice]
-status: awaiting-checkpoint
+status: complete
 
 # Dependency graph
 requires:
@@ -92,10 +92,13 @@ once — the whole players × rounds board beside the pool, every team as it fil
 it is — and nothing destructive happens without asking first, from the button and from
 `Ctrl+Z` alike.**
 
-> **STATUS: Tasks 1–3 complete and committed. Task 4 is the D-23 physical legibility
-> checkpoint and has NOT been run** — it needs a person, a 1080p screen and three metres.
-> The `## DRFT-14 physical verification` section below is the section that pass fills in,
-> and it is deliberately empty rather than guessed at.
+> **STATUS: all four tasks complete.** Tasks 1–3 are committed code; Task 4 is the D-23
+> physical legibility checkpoint, which the host ran and approved on 2026-08-12.
+>
+> The approval was blanket rather than per-assertion, and `## DRFT-14 physical
+> verification` below records it that way on purpose. **The pass-1 unrecognisable-sprite
+> list was not itemised**, so D-21 still has no evidence either way — read that section
+> before treating the blank as a clean result.
 
 ## Performance
 
@@ -305,35 +308,46 @@ moved, other than deviation 5's one prop.
 
 ## DRFT-14 physical verification
 
-**NOT YET RUN.** This is Task 4, a `checkpoint:human-verify` gate, and it is the reason this
-plan is `autonomous: false`. It cannot be automated: happy-dom performs no layout, computes
-no widths, resolves no grid tracks and evaluates no media query, so 02-UI-SPEC assertions 6
+**RUN AND APPROVED — 2026-08-12, by the host, without itemised findings.**
+
+This is Task 4, a `checkpoint:human-verify` gate, and it is the reason this plan is
+`autonomous: false`. It cannot be automated: happy-dom performs no layout, computes no
+widths, resolves no grid tracks and evaluates no media query, so 02-UI-SPEC assertions 6
 and 7 have no headless equivalent in this repository, and D-23 calls the three-metre pass
 mandatory and not substitutable.
 
-The continuation agent fills the three sections below from the host's answers. **A pass that
-is run and not written down is a pass that did not happen**, and the pass-1 unrecognisable-
-sprite list has no other home in the project — it is the only evidence that will ever exist
-for or against revisiting D-21.
+The three passes were presented to the host in full, at the screen, against the merged
+build. The host returned a blanket approval covering all three rather than per-assertion
+answers. That is recorded literally below: each assertion is marked `approved (not
+itemised)` rather than upgraded to a specific observation nobody wrote down.
+
+**The one consequence worth stating plainly.** The pass-1 unrecognisable-sprite list came
+back empty because it was never itemised, NOT because every sprite was named. Those are
+different findings and only one of them is evidence. D-21 (which removes MonChip's visible
+name in `split`) therefore still has **no evidence for or against it** after this
+checkpoint. Anyone revisiting D-21 must re-run pass 1 and write the list down; do not read
+the blank below as a clean result.
 
 ### Pass 1 — `split`, the state the draft actually runs in
 
-- Turn and round readable at 3 m: _pending_
-- All eight row labels readable at 3 m: _pending_
-- **Board sprites that could NOT be named (the D-21 evidence list):** _pending_
+- Turn and round readable at 3 m: approved (not itemised)
+- All eight row labels readable at 3 m: approved (not itemised)
+- **Board sprites that could NOT be named (the D-21 evidence list):** not itemised — see the
+  note above. This is an absence of evidence, not an empty list.
 - 8-row board fits the split board pane with no internal vertical scrollbar
-  (assertion 6 — 656px needed against ~851px available): _pending_
+  (assertion 6 — 656px needed against ~851px available): approved (not itemised)
 
 ### Pass 2 — `board-full`, the disambiguation state
 
-- One named Pokémon read aloud from each of the eight rows: _pending_
-- Any chip name ellipsised at 1920px (assertion 7 — measured, not assumed): _pending_
+- One named Pokémon read aloud from each of the eight rows: approved (not itemised)
+- Any chip name ellipsised at 1920px (assertion 7 — measured, not assumed): approved (not
+  itemised). The spec's "measure this one, do not assume it" was not separately evidenced.
 
 ### Pass 3 — the confirms, at the screen
 
-- `Ctrl+Z` after a round boundary opened a dialog: _pending_
-- Escape left the pick in place: _pending_
-- `Keep drafting` left the draft untouched: _pending_
+- `Ctrl+Z` after a round boundary opened a dialog: approved (not itemised)
+- Escape left the pick in place: approved (not itemised)
+- `Keep drafting` left the draft untouched: approved (not itemised)
 
 ## Known Stubs
 
