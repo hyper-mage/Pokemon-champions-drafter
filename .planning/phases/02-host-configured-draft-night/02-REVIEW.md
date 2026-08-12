@@ -46,7 +46,12 @@ findings:
   warning: 9
   info: 7
   total: 18
-status: issues_found
+status: partially_resolved
+fixed: 10
+open: 1
+out_of_scope: 7
+fix_run: 2026-08-12
+tests_after_fix: 875
 ---
 
 # Phase 2: Code Review Report
@@ -54,6 +59,73 @@ status: issues_found
 **Reviewed:** 2026-08-12T14:32:00Z
 **Depth:** standard
 **Files Reviewed:** 37
+
+## Resolution status
+
+`/gsd-code-review 2 --fix` ran on 2026-08-12 over the Critical and Warning findings.
+Info findings were out of scope (`--all` was not passed) and remain open.
+
+| ID | Outcome | Commit |
+|---|---|---|
+| CR-01 | fixed | `174e946` |
+| CR-02 | fixed | `1b9a0fc` |
+| WR-01 | fixed | `dca327a` |
+| WR-02 | fixed | `c423b2c` |
+| WR-03 | fixed | `18a812e` |
+| WR-04 | fixed | `4d3565d` |
+| WR-05 | fixed | `224fd90` |
+| WR-06 | fixed | `e1a4e61` |
+| **WR-07** | **OPEN — reported, not fixed** | — |
+| WR-08 | fixed | `b980697` |
+| WR-09 | fixed | `e01d8b2` |
+| IN-01…IN-07 | out of scope | — |
+
+After the fixes: `npm run verify` exits 0, **875 tests across 43 files** (from 847/42),
+`check:pure` and `check:nohtml` both 0 violations, `package.json` and `package-lock.json`
+unchanged.
+
+### WR-07 is still open, and this review's recommendation for it was wrong
+
+The fix attempt found that this report's own "cheapest correct answer" — moving `inert`
+from `.draft-region` to the shell root — would introduce two worse faults, because that
+root also contains `LiveRegion`, `ReadOnlyBanner` and both dialogs:
+
+- `inert` removes a subtree from the accessibility tree, so **every announcement in a
+  read-only tab would go silent**, including `ReadOnlyBanner`'s own `announce(sentence)`
+  — which its doc block calls the single most important thing it ever has to say.
+- `Take over drafting here` sits inside that root, so **a secondary tab could never be
+  promoted**. That is the hard lockout `tab-lock.ts`'s header names as worse than the race
+  it prevents.
+
+The report's part (a) also contains a second, independent decision that its snippet gets
+wrong: routing to `draft` on *every* adoption, including `onRemoteSave`, would yank a
+secondary tab off the config screen mid-configuration whenever the owner saves. This
+report's own prose says "only from a screen where it makes sense", which contradicts its
+snippet.
+
+**Recommended sequence, carried forward:**
+
+1. Restructure the shell root as a Fragment — `<LiveRegion/>`, `<ReadOnlyBanner/>`,
+   `<div inert={readOnly}>{screens}</div>`, then the two dialogs — and delete the `inert`
+   on `.draft-region` in the same change, so there is one gate rather than two.
+2. With that in place, route unconditionally in `adoptWhateverIsNewer`; it is then safe,
+   because a secondary cannot have been composing anything.
+3. If (1) is rejected, take the narrow version: route to `draft` only when
+   `screen.name === 'landing'`, and gate `handleStart` on `isOwner()` with a stated reason.
+   That needs one new copy row, which is not in the approved table.
+
+**Residual risk while WR-07 is open.** The CR-01 fix closed the *Resume* clobber path. What
+remains live is a secondary tab walking the config screen and clicking `Start draft`: that
+creates a different tournament which `dispatch` accepts (deliberately un-gated,
+`store.ts:332-344`), and one autosave after promotion writes it out.
+
+### New copy shipped by the fixes, not yet in 02-UI-SPEC
+
+Both flag themselves at their definition, following `importAnnouncement`'s precedent. They
+want folding into one spec amendment alongside the two deferred plural defects:
+
+- `MEGAS_REQUIRED_NOT_AN_INTEGER` in `src/core/feasibility.ts` (WR-02)
+- `rosterDriftNotice` in `src/app.tsx` (WR-06)
 **Status:** issues_found
 
 ## Scope

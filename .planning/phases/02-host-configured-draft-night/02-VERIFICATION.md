@@ -9,7 +9,8 @@ criteria_total: 5
 criteria_evidenced: 5
 tests: 847
 test_files: 42
-gates_not_run: [code-review, independent-verifier, secure-phase]
+gates_not_run: [independent-verifier, secure-phase]
+open_findings: [WR-07]
 ---
 
 # Phase 2 Verification — Host-Configured Draft Night
@@ -144,13 +145,19 @@ and write the list down.
 
 These are outstanding. None was skipped by choice.
 
-1. **Code review** — the `gsd-code-reviewer` agent terminated on an account session limit
-   (resets 2:50pm America/Chicago) before producing output. No `02-REVIEW.md` exists, and
-   no partial was fabricated. Advisory by contract; it never blocked execution.
-   Resume: `/gsd-code-review 2`
-   Scope note for whoever runs it: 89 files was past the 50-file warning threshold, so the
-   intended scope was narrowed to the 37 `.ts`/`.tsx` sources. **19 CSS files and 33 test
-   files were excluded** and remain unreviewed.
+1. ~~**Code review**~~ — **RAN 2026-08-12 after the session limit reset.** See
+   `02-REVIEW.md`: 18 findings (2 critical, 9 warning, 7 info). `--fix` then resolved 10 of
+   the 11 Critical+Warning findings; **WR-07 remains open** and is the one item that still
+   carries a live data-loss path (a secondary tab starting a different tournament from the
+   config screen). Test count rose 847 → 875.
+   Still unreviewed: **19 CSS files and 33 test files** were excluded from that pass, because
+   89 files was past the 50-file warning threshold and would have bought a shallow skim.
+
+   The two critical findings both invalidate a claim this document made before the review
+   ran. The mechanical checks below were all true and remain true — and they did not catch
+   either bug, because both are multi-tab timing faults that no single-tab test exercises.
+   That is precisely the gap an inline orchestrator verification leaves, and it is the
+   clearest available evidence for why the independent pass is not a formality.
 
 2. **Independent verification** — the `gsd-verifier` agent could not be spawned for the same
    reason. This document is the orchestrator's inline substitute; see the opening section.
