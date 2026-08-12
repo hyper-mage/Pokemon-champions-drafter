@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { SpriteMeta } from '../../adapters/roster-source';
 import { loadViewPrefs, saveViewPrefs, type Density } from '../../adapters/view-prefs';
@@ -128,6 +128,21 @@ const CLEAR_SEARCH_LABEL = 'Clear the search';
 const CLEAR_FILTERS_LABEL = 'Clear filters';
 const CLEAR_BOTH_LABEL = 'Clear search and filters';
 
+/**
+ * How long the filter result waits before it is spoken.
+ *
+ * 02-UI-SPEC names this debounce as one of exactly two things in this phase that
+ * legitimately live in the UI layer rather than in a selector — it is a timer, and a timer
+ * is not a rule. Named here rather than written at the call site so the number is one
+ * thing rather than one thing per usage.
+ */
+const ANNOUNCE_DEBOUNCE_MS = 300;
+
+/** 02-UI-SPEC §Copywriting Contract → Live-region announcements. */
+function filterAnnouncement(matching: number, total: number): string {
+  return `${matching} of ${total} Pokémon match.`;
+}
+
 export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridProps) {
   // Read synchronously on the first render, in a state initializer rather than an
   // effect. An effect runs after the first paint, so the host would watch the pool draw
@@ -186,6 +201,23 @@ export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridPro
       ? 0
       : visible.reduce((total, entry) => (bannedIds.has(entry.id) ? total + 1 : total), 0);
 
+  // ---------------------------------------------------------------------
+  // The filter-result announcement, and the one it must never overwrite
+  // ---------------------------------------------------------------------
+
+  const pendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repeatRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSpokenRef = useRef<string | null>(null);
+  const isFirstRunRef = useRef(true);
+  const previousFiltersRef = useRef<PoolFilters>(filters);
+  const suppressNextRef = useRef(false);
+
+  function cancelPendingAnnouncement(): void {
+    if (pendingRef.current === null) return;
+    clearTimeout(pendingRef.current);
+    pendingRef.current = null;
+  }
+
   /**
    * One click, two meanings, and only one of them commits a pick.
    *
@@ -193,12 +225,102 @@ export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridPro
    * picks from player 4's leftover Fire only filter" — which is about a TURN passing on a
    * shared screen. Toggling a ban passes no turn, and a host banning twenty Fire species
    * would have the filter reset under them on every single click.
+   *
+   * THIS IS THE SENTENCE WORTH READING TWICE. Without the cancellation and the suppression
+   * below, a pick clears the filters, the clear looks exactly like a filter change, and
+   * 300ms later `{n} of {total} Pokémon match.` overwrites `Round 2 of 6 — Bo picks` on a
+   * screen eight people are reading. The information that announcement would have carried
+   * is delivered instead by the `Filters cleared.` suffix `TurnBanner` appends — which is
+   * precisely why 02-UI-SPEC composes ONE string there rather than firing two from here.
    */
   function handleActivate(entry: RosterEntry): void {
     const filtersCleared = bannedIds === null && hasActiveFilters(filters);
-    if (filtersCleared) setFilters(NO_FILTERS);
+
+    if (filtersCleared) {
+      cancelPendingAnnouncement();
+      // Cancelling is not enough on its own: clearing the filters is itself a filter
+      // change, so the effect below is about to schedule a FRESH timer for the cleared
+      // state. This suppresses that one. It is consumed by the very next effect run, and
+      // that run is guaranteed because `filters` changed on this line.
+      suppressNextRef.current = true;
+      setFilters(NO_FILTERS);
+    }
+
     onPick(entry, { filtersCleared });
   }
+
+  /**
+   * Speak the filter result, once the host has stopped changing it.
+   *
+   * ## The repeated announcement, handled at this call site rather than in `LiveRegion`
+   *
+   * Assistive technology announces a CHANGE to the region, so byte-identical consecutive
+   * text is silent the second time — `announce`'s own doc block records this, and records
+   * that it was left undone because "no surface in this phase repeats a message". This
+   * surface does: selecting `Fire` and then swapping to `Water` can produce the same two
+   * counts twice in a row, and the host would hear nothing the second time.
+   *
+   * So the clear-then-speak happens here. A macrotask boundary is enough — Preact's render
+   * is scheduled on a microtask, so the empty value is committed to the DOM before the
+   * zero-delay timeout fires, which is exactly what a same-tick clear cannot achieve.
+   *
+   * Making `announce` itself two-frame was rejected: it would turn every existing
+   * synchronous `announce` assertion in 02-03's, 02-06's and 02-07's suites racy, and
+   * `LiveRegion`'s limitation is correctly scoped to the surfaces that repeat. This one
+   * does; the others still do not. `LiveRegion.tsx` is not modified.
+   */
+  useEffect(() => {
+    // A filter change is the only thing this bar has news about. `entries` moving is a
+    // pick or an undo, and the turn announcement already covers those — comparing by
+    // reference is sound because filter state is replaced wholesale, never edited.
+    const filtersChanged = previousFiltersRef.current !== filters;
+    previousFiltersRef.current = filters;
+
+    // Skip the mount. A ref rather than a comparison against `NO_FILTERS`, because a mount
+    // is a mount whether or not the initial value happens to be neutral — and 02-07's ban
+    // grid mounts this same component on a screen where nothing has been typed yet.
+    if (isFirstRunRef.current) {
+      isFirstRunRef.current = false;
+      return;
+    }
+
+    if (!filtersChanged) return;
+
+    if (suppressNextRef.current) {
+      suppressNextRef.current = false;
+      return;
+    }
+
+    const next = filterAnnouncement(visible.length, entries.length);
+
+    pendingRef.current = setTimeout(() => {
+      pendingRef.current = null;
+
+      if (lastSpokenRef.current === next) {
+        announce('');
+        repeatRef.current = setTimeout(() => {
+          repeatRef.current = null;
+          announce(next);
+        }, 0);
+      } else {
+        announce(next);
+      }
+
+      lastSpokenRef.current = next;
+    }, ANNOUNCE_DEBOUNCE_MS);
+
+    // Cleared on every re-run and on unmount, so at most one is ever pending.
+    return cancelPendingAnnouncement;
+  }, [visible.length, entries.length, filters]);
+
+  // Unmount only. The repeat timer is separate from the debounce because cancelling a
+  // pending debounce on a pick must not also cancel a clear-then-speak already in flight.
+  useEffect(
+    () => () => {
+      if (repeatRef.current !== null) clearTimeout(repeatRef.current);
+    },
+    [],
+  );
 
   /*
     Which of the three empty states applies, and what its action undoes.

@@ -39,7 +39,25 @@ export interface TurnBannerProps {
   picks: number;
   /** Teams in the tournament — one per player. Read on completion. */
   teams: number;
+  /**
+   * Did the pick that caused this turn change also clear active pool filters (D-35)?
+   *
+   * Extends the ANNOUNCEMENT and nothing else. The banner rendered on screen is untouched
+   * in both cases — see the branch below for why.
+   */
+  filtersCleared: boolean;
 }
+
+/**
+ * The suffix, and the reason it is conditional.
+ *
+ * Clearing the filters is silent visually — the pool repopulating is the sighted feedback
+ * — so a screen-reader user needs to be told the set changed. Appending it
+ * unconditionally would make the common announcement longer on every single turn for no
+ * reason, which is why 02-UI-SPEC gives it its own row rather than folding it into the
+ * turn string.
+ */
+const CLEARED_SUFFIX = '. Filters cleared.';
 
 export function TurnBanner({
   round,
@@ -48,20 +66,33 @@ export function TurnBanner({
   complete,
   picks,
   teams,
+  filtersCleared,
 }: TurnBannerProps) {
   const spoken =
     complete === true
       ? draftCompleteCopy(picks, teams)
       : round === null || playerName === null
         ? null
-        : `Round ${round} of ${rounds} — ${playerName} picks`;
+        : `Round ${round} of ${rounds} — ${playerName} picks${filtersCleared ? CLEARED_SUFFIX : ''}`;
 
+  // Keyed on `[spoken]` and unchanged, which is the point: appending the suffix CHANGES
+  // `spoken`, so it is already the trigger. It also means the suffix cannot be announced
+  // without the turn it belongs to — the ordering guarantee this whole mechanism exists
+  // for, and the reason the filter bar composes one string here instead of firing a
+  // second `announce` of its own.
   useEffect(() => {
     if (spoken !== null) announce(spoken);
   }, [spoken]);
 
   if (spoken === null) return null;
 
+  /*
+    The rendered banner deliberately carries NO suffix. The copywriting contract lists it
+    under Live-region announcements and gives no Draft-screen row for it, so a visible
+    line saying the filters went away would be copy this project has not written — and it
+    would state something the host can already see, on the one element that must stay
+    scannable from across a room.
+  */
   return (
     <p class="turn-banner">
       {complete ? (
