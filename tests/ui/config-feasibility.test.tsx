@@ -55,6 +55,7 @@ vi.mock('../../src/adapters/id', () => ({
 }));
 
 import committedSnapshot from '../../public/data/roster.mb.json';
+import type { SpriteMeta } from '../../src/adapters/roster-source';
 import { isPoolBuiltAction, pickMade } from '../../src/core/actions';
 import { drawPool } from '../../src/core/draw';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
@@ -85,6 +86,18 @@ const MEGA_CAPABLE_IDS = new Set(
   ENTRIES.filter((entry) => entry.megaCapable).map((entry) => entry.id),
 );
 
+/**
+ * The ban grid needs a sprite inventory — 02-07 added it to the screen's props.
+ *
+ * Left empty on purpose: an id absent from the map resolves to the committed placeholder,
+ * so no assertion in this file depends on a file on disk.
+ */
+const SPRITE_META: SpriteMeta = {
+  nativeWidth: 96,
+  nativeHeight: 96,
+  byRosterId: {},
+};
+
 // ---------------------------------------------------------------------------
 
 let host: HTMLDivElement;
@@ -106,7 +119,12 @@ afterEach(() => {
 function mount(onStarted: () => void = () => undefined): void {
   act(() => {
     render(
-      <ConfigScreen snapshot={SNAPSHOT} entries={ENTRIES} onStarted={onStarted} />,
+      <ConfigScreen
+        snapshot={SNAPSHOT}
+        entries={ENTRIES}
+        spriteMeta={SPRITE_META}
+        onStarted={onStarted}
+      />,
       host,
     );
   });

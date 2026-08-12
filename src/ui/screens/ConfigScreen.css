@@ -104,6 +104,14 @@
 }
 
 /*
+ * The `Bans` group needs no geometry of its own, and that is worth stating so nobody adds
+ * some. `.config-screen__group` above is already a column with --space-3 between its
+ * children, which is exactly the separation the ban field, the chips, `Clear the banlist`
+ * and the ban grid want from each other. The grid's own capped scroll region lives in
+ * PoolGrid.css, beside the rest of that component's rules.
+ */
+
+/*
  * The note under a group. Muted and at --text-label, so it reads as an aside about the
  * control above it rather than as a second field.
  */

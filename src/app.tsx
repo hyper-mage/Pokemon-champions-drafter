@@ -19,6 +19,7 @@ import {
 import { claimOwnership, disposeTabLock } from './adapters/tab-lock';
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
 import { pickMade } from './core/actions';
+import { bannedEntries } from './core/bans';
 import { checkFeasibility } from './core/feasibility';
 import { parseTournamentFile } from './core/import-guard';
 import type { TournamentDoc } from './core/model';
@@ -446,6 +447,20 @@ export function App() {
     return primary === undefined ? null : adoptedNotice(primary.message);
   }, [state, entries]);
 
+  /**
+   * The banned species' names, for the top-bar disclosure — D-13.
+   *
+   * Its length IS the set cardinality by construction: `bannedEntries` intersects the stored
+   * banlist with the roster, so a duplicate written by two ban surfaces and a stale id left
+   * by a regulation rotation both contribute nothing. That makes it equal to the `banCount`
+   * inside the feasibility memo above without the two being computed the same way — and it
+   * is why the count is not read off the stored array's length anywhere in this file.
+   */
+  const bannedNames = useMemo(
+    () => (state === null ? [] : bannedEntries(entries, state.config.bans).map((entry) => entry.name)),
+    [state, entries],
+  );
+
   // Undo's live-region announcement names the species that came back. The store holds
   // the document and the document holds ids, so the display name has to arrive from
   // here, where the roster snapshot already is. Falling back to the id keeps the
@@ -738,6 +753,7 @@ export function App() {
         <ConfigScreen
           snapshot={load.bundle.snapshot}
           entries={entries}
+          spriteMeta={load.bundle.spriteMeta}
           onStarted={() => setScreen({ name: 'draft' })}
         />
       )}
@@ -781,6 +797,7 @@ export function App() {
               importError={importFlow.status === 'failed' ? importFlow.message : null}
               onRequestUndo={handleRequestUndo}
               onRequestAbandon={handleRequestAbandon}
+              bannedNames={bannedNames}
             />
 
             {/*
@@ -831,6 +848,9 @@ export function App() {
                   entries={availableEntries}
                   spriteMeta={load.bundle.spriteMeta}
                   onPick={handlePick}
+                  // Not a ban surface. `null` rather than an empty set, so a draft cell
+                  // cannot report an unpressed toggle state it does not have.
+                  bannedIds={null}
                 />
               )
             }

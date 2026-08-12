@@ -9,6 +9,30 @@
  * requirement — there is no fixed-width child to force the page to scroll sideways.
  */
 
+/*
+ * --- The ban grid, on the config screen ---
+ *
+ * A capped scroll region, because the whole roster at standard density is thirty rows and a
+ * configuration form must not be several thousand pixels tall. Minimal density cuts that to
+ * twenty-four rows, which is the density control's main job on this screen rather than a
+ * cosmetic preference.
+ *
+ * The scroll lives on this wrapper rather than on .pool__grid, following BoardGrid.css's
+ * precedent: a scrolling grid clips its own gap at the edges, and the header would scroll
+ * away with the cells.
+ *
+ * NOTHING here may create a containing block. FeasibilityBar is pinned to the bottom of this
+ * same screen, and app.css lists the five properties that would silently break it — see the
+ * note there. 02-06 states the same prohibition for SplitPanes.css and for the same reason.
+ */
+.pool--ban {
+  max-height: 60vh;
+  overflow-y: auto;
+  border: var(--hairline-w) solid var(--color-hairline);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+}
+
 .pool__header {
   display: flex;
   flex-wrap: wrap;

@@ -48,6 +48,28 @@
  * No :active rule either; the pick is instant, so there is nothing to preview.
  */
 
+/*
+ * --- The banned cell, on the config screen's ban grid only ---
+ *
+ * TWO signals, and neither of them is hue (02-UI-SPEC §Color, "colour is never the only
+ * signal"). Dimming alone would be indistinguishable from the disabled convention this
+ * project already uses at the same opacity, and a banned cell is the opposite of disabled:
+ * it is pressed, it is the host's own choice, and clicking it again undoes it. A struck name
+ * says "excluded" where a dim cell alone says "unavailable".
+ *
+ * The pressed state is also on the button itself, so the two visual signals are a rendering
+ * of something assistive technology reads directly rather than the only way to know.
+ *
+ * Nothing here for :focus or :active, for the reason above.
+ */
+.mon-card--banned {
+  opacity: 0.45;
+}
+
+.mon-card__name--banned {
+  text-decoration: line-through;
+}
+
 .mon-card__sprite {
   display: block;
   flex: none;

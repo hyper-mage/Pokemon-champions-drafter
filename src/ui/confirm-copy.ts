@@ -13,13 +13,9 @@
  * these are contracts down to the em dash (`ImportConfirmDialog.tsx` set that precedent
  * and states the reason).
  *
- * ## The seventh set is missing on purpose
- *
- * 02-UI-SPEC §11 specifies a seventh: `Clear the banlist`. It is deliberately absent,
- * because no plan in this phase builds the banlist surface it would sit on. That is a gap
- * in the phase's coverage, not an omission from this module — and writing copy for a
- * control that does not exist would hide the gap behind a file that looked complete.
- * Whichever plan adds the Bans group adds the set here, beside the six below.
+ * All seven of 02-UI-SPEC §11's sets are here. The seventh arrived with 02-07's `Bans`
+ * group; the note recording it as absent was deleted in the same change that made it false,
+ * because a stale contract comment is worse than none — the next reader trusts it.
  */
 
 /**
@@ -37,6 +33,18 @@ function picks(count: number): string {
 
 function players(count: number): string {
   return count === 1 ? '1 player' : `${count} players`;
+}
+
+/**
+ * The third of the three, added with the seventh set and for the same reason.
+ *
+ * 02-UI-SPEC writes the banlist body's slot as `{n} bans`, which reads "all 1 bans" at
+ * exactly one ban — and one ban is the count this dialog is reachable at the moment the
+ * host makes their first. The set beside the other six is the only place this belongs; a
+ * fourth helper somewhere else would be a fourth place to get a plural wrong.
+ */
+function bans(count: number): string {
+  return count === 1 ? '1 ban' : `${count} bans`;
 }
 
 /**
@@ -145,4 +153,25 @@ export const UNDO_BOUNDARY_CONFIRM = {
     if (removedCount <= 1) return first;
     return `${first} Picks made after it are undone too — ${removedCount} in total.`;
   },
+};
+
+/**
+ * 7. Clearing the banlist — D-36, and 02-UI-SPEC §11's seventh set.
+ *
+ * `default` toned, and the tone is the honest one: no tournament exists yet, nothing
+ * recorded is lost, and every cleared species can be banned again from either surface. What
+ * IS lost is a list the host may have spent five minutes assembling with the room watching,
+ * which is why it asks at all rather than why it shouts.
+ *
+ * The heading follows Phase 1's `Replace the current draft?` precedent — a question naming
+ * the action. The count goes through the plural helper above rather than the spec's literal
+ * slot; see that helper for the reason, which is `importConfirmBody`'s from Phase 1.
+ */
+export const CLEAR_BANLIST_CONFIRM = {
+  heading: 'Clear the banlist?',
+  tone: 'default' as const,
+  confirmLabel: 'Clear the banlist',
+  safeLabel: 'Keep the bans',
+  body: (banCount: number): string =>
+    `This clears all ${bans(banCount)} at once. Every banned Pokémon returns to the pool.`,
 };

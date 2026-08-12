@@ -56,6 +56,12 @@ export interface TopBarProps {
   onRequestUndo: () => void;
   /** Throwing the tournament away. The caller owns the confirm and both consequences. */
   onRequestAbandon: () => void;
+  /**
+   * Names of the banned species, already name-sorted and roster-resolved by
+   * `bannedEntries`. Its length is the set cardinality by construction, so the disclosure
+   * needs no second count. Empty means the disclosure is not rendered at all.
+   */
+  bannedNames: readonly string[];
 }
 
 /**
@@ -80,6 +86,7 @@ export function TopBar({
   importError,
   onRequestUndo,
   onRequestAbandon,
+  bannedNames,
 }: TopBarProps) {
   const doc = tournamentDoc.value;
   const undoAvailable = doc !== null && canUndo(doc);
@@ -177,6 +184,38 @@ export function TopBar({
         <button type="button" class="top-bar__button" onClick={onRequestAbandon}>
           Abandon draft
         </button>
+
+        {/*
+          WHERE A MISSING POKÉMON WENT — D-13.
+
+          A banned species is absent from the pool entirely: not dimmed, not struck, not
+          rendered. That is the right behaviour and it leaves one question unanswered at the
+          table — "wait, where's Landorus?" — which this is the answer to. Without it the
+          answer lives in someone's memory of the config screen.
+
+          A native disclosure element, because it carries keyboard operation and expanded
+          state for free. A hand-rolled one is where both of those quietly go wrong, and
+          02-UI-SPEC's accessibility baseline names this element specifically.
+
+          READ-ONLY, and structurally so: this renders list text and contains no control. The
+          banlist is written once, at Start, through `createTournament`, so there is no action
+          that could edit it mid-draft — adding one would be a Phase 3 schema decision rather
+          than a button. Nothing here is a seam for one.
+
+          Not rendered at all when nothing is banned — 02-UI-SPEC §Empty and edge states.
+          A zero-count disclosure is a control that answers a question nobody asked, and it
+          would sit in the tab order of every draft that banned nothing.
+        */}
+        {bannedNames.length > 0 && (
+          <details class="top-bar__bans">
+            <summary class="top-bar__bans-summary">Bans ({bannedNames.length})</summary>
+            <ul class="top-bar__bans-list">
+              {bannedNames.map((name) => (
+                <li key={name}>{name}</li>
+              ))}
+            </ul>
+          </details>
+        )}
 
         {/*
           Hidden rather than visually-hidden. A file input styled off-screen stays in the

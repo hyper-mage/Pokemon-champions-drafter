@@ -1,0 +1,69 @@
+/*
+ * TypeaheadField — the ban field and the list it opens.
+ *
+ * Tokens only: no raw hex, and no raw length outside the 60ch measure this project already
+ * uses for text (app.css, ConfigScreen.css, BoardGrid.css).
+ *
+ * No :focus rule and no :active rule anywhere in this file. The global accent ring in
+ * app.css covers every focusable element, and a per-component ring is how a design system
+ * drifts — the same reason MonCard.css records for leaving both off.
+ */
+
+.typeahead {
+  /* The list is absolutely positioned against this, so it overlays the group below rather
+   * than pushing the rest of the form down on every keystroke. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 60ch;
+}
+
+.typeahead__input {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: var(--text-body);
+}
+
+.typeahead__list {
+  position: absolute;
+  z-index: 1;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  background: var(--color-surface-raised);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.typeahead__option {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+/*
+ * The walked option. A border rather than a hue, so the state is carried by something other
+ * than colour — the same posture SegmentedControl takes for its checked option.
+ */
+.typeahead__option--active {
+  background: var(--color-surface);
+  box-shadow: inset var(--border-w) 0 0 0 var(--color-text);
+}
+
+.typeahead__empty {
+  margin: 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}

@@ -44,6 +44,14 @@ export interface MonCardProps {
   /** Decides both the token scale and how much of the entry is rendered. */
   density: Density;
   onPick: (entry: RosterEntry) => void;
+  /**
+   * `null` outside ban mode: the cell carries no pressed state and no struck name.
+   *
+   * Three values rather than two, because a boolean could not tell "not banned" from "not a
+   * ban surface" — and a draft-pool cell that reported itself unpressed would be claiming to
+   * be a toggle it is not.
+   */
+  banned: boolean | null;
 }
 
 /*
@@ -59,6 +67,10 @@ export interface MonCardProps {
  *   including minimal, so the adjacent text is always there. MonChip is the opposite —
  *   D-21 removes its name in split view, so its alt has to carry the name instead. The
  *   two components look alike and their alt rules are opposites for a real reason.
+ *
+ *   It survives ban mode unchanged for exactly the same reason: the name is rendered in
+ *   every mode as well as at every density, so the adjacent text never goes away and the
+ *   empty value stays correct. Nothing about being banned changes what the sprite is.
  *
  *   width and height are explicit and come from the measurement rather than a typed
  *   literal, so they cannot drift from --sprite-lg. Without them the grid takes 235
@@ -93,14 +105,25 @@ function accessibleName(entry: RosterEntry): string {
   return types.length > 0 ? `${entry.name}, ${types.join(' ')}` : entry.name;
 }
 
-export function MonCard({ entry, spriteMeta, density, onPick }: MonCardProps) {
+export function MonCard({ entry, spriteMeta, density, onPick, banned }: MonCardProps) {
   const showDetail = density !== 'minimal';
+
+  // The array-join conditional-class pattern, not template-literal concatenation: a
+  // template leaves a trailing space when the condition is false, and a class list with a
+  // stray token in it is a selector that silently stops matching.
+  const cardClass = ['mon-card', banned === true ? 'mon-card--banned' : '']
+    .filter((token) => token !== '')
+    .join(' ');
+  const nameClass = ['mon-card__name', banned === true ? 'mon-card__name--banned' : '']
+    .filter((token) => token !== '')
+    .join(' ');
 
   return (
     <button
       type="button"
-      class="mon-card"
+      class={cardClass}
       aria-label={accessibleName(entry)}
+      aria-pressed={banned === null ? undefined : banned}
       onClick={() => onPick(entry)}
     >
       <img
@@ -111,7 +134,7 @@ export function MonCard({ entry, spriteMeta, density, onPick }: MonCardProps) {
         height={spriteMeta.nativeHeight}
         onError={handleSpriteError}
       />
-      <span class="mon-card__name" title={entry.name}>
+      <span class={nameClass} title={entry.name}>
         {entry.name}
       </span>
 
