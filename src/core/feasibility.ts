@@ -19,15 +19,23 @@
  *
  * ## The precedence order is declared, and it is not the UI-SPEC's list
  *
- * `PRECEDENCE` below deliberately deviates from 02-UI-SPEC §5's seven-item order, for three
+ * `PRECEDENCE` below deliberately deviates from 02-UI-SPEC §5's seven-item order, for four
  * reasons, all from 02-RESEARCH §Feasibility Arithmetic:
  *
  *   1. `poolSizeNotAnInteger` (F-08) is *malformed input*, not unsatisfiable arithmetic. It
  *      must be reported before any sentence computed from the malformed number, or the host
  *      reads a reason with `NaN` in it about a field they are not editing.
- *   2. `megasExceedRounds` (F-09) is the same class. It also earns its place: when it holds,
- *      `players × k > megaCapableLegal` may still pass, so nothing else catches it.
- *   3. `tooManyPlayersForRoster` exists because at the Exact preset `N === players × rounds`
+ *   2. `megasRequiredNotAnInteger` is the same class, for the same field the pool-size code
+ *      covers one control along. It is deliberately SEPARATE from `megasExceedRounds`: five
+ *      conditions used to produce one sentence, and "Lower the Megas required per team" is
+ *      an instruction the host cannot carry out on an EMPTY field — which is the most
+ *      common way to reach it, because deleting the `0` the field ships with is one
+ *      keystroke. CLAUDE.md §Copy requires the stated next action to be the one that
+ *      resolves the problem, so each condition names its own.
+ *   3. `megasExceedRounds` (F-09) keeps its place above the arithmetic even though it is now
+ *      arithmetic itself: when it holds, `players × k > megaCapableLegal` may still pass, so
+ *      nothing else catches it.
+ *   4. `tooManyPlayersForRoster` exists because at the Exact preset `N === players × rounds`
  *      identically, so `poolTooSmall` can NEVER fire, and a 40-player host would otherwise be
  *      told "Pool is too large" when the fix is fewer players.
  *
@@ -61,7 +69,9 @@ export type FeasibilityCode =
   | 'duplicatePlayerName'
   /** The pool-size field is empty, fractional, unsafe, or below one. */
   | 'poolSizeNotAnInteger'
-  /** The Megas-per-team field is empty, fractional, negative, or above the round count. */
+  /** The Megas-per-team field is empty, fractional, unsafe, or negative. */
+  | 'megasRequiredNotAnInteger'
+  /** The Megas-per-team field holds a usable number that is larger than the round count. */
   | 'megasExceedRounds'
   /** The party needs more slots than the post-ban roster has entries. */
   | 'tooManyPlayersForRoster'
@@ -119,6 +129,7 @@ const PRECEDENCE: readonly FeasibilityCode[] = [
   'blankPlayerName',
   'duplicatePlayerName',
   'poolSizeNotAnInteger',
+  'megasRequiredNotAnInteger',
   'megasExceedRounds',
   'tooManyPlayersForRoster',
   'poolTooLarge',
@@ -142,6 +153,18 @@ const PRECEDENCE: readonly FeasibilityCode[] = [
 const TOO_FEW_PLAYERS = 'Add at least one more player. A draft needs two players.';
 const POOL_SIZE_NOT_AN_INTEGER =
   'Pool size needs a whole number. Enter how many Pokémon the pool should hold.';
+
+/**
+ * NOT in the 02-UI-SPEC copywriting table, and flagged rather than quietly added.
+ *
+ * The table gives the Megas-per-team field one sentence, and that sentence tells the host
+ * to lower a value — which is not an action available on an empty or unparseable field.
+ * This is the missing row, written in the shape the table's own pool-size row uses one
+ * control along: name the field, name what it needs, then name the keystroke that supplies
+ * it. `importAnnouncement` in `app.tsx` records the same kind of gap the same way.
+ */
+const MEGAS_REQUIRED_NOT_AN_INTEGER =
+  'Megas required per team needs a whole number. Enter 0 for no Mega requirement.';
 
 function blankPlayerNameMessage(position: number): string {
   return `Every player needs a name. Player ${position} is blank.`;
@@ -266,7 +289,20 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
   const players = playerNames.length;
   const needed = players * rounds;
   const poolSize = asSafeInteger(input.poolSize, 1, Number.MAX_SAFE_INTEGER);
-  const megasPerTeam = asSafeInteger(input.megasRequiredPerTeam, 0, rounds);
+
+  // Two questions, asked separately, because they have two different answers for the host.
+  // `asSafeInteger` returns null for five conditions at once, and the sentence that used to
+  // cover all five told a host with an EMPTY field to lower a value that is not there.
+  //
+  // A negative count is grouped with the malformed cases rather than with the bound, and
+  // that mirrors the pool-size field exactly: `poolSizeNotAnInteger` covers "below one" too,
+  // because "this is not a count" and "this count is too big" are the two things the host
+  // can actually distinguish.
+  const megasRequiredMalformed =
+    asSafeInteger(input.megasRequiredPerTeam, 0, Number.MAX_SAFE_INTEGER) === null;
+  const megasPerTeam = megasRequiredMalformed
+    ? null
+    : asSafeInteger(input.megasRequiredPerTeam, 0, rounds);
 
   // Checks are grouped by the field the host would change, then sorted by PRECEDENCE. The
   // grouping is for the reader; the order the host sees is the declared one.
@@ -317,7 +353,13 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
   }
 
   // — the Megas-per-team field —
-  if (megasPerTeam === null) {
+  if (megasRequiredMalformed) {
+    problems.push(
+      blocking('megasRequiredNotAnInteger', MEGAS_REQUIRED_NOT_AN_INTEGER),
+    );
+  } else if (megasPerTeam === null) {
+    // The only condition left: a usable count larger than the number of picks a team has
+    // to spend on it. `Lower the Megas required per team` names an action that exists.
     problems.push(blocking('megasExceedRounds', megasExceedRoundsMessage(rounds)));
   }
 

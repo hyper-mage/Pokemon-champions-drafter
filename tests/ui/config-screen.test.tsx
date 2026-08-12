@@ -538,7 +538,7 @@ describe('the Mega rules group', () => {
     expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('blocks Start with the same sentence when the field is emptied', () => {
+  it('blocks Start with an action the host can take when the field is emptied', () => {
     mount();
     nameEveryone(['Ada', 'Bo']);
 
@@ -546,9 +546,13 @@ describe('the Mega rules group', () => {
     expect(input).not.toBeNull();
     if (input !== null) type(input, '');
 
+    // NOT the sentence above. Deleting the `0` this field ships with is one keystroke and
+    // is the commonest way to reach a blocked gate here — and `Lower the Megas required
+    // per team` names an action that does not exist on an empty field.
     expect(reasonElement()?.textContent).toBe(
-      'A team has 6 slots, so at most 6 of them can be Megas. Lower the Megas required per team.',
+      'Megas required per team needs a whole number. Enter 0 for no Mega requirement.',
     );
+    expect(reasonElement()?.textContent).not.toContain('Lower the Megas required per team');
     expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
   });
 

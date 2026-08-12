@@ -122,29 +122,60 @@ describe('poolSizeNotAnInteger — the NaN hole', () => {
   });
 });
 
-describe('megasExceedRounds', () => {
-  it('blocks on null', () => {
-    expect(codes(checkFeasibility(base({ megasRequiredPerTeam: null })))).toContain(
-      'megasExceedRounds',
-    );
+/**
+ * The malformed half of the Megas-per-team field, split out from `megasExceedRounds`.
+ *
+ * The distinction is not taxonomy. `Lower the Megas required per team` is an instruction
+ * the host cannot carry out on an empty field, and emptying the field is one keystroke on
+ * the `0` it ships with — so the most common way to reach the old sentence was also the one
+ * way it was useless. Both codes are asserted by NAME here, because the two produce
+ * different sentences and a merge would be invisible to any assertion on `blocked` alone.
+ */
+describe('megasRequiredNotAnInteger — the malformed field', () => {
+  it('blocks on null, which is what an empty numeric field parses to', () => {
+    const result = checkFeasibility(base({ megasRequiredPerTeam: null }));
+
+    expect(codes(result)).toContain('megasRequiredNotAnInteger');
+    // Not the arithmetic one. There is nothing to lower.
+    expect(codes(result)).not.toContain('megasExceedRounds');
   });
 
-  it('blocks when more Megas are required than a team has slots', () => {
-    expect(codes(checkFeasibility(base({ megasRequiredPerTeam: 7, rounds: 6 })))).toContain(
-      'megasExceedRounds',
+  it('blocks on NaN', () => {
+    expect(codes(checkFeasibility(base({ megasRequiredPerTeam: Number.NaN })))).toContain(
+      'megasRequiredNotAnInteger',
     );
   });
 
   it('blocks on a negative requirement', () => {
+    // Grouped with the malformed cases, exactly as `poolSizeNotAnInteger` groups "below
+    // one": "this is not a count" and "this count is too big" are the two things the host
+    // can tell apart, and -1 is the first of them.
     expect(codes(checkFeasibility(base({ megasRequiredPerTeam: -1 })))).toContain(
-      'megasExceedRounds',
+      'megasRequiredNotAnInteger',
     );
   });
 
   it('blocks on a fractional requirement', () => {
     expect(codes(checkFeasibility(base({ megasRequiredPerTeam: 2.5 })))).toContain(
-      'megasExceedRounds',
+      'megasRequiredNotAnInteger',
     );
+  });
+
+  it('suppresses the Mega starvation check while the field is malformed', () => {
+    const result = checkFeasibility(base({ megasRequiredPerTeam: null }));
+
+    // `players × null` is not a sentence anybody should read.
+    expect(codes(result)).not.toContain('notEnoughMegas');
+  });
+});
+
+describe('megasExceedRounds', () => {
+  it('blocks when more Megas are required than a team has slots', () => {
+    const result = checkFeasibility(base({ megasRequiredPerTeam: 7, rounds: 6 }));
+
+    expect(codes(result)).toContain('megasExceedRounds');
+    // A usable number that is simply too large. The field is not malformed.
+    expect(codes(result)).not.toContain('megasRequiredNotAnInteger');
   });
 
   it('accepts zero and the full round count as the two boundaries', () => {
@@ -381,7 +412,7 @@ describe('precedence', () => {
       'tooFewPlayers',
       'blankPlayerName',
       'poolSizeNotAnInteger',
-      'megasExceedRounds',
+      'megasRequiredNotAnInteger',
     ]);
   });
 
@@ -411,6 +442,16 @@ describe('copy', () => {
     ).toBe(
       'A team has 6 slots, so at most 6 of them can be Megas. Lower the Megas required per team.',
     );
+
+    // Not in the approved copy table — flagged in `feasibility.ts` as the row the table is
+    // missing. Asserted by exact equality anyway, because it is a contract the moment it
+    // ships whether or not the table has caught up.
+    expect(
+      messageFor(
+        checkFeasibility(base({ megasRequiredPerTeam: null })),
+        'megasRequiredNotAnInteger',
+      ),
+    ).toBe('Megas required per team needs a whole number. Enter 0 for no Mega requirement.');
 
     expect(
       messageFor(
