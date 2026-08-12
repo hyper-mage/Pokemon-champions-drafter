@@ -126,7 +126,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02-07-PLAN.md — the host banlist: typeahead and ban grid over one list, ban mode, and a pool the bans are absent from
+- [x] 02-07-PLAN.md — the host banlist: typeahead and ban grid over one list, ban mode, and a pool the bans are absent from
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -196,7 +196,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
-| 2. Host-Configured Draft Night | 6/8 | In Progress|  |
+| 2. Host-Configured Draft Night | 7/8 | In Progress|  |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
