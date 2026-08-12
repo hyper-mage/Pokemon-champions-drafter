@@ -261,6 +261,73 @@ describe('ban mode', () => {
     expect(searchField().value).toBe('Mon 1');
     expect(liveRegionText()).not.toContain('Filters cleared.');
   });
+
+  /**
+   * THE THIRD OVERWRITE ROUTE, and the one the draft screen's safety net does not cover.
+   *
+   * In draft mode a pick moves `entries.length`, so the effect re-runs and the previous
+   * run's cleanup cancels the pending timer even when nothing was cleared. In ban mode
+   * none of the three dependencies moves — `entries` is the whole roster prop, `visible`
+   * derives from it and `compiled`, and `filters` is untouched — so the effect does not
+   * re-run and the timer survives to land on top of the ban confirmation.
+   *
+   * That confirmation is the only feedback a screen-reader user gets that the click
+   * registered at all, which is what makes this more than a cosmetic ordering defect.
+   */
+  it('does not let a pending filter result swallow the ban announcement', () => {
+    const BAN_SENTENCE = 'Mon 1 banned. 1 ban.';
+
+    act(() => {
+      render(
+        <>
+          <PoolGrid
+            entries={ENTRIES}
+            spriteMeta={SPRITE_META}
+            // What `ConfigScreen.applyBan` does: one announcement per toggle.
+            onPick={() => announce(BAN_SENTENCE)}
+            bannedIds={new Set()}
+          />
+          <LiveRegion />
+        </>,
+        host,
+      );
+    });
+    vi.useFakeTimers();
+
+    typeSearch('Mon 1');
+    // Short of the debounce on purpose: a timer is genuinely in flight at the moment of
+    // the click, which is the whole of the failure.
+    advance(150);
+    expect(liveRegionText()).not.toContain('Pokémon match.');
+
+    act(() => {
+      cards()[0]?.click();
+    });
+    expect(liveRegionText()).toBe(BAN_SENTENCE);
+
+    advance(1000);
+    expect(liveRegionText()).toBe(BAN_SENTENCE);
+  });
+});
+
+describe('the density control', () => {
+  it('does not let a pending filter result swallow the density announcement', () => {
+    mountGrid();
+    vi.useFakeTimers();
+
+    typeSearch('Mon 1');
+    advance(150);
+
+    act(() => {
+      host.querySelector<HTMLInputElement>('#pool-density-full')?.click();
+    });
+    expect(liveRegionText()).toBe('Display density: Full.');
+
+    // Density moves none of the effect's dependencies either, so nothing but the explicit
+    // cancellation stops the filter result arriving on top of it — on both screens.
+    advance(1000);
+    expect(liveRegionText()).toBe('Display density: Full.');
+  });
 });
 
 // ---------------------------------------------------------------------------

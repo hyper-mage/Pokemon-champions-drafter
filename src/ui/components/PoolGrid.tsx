@@ -185,6 +185,10 @@ export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridPro
     // guard here.
     saveViewPrefs({ ...loadViewPrefs(), density: next });
 
+    // Same reason as `handleActivate`, and on BOTH screens: density moves neither
+    // `entries` nor `visible` nor `filters`, so nothing else cancels a filter result the
+    // host set going a moment before they reached for this control.
+    cancelPendingAnnouncement();
     announce(`Display density: ${densityLabel(next)}.`);
   }
 
@@ -236,8 +240,21 @@ export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridPro
   function handleActivate(entry: RosterEntry): void {
     const filtersCleared = bannedIds === null && hasActiveFilters(filters);
 
+    // UNCONDITIONAL, and the ban grid is why. Every activation produces an announcement of
+    // its own — `Round 2 of 6 — Bo picks` on the draft screen, `Pikachu banned. 1 ban.` on
+    // the config screen — and a filter result 300ms behind it would overwrite the one the
+    // host's click just earned.
+    //
+    // In DRAFT mode a second mechanism used to cover the unfiltered case: a pick moves
+    // `entries.length`, the effect below re-runs, and the previous run's cleanup cancels
+    // the timer. In BAN mode none of the effect's three dependencies moves — `entries` is
+    // the whole roster prop, `visible` derives from it and `compiled`, and `filters` is
+    // untouched — so the effect does not re-run and the pending timer survives to swallow
+    // the ban confirmation, which is the only feedback a screen-reader user gets that the
+    // click registered.
+    cancelPendingAnnouncement();
+
     if (filtersCleared) {
-      cancelPendingAnnouncement();
       // Cancelling is not enough on its own: clearing the filters is itself a filter
       // change, so the effect below is about to schedule a FRESH timer for the cleared
       // state. This suppresses that one. It is consumed by the very next effect run, and
