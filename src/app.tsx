@@ -302,7 +302,14 @@ export function App() {
   useEffect(() => {
     const adoptWhateverIsNewer = (): void => {
       const newer = loadIfNewer();
-      if (newer !== null) adoptTournament(newer);
+      if (newer === null) return;
+      if (!adoptTournament(newer)) return;
+
+      // The landing screen DESCRIBES `saved`, so leaving the boot snapshot in place would
+      // go on advertising a pick count several picks behind the document this tab now
+      // holds — and `Resume saved draft` would be a button whose label disagrees with what
+      // clicking it produces.
+      setSaved(newer);
     };
 
     claimOwnership({
@@ -635,7 +642,19 @@ export function App() {
   }, []);
 
   /**
-   * Take up the document that was already in storage when this tab opened.
+   * Take up the document that is in storage NOW — not the one that was there at boot.
+   *
+   * THE RE-READ IS THE WHOLE POINT OF THIS FUNCTION. `saved` is a snapshot taken in a
+   * state initializer during the first render, and with two tabs open — the configuration
+   * PERS-03 exists for — it goes stale the moment the owning tab makes a pick. Adopting
+   * that snapshot loses picks and then survives promotion: `loadIfNewer` compares
+   * generations, `onRemoteSave` has already advanced this tab's to the stored one, so the
+   * comparison reports "nothing newer" and the stale document is what the next autosave
+   * writes out. That is the T-01-40 clobber arriving through a state variable rather than
+   * through a read of storage, which is exactly the door `loadIfNewer` cannot watch.
+   *
+   * `saved` stays the fallback rather than the source: it renders the button and its
+   * description line, and it is what remains if the record has been removed under us.
    *
    * A refused adoption leaves the host on the landing screen rather than dropping them on
    * an empty draft. `load()` has already run `isValidTournament` and `migrate`, so this
@@ -643,8 +662,9 @@ export function App() {
    * screen, with `Import JSON…` on it, is the only place that offers a way out.
    */
   const handleResume = useCallback(() => {
-    if (saved === null) return;
-    if (!adoptTournament(saved)) return;
+    const current = loadSavedTournament() ?? saved;
+    if (current === null) return;
+    if (!adoptTournament(current)) return;
     setScreen({ name: 'draft' });
   }, [saved]);
 
