@@ -300,6 +300,13 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
    * the pool size, and the gate says so. Falling back to the preset on empty would make
    * the F-08 case unreachable through the one field it is about — and would make `abc`,
    * which a number input sanitizes to the empty string, silently satisfiable.
+   *
+   * There is exactly ONE route back to `null`, and it is a click on the `Pool size`
+   * preset control — see its `onChange`. Without that route the preset became a dead
+   * control the moment the host typed a character: still rendered, still accepting clicks,
+   * still moving its own `:checked` state, and changing nothing on screen or at the gate.
+   * `FilterBar` states the rule this file follows — "a control that clears nothing is a
+   * control that teaches the host their clicks do not matter".
    */
   const [poolOverride, setPoolOverride] = useState<string | null>(null);
 
@@ -902,7 +909,16 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
           name="pool-size-preset"
           options={POOL_PRESET_OPTIONS}
           value={poolPreset}
-          onChange={setPoolPreset}
+          onChange={(preset) => {
+            setPoolPreset(preset);
+            // The preset is the host's answer again, and dropping the override is what
+            // makes that true rather than merely selected. A click here is an unambiguous
+            // statement about the pool size; leaving a typed string in place would keep a
+            // radio moving its own checked state while the number beside it, the readout
+            // below it and the gate at the foot of the screen all ignored it. D-06 refuses
+            // silent correction, and silent inertness is the same argument.
+            setPoolOverride(null);
+          }}
         />
 
         <p class="config-screen__note">{poolSizeHelper(players.length, ROUNDS)}</p>

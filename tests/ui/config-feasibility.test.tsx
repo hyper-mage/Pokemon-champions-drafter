@@ -299,6 +299,60 @@ describe('the Pool size preset', () => {
     );
     expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
   });
+
+  /**
+   * The preset stops driving the field the moment the host types, and used to stay on
+   * screen looking operable for the rest of the session: still rendered, still accepting
+   * clicks, still moving its own `:checked` state, and changing nothing at all.
+   *
+   * A click on it is an unambiguous statement about the pool size, so it takes the answer
+   * back. Asserted through the number, the readout AND the gate, because a preset that
+   * moved only its own radio is exactly what this is about.
+   */
+  it('takes the pool size back from a typed override when a preset is clicked', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    type(overrideField(), '61');
+    expect(overrideField().value).toBe('61');
+    expect(readout()).toMatch(/^Pool: 61 Pokémon — \d+ Mega-capable$/);
+
+    choosePreset('x2');
+
+    expect(overrideField().value).toBe('96');
+    expect(readout()).toMatch(/^Pool: 96 Pokémon — \d+ Mega-capable$/);
+    expect(reasonText()).toBe('8 players, 6 rounds, 96 Pokémon in the pool.');
+  });
+
+  it('follows the player count again once a preset has taken the size back', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    type(overrideField(), '61');
+    choosePreset('x1_5');
+    expect(overrideField().value).toBe('72');
+
+    // Following the preset again rather than merely showing its number once: changing the
+    // player count has to move it, which a lingering override would prevent.
+    nameEveryone(EIGHT_NAMES.slice(0, 4));
+    expect(overrideField().value).toBe('36');
+  });
+
+  it('unblocks an emptied field, which nothing else on the screen could', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    type(overrideField(), '');
+    expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
+
+    // A preset the host is not already on, because a browser fires no `change` for a
+    // click on the selected radio — so `Exact` is not a way out of a screen that opened
+    // on `Exact`, and the assertion must not pretend otherwise.
+    choosePreset('x2');
+
+    expect(overrideField().value).toBe('96');
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
