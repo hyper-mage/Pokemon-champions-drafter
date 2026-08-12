@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 2 planned — 8 plans across 6 waves, plan-checker passed after revision
-last_updated: "2026-08-11T13:32:10.540Z"
+status: ready_to_plan
+stopped_at: Phase 02 complete (8/8) — ready to discuss Phase 3
+last_updated: 2026-08-12T22:47:32.842Z
 last_activity: 2026-08-11 -- Phase 02 execution started
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 19
-  completed_plans: 11
-  percent: 20
+  completed_plans: 19
+  percent: 40
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** A group of friends can run an entire draft tournament — rules, bans, picks, swaps, brackets, results — start to finish inside the tool, without anyone reaching for a spreadsheet or a Discord message to track state.
-**Current focus:** Phase 02 — host-configured-draft-night
+**Current focus:** Phase 3 — compiled rules, priority cards, swaps
 
 ## Current Position
 
-Phase: 02 (host-configured-draft-night) — EXECUTING
-Plan: 1 of 8
+Phase: 3
+Plan: Not started
 Plans: 8 of 8 written, 6 waves
-Status: Executing Phase 02
-Last activity: 2026-08-11 -- Phase 02 execution started
+Status: Ready to plan
+Last activity: 2026-08-12
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -37,7 +37,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 11
+- Total plans completed: 19
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 11 | - | - |
+| 02 | 8 | - | - |
 
 **Recent Trend:**
 
