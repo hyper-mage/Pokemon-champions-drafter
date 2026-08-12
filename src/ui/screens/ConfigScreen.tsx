@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'preact/hooks';
 
 import { newId, newSeed } from '../../adapters/id';
+import type { SpriteMeta } from '../../adapters/roster-source';
 import { bannedEntries } from '../../core/bans';
 import { drawPool } from '../../core/draw';
 import {
@@ -28,6 +29,7 @@ import { FeasibilityBar } from '../components/FeasibilityBar';
 import { announce } from '../components/LiveRegion';
 import { NumericField, parseNumericField } from '../components/NumericField';
 import { PlayerList, type PlayerDraft } from '../components/PlayerList';
+import { PoolGrid } from '../components/PoolGrid';
 import { SegmentedControl, type SegmentedOption } from '../components/SegmentedControl';
 import { TypeaheadField } from '../components/TypeaheadField';
 
@@ -190,11 +192,19 @@ export interface ConfigScreenProps {
   snapshot: RosterSnapshot;
   /** The draftable roster in display order. */
   entries: readonly RosterEntry[];
+  /**
+   * The measured sprite inventory, for the ban grid.
+   *
+   * It arrives beside the snapshot rather than being read from it: the inventory is a
+   * measurement of the committed PNG files taken at build time, not a field of the roster,
+   * and `spriteSrc` is the only thing allowed to turn it into a filename.
+   */
+  spriteMeta: SpriteMeta;
   /** A tournament now exists. Routing is the caller's; this screen only reports it. */
   onStarted: () => void;
 }
 
-export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps) {
+export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: ConfigScreenProps) {
   /**
    * Four rows, all blank.
    *
@@ -385,11 +395,17 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
     [bans, bannedIdSet, entries],
   );
 
-  /*
-    The grid's half of D-10 — `toggleBan`, calling `applyBan(entry, !isBanned)` — arrives
-    with the ban grid that consumes it, immediately below. Declaring it before then would be
-    a local nothing reads, which `noUnusedLocals` refuses.
-  */
+  /**
+   * The grid's half of D-10. One list, two surfaces, one write path.
+   *
+   * The grid TOGGLES because a cell is both the ban control and the unban control; the
+   * typeahead only ever ADDS, because there is no such thing as typing a name to unban. Both
+   * go through `applyBan`, which is what makes the two surfaces incapable of disagreeing.
+   */
+  const toggleBan = useCallback(
+    (entry: RosterEntry) => applyBan(entry, !bannedIdSet.has(entry.id)),
+    [applyBan, bannedIdSet],
+  );
 
   const handleRemoveBan = useCallback(
     (entry: RosterEntry) => applyBan(entry, false),
@@ -774,6 +790,22 @@ export function ConfigScreen({ snapshot, entries, onStarted }: ConfigScreenProps
         />
 
         <BanChipList banned={banned} onRemove={handleRemoveBan} />
+
+        {/*
+          The second surface, over the SAME list — D-10. Every draftable entry renders here,
+          the banned ones included, because this grid shows what is being excluded rather
+          than what is left. The draft pool is the opposite surface and D-13 governs it: a
+          banned species is absent there, not dimmed.
+
+          `bannedIds` is the same computation-local `Set` the draw's candidate filter reads.
+          Building a second one here would be a second answer to one question.
+        */}
+        <PoolGrid
+          entries={entries}
+          spriteMeta={spriteMeta}
+          onPick={toggleBan}
+          bannedIds={bannedIdSet}
+        />
       </fieldset>
 
       {/*

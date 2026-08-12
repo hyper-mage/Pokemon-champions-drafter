@@ -41,7 +41,20 @@ import './PoolGrid.css';
 export interface PoolGridProps {
   entries: readonly RosterEntry[];
   spriteMeta: SpriteMeta;
+  /**
+   * What activating a cell does. On the draft screen that is picking; in ban mode the config
+   * screen passes its ban toggle. The component never decides which.
+   */
   onPick: (entry: RosterEntry) => void;
+  /**
+   * `null` on the draft screen. A set of banned ids puts the grid in ban mode: no heading,
+   * the count line becomes `{n} of {total} banned`, and every cell reports a pressed state.
+   *
+   * ONE prop rather than a `mode` plus a set, so "ban mode with no ban data" and "draft mode
+   * carrying ban data" are both unrepresentable — the same discipline 02-06 applies to
+   * `MonChip`'s `showName`, where one derived local drives two things that must not drift.
+   */
+  bannedIds: ReadonlySet<string> | null;
 }
 
 /**
@@ -60,7 +73,20 @@ function densityLabel(density: Density): string {
   return DENSITY_OPTIONS.find((option) => option.value === density)?.label ?? density;
 }
 
-export function PoolGrid({ entries, spriteMeta, onPick }: PoolGridProps) {
+/**
+ * The ban grid's count line — 02-UI-SPEC §Copywriting Contract.
+ *
+ * Both numbers are derived from what is actually rendered: the total is the entry count this
+ * component was handed, and the banned figure is set membership over those same entries. The
+ * set's own size would be the wrong number, because a set can hold an id the roster no longer
+ * carries; a roster figure typed as a literal would be worse still (D-17), because it dates
+ * the moment the regulation rotates. Both follow a filter for free the day one exists.
+ */
+function banCountLine(banned: number, total: number): string {
+  return `${banned} of ${total} banned`;
+}
+
+export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridProps) {
   // Read synchronously on the first render, in a state initializer rather than an
   // effect. An effect runs after the first paint, so the host would watch the pool draw
   // itself at standard density and then jump to their actual choice on every reload.
@@ -78,13 +104,46 @@ export function PoolGrid({ entries, spriteMeta, onPick }: PoolGridProps) {
     announce(`Display density: ${densityLabel(next)}.`);
   }
 
-  return (
-    <section class="pool" data-density={density} aria-labelledby="pool-heading">
+  const banMode = bannedIds !== null;
+
+  // Set membership over what is RENDERED, the same shape `checkFeasibility` uses to reach
+  // its legal count. Never the set's own size.
+  const bannedCount =
+    bannedIds === null
+      ? 0
+      : entries.reduce((total, entry) => (bannedIds.has(entry.id) ? total + 1 : total), 0);
+
+  /*
+    The density attribute, the density control and the grid are OUTSIDE the mode branch
+    below, because they render identically in both. That is what "the ban grid reuses
+    PoolGrid whole" means, and it is why the ban grid inherits the three density levels and
+    the shared stored preference without a line of its own.
+
+    The control's radio-group name is fixed rather than derived per instance, unlike the
+    dual-Mega rows on the config screen. Two of these are never mounted at once — the ban
+    grid is on the config screen and the pool is on the draft screen — and two that were
+    would merge into one radio group, which is the failure `SegmentedControl`'s required
+    name prop exists to make impossible.
+  */
+  const body = (
+    <>
       <header class="pool__header">
-        <h2 class="pool__title" id="pool-heading">
-          Pool
-        </h2>
-        <p class="pool__count">{entries.length} available</p>
+        {/*
+          No heading in ban mode, and this is not an omission. The copywriting contract gives
+          `Pool` under the DRAFT screen only, and gives the ban grid exactly one string — its
+          count line. A section needs an accessible name to earn its role, and inside the
+          `Bans` fieldset the legend already supplies one, so the ban grid is a plain div
+          rather than a landmark with an invented name.
+        */}
+        {!banMode && (
+          <h2 class="pool__title" id="pool-heading">
+            Pool
+          </h2>
+        )}
+
+        <p class="pool__count">
+          {banMode ? banCountLine(bannedCount, entries.length) : `${entries.length} available`}
+        </p>
 
         <SegmentedControl
           legend="Display density"
@@ -103,9 +162,20 @@ export function PoolGrid({ entries, spriteMeta, onPick }: PoolGridProps) {
             spriteMeta={spriteMeta}
             density={density}
             onPick={onPick}
+            banned={bannedIds === null ? null : bannedIds.has(entry.id)}
           />
         ))}
       </div>
+    </>
+  );
+
+  return banMode ? (
+    <div class="pool pool--ban" data-density={density}>
+      {body}
+    </div>
+  ) : (
+    <section class="pool" data-density={density} aria-labelledby="pool-heading">
+      {body}
     </section>
   );
 }

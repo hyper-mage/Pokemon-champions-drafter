@@ -71,7 +71,13 @@ let container: HTMLDivElement;
 function mount(): void {
   render(
     <>
-      <PoolGrid entries={ENTRIES} spriteMeta={SPRITE_META} onPick={() => undefined} />
+      {/* `bannedIds` is null: this file is about the draft-screen pool, not the ban grid. */}
+      <PoolGrid
+        entries={ENTRIES}
+        spriteMeta={SPRITE_META}
+        onPick={() => undefined}
+        bannedIds={null}
+      />
       <LiveRegion />
     </>,
     container,

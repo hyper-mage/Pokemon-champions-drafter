@@ -53,6 +53,7 @@ vi.mock('../../src/adapters/id', () => ({
 }));
 
 import committedSnapshot from '../../public/data/roster.mb.json';
+import type { SpriteMeta } from '../../src/adapters/roster-source';
 import { isPoolBuiltAction, isDraftStartedAction } from '../../src/core/actions';
 import type { FeasibilityResult } from '../../src/core/feasibility';
 import { selectStartingOrder } from '../../src/core/selectors';
@@ -126,6 +127,18 @@ const SNAPSHOT: RosterSnapshot = {
 /** The four ids the stubbed `newId` hands the four initial rows. */
 const INITIAL_IDS = ['id-1', 'id-2', 'id-3', 'id-4'];
 
+/**
+ * The ban grid needs a sprite inventory — 02-07 added it to the screen's props.
+ *
+ * Every fixture row carries `spriteMissing: true`, which routes it to the committed
+ * placeholder, so nothing here depends on a file on disk.
+ */
+const SPRITE_META: SpriteMeta = {
+  nativeWidth: 96,
+  nativeHeight: 96,
+  byRosterId: {},
+};
+
 // ---------------------------------------------------------------------------
 
 let host: HTMLDivElement;
@@ -147,7 +160,12 @@ afterEach(() => {
 function mount(onStarted: () => void = () => undefined): void {
   act(() => {
     render(
-      <ConfigScreen snapshot={SNAPSHOT} entries={ENTRIES} onStarted={onStarted} />,
+      <ConfigScreen
+        snapshot={SNAPSHOT}
+        entries={ENTRIES}
+        spriteMeta={SPRITE_META}
+        onStarted={onStarted}
+      />,
       host,
     );
   });
@@ -157,7 +175,12 @@ function mount(onStarted: () => void = () => undefined): void {
 function mountCommitted(onStarted: () => void = () => undefined): void {
   act(() => {
     render(
-      <ConfigScreen snapshot={COMMITTED} entries={COMMITTED_ENTRIES} onStarted={onStarted} />,
+      <ConfigScreen
+        snapshot={COMMITTED}
+        entries={COMMITTED_ENTRIES}
+        spriteMeta={SPRITE_META}
+        onStarted={onStarted}
+      />,
       host,
     );
   });

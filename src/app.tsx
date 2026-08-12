@@ -738,6 +738,7 @@ export function App() {
         <ConfigScreen
           snapshot={load.bundle.snapshot}
           entries={entries}
+          spriteMeta={load.bundle.spriteMeta}
           onStarted={() => setScreen({ name: 'draft' })}
         />
       )}
@@ -831,6 +832,9 @@ export function App() {
                   entries={availableEntries}
                   spriteMeta={load.bundle.spriteMeta}
                   onPick={handlePick}
+                  // Not a ban surface. `null` rather than an empty set, so a draft cell
+                  // cannot report an unpressed toggle state it does not have.
+                  bannedIds={null}
                 />
               )
             }

@@ -49,6 +49,7 @@ vi.mock('../../src/adapters/id', () => ({
 }));
 
 import committedSnapshot from '../../public/data/roster.mb.json';
+import type { SpriteMeta } from '../../src/adapters/roster-source';
 import { bannedEntries } from '../../src/core/bans';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import { getDoc, getState } from '../../src/store';
@@ -75,6 +76,13 @@ const ROTOM_WASH = 'Rotom-Wash';
 /** Mega-capable species, in the order the ban field will be driven through them. */
 const MEGA_CAPABLE = ENTRIES.filter((entry) => entry.megaCapable);
 
+/** The ban grid's sprite inventory. Empty resolves every row to the committed placeholder. */
+const SPRITE_META: SpriteMeta = {
+  nativeWidth: 96,
+  nativeHeight: 96,
+  byRosterId: {},
+};
+
 // ---------------------------------------------------------------------------
 
 let host: HTMLDivElement;
@@ -97,7 +105,12 @@ function mount(onStarted: () => void = () => undefined): void {
   act(() => {
     render(
       <>
-        <ConfigScreen snapshot={SNAPSHOT} entries={ENTRIES} onStarted={onStarted} />
+        <ConfigScreen
+          snapshot={SNAPSHOT}
+          entries={ENTRIES}
+          spriteMeta={SPRITE_META}
+          onStarted={onStarted}
+        />
         <LiveRegion />
       </>,
       host,
