@@ -399,12 +399,21 @@ function buildConfig(value: unknown): TournamentConfig | null {
     banMode = raw['banMode'];
   }
 
-  // Bounded by the round count rather than by an arbitrary number: a team cannot be
-  // required to hold more Megas than it has picks to spend on them.
+  // Bounded by THIS DOCUMENT'S round count rather than by an arbitrary number: a team
+  // cannot be required to hold more Megas than it has picks to spend on them. `rounds` was
+  // validated above and `rounds <= MAX_ROUNDS` already holds, so this is strictly tighter
+  // and needs no second bound.
+  //
+  // The looser `MAX_ROUNDS` bound this replaced was not merely imprecise. A file declaring
+  // `rounds: 6, megasRequiredPerTeam: 10` was accepted, and the accepted document then
+  // reached `feasibilityNotice` in `app.tsx` — which renders "at most 6 of them can be
+  // Megas. Lower the Megas required per team." on the DRAFT screen, where no such field
+  // exists to lower. This file's posture is refuse, do not repair; the old bound did
+  // neither.
   let megasRequiredPerTeam: number = V1_CONFIG_DEFAULTS.megasRequiredPerTeam;
   if (raw['megasRequiredPerTeam'] !== undefined) {
     const value_ = raw['megasRequiredPerTeam'];
-    if (!isNonNegativeInteger(value_) || value_ > MAX_ROUNDS) return null;
+    if (!isNonNegativeInteger(value_) || value_ > rounds) return null;
     megasRequiredPerTeam = value_;
   }
 

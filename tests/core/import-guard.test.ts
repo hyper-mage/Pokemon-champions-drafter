@@ -662,12 +662,18 @@ function configuredText(overrides: Record<string, unknown>): string {
   return JSON.stringify(doc);
 }
 
-/** Every version 2 field, none of them at its default. */
+/**
+ * Every version 2 field, none of them at its default.
+ *
+ * `megasRequiredPerTeam` is 2 rather than a larger number because the fixture's config
+ * declares `rounds: 2`, and the guard bounds the field by the document's OWN round count.
+ * It is still not the default, which is 0.
+ */
 const CONFIGURED: Record<string, unknown> = {
   poolSize: 96,
   bans: ['mewtwo', 'rayquaza'],
   banMode: 'snake',
-  megasRequiredPerTeam: 3,
+  megasRequiredPerTeam: 2,
   dualMegaChoices: [
     { speciesId: 'charizard', forme: 'x' },
     { speciesId: 'raichu', forme: 'either' },
@@ -688,7 +694,7 @@ describe('version 2 config fields', () => {
     expect(config.poolSize).toBe(96);
     expect(config.bans).toEqual(['mewtwo', 'rayquaza']);
     expect(config.banMode).toBe('snake');
-    expect(config.megasRequiredPerTeam).toBe(3);
+    expect(config.megasRequiredPerTeam).toBe(2);
     expect(config.dualMegaChoices).toEqual([
       { speciesId: 'charizard', forme: 'x' },
       { speciesId: 'raichu', forme: 'either' },
@@ -722,7 +728,13 @@ describe('version 2 config fields', () => {
     ['a negative poolSize', { poolSize: -1 }],
     ['a zero poolSize', { poolSize: 0 }],
     ['a fractional poolSize', { poolSize: 12.5 }],
-    ['more required Megas than there are rounds to draft them in', { megasRequiredPerTeam: 25 }],
+    ['more required Megas than the round cap allows anyone', { megasRequiredPerTeam: 25 }],
+    // THE ONE THIS DOCUMENT'S OWN ROUND COUNT CATCHES AND THE BLANKET CAP DOES NOT. The
+    // fixture declares `rounds: 2`, so three Megas per team is unsatisfiable by
+    // arithmetic — while sitting comfortably under MAX_ROUNDS, which is 24. Bounded by
+    // the cap alone, this file loaded and the host met "at most 2 of them can be Megas.
+    // Lower the Megas required per team." on a screen with no such field.
+    ['more required Megas than this document has rounds', { megasRequiredPerTeam: 3 }],
     ['a negative megasRequiredPerTeam', { megasRequiredPerTeam: -1 }],
     ['a bans value that is not an array', { bans: 3 }],
     ['a bans array holding a non-string', { bans: ['mewtwo', 7] }],
@@ -761,8 +773,17 @@ describe('version 2 config fields', () => {
     expect(rejection(parse(configuredText({ dualMegaChoices: choices })))).toBe('wrongShape');
   });
 
-  it('accepts megasRequiredPerTeam exactly at the round cap', () => {
-    expect(parse(configuredText({ megasRequiredPerTeam: MAX_ROUNDS })).ok).toBe(true);
+  it('accepts megasRequiredPerTeam exactly at the document’s own round count', () => {
+    // An all-Mega team is a legitimate configuration; one Mega more than there are picks
+    // to spend is not. The boundary is the document's `rounds`, not MAX_ROUNDS — a
+    // two-round document is refused at 24 even though the blanket cap allows it.
+    expect(parse(configuredText({ rounds: 6, megasRequiredPerTeam: 6 })).ok).toBe(true);
+    expect(rejection(parse(configuredText({ rounds: 6, megasRequiredPerTeam: 7 })))).toBe(
+      'wrongShape',
+    );
+    expect(rejection(parse(configuredText({ megasRequiredPerTeam: MAX_ROUNDS })))).toBe(
+      'wrongShape',
+    );
   });
 });
 
