@@ -131,7 +131,7 @@ export function TopBar({
       if (event.key !== 'z' && event.key !== 'Z') return;
       if (isTextEntry(event.target)) return;
 
-      // This listener is on `document`, which is OUTSIDE the `inert` draft region. `inert`
+      // This listener is on `document`, which is OUTSIDE the `inert` shell. `inert`
       // governs focus and pointer/keyboard targeting inside a subtree; it does not stop a
       // document-level handler from firing when the event target is `<body>`. So the
       // attribute that disables the `Undo last pick` button beside this shortcut does not

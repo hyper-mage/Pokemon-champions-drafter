@@ -27,8 +27,15 @@ import './ReadOnlyBanner.css';
  * Read-only is the one state in the phase with no colour at all. The UI-SPEC's
  * "colour is never the only signal" rule is usually satisfied by adding a non-colour
  * signal alongside a colour one; here it is satisfied by having no colour signal to
- * begin with. The signals are the sentence and the `inert` draft region, both of which
- * survive a monochrome display, a colour-blind reader, and a screenshot.
+ * begin with. The signals are the sentence and the `inert` shell holding every screen,
+ * both of which survive a monochrome display, a colour-blind reader, and a screenshot.
+ *
+ * ## This component is a SIBLING of that shell, never a child
+ *
+ * `inert` strips a subtree from the accessibility tree as well as from the input path, so
+ * a banner rendered inside the gate would silence the very announcement below and put
+ * `Take over drafting here` out of reach — the hard lockout `tab-lock.ts`'s header calls
+ * worse than the race the lock prevents. `app.tsx` returns a Fragment for this reason.
  *
  * Read-only is emphatically not a *danger* state — nothing is wrong, another tab simply
  * got there first — so `--color-danger` is reserved for the two surfaces that own it.

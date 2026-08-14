@@ -960,9 +960,16 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       />
 
       {/*
-        At the screen root. This screen has no `inert` region — that is the draft screen's
-        problem — so a dialog needs no special placement here, only somewhere it is not a
-        child of a fieldset.
+        At the screen root, which is somewhere a dialog is not a child of a fieldset.
+
+        This screen is INSIDE the read-only gate — the whole of it, since T-02-15 — so
+        these four confirms are inside it too. That costs nothing in the state it was
+        written for: a secondary tab cannot press `Re-roll pool` in the first place, so
+        none of them can open there. The one reachable oddity is a tab that opens a
+        confirm while it owns the lock and is demoted before answering it; the dialog then
+        goes inert alongside the form behind it. `Take over drafting here` is outside the
+        gate, so the exit is one click, and hoisting these four out of the screen to shave
+        that case would put four dialogs' state in `app.tsx` for no gain.
       */}
       {confirm.kind === 'rerollPool' && (
         <ConfirmDialog
