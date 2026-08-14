@@ -29,7 +29,7 @@ Phase: 3
 Plan: Not started
 Plans: 8 of 8 written, 6 waves
 Status: Ready to plan
-Last activity: 2026-08-12
+Last activity: 2026-08-14 - Completed quick task 260813-tep: Fix WR-07 / T-02-15 — one inert gate around every screen
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -82,6 +82,12 @@ None yet.
 - **Phase 3 rules compiler:** HIGH research need. The compilable-vs-non-compilable rule-class taxonomy has no prior art in surveyed draft tooling.
 - **Phase 3 priority cards / Phase 4 blind bans:** MEDIUM research need each; both are novel hot-seat UX with only party-app and tabletop precedent. Both want a real playtest with the 4–8 friend group.
 - **Roster rotation timing:** Champions regulation M-C is expected around 2026-09-02. Snapshot regulation-labeling must land in Phase 1, not later.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260813-tep | Fix WR-07 / T-02-15 — one inert gate around every screen, not just the draft | 2026-08-14 | d34cc2a | [260813-tep-wr-07-inert-shell-restructure](./quick/260813-tep-wr-07-inert-shell-restructure/) |
 
 ## Deferred Items
 
