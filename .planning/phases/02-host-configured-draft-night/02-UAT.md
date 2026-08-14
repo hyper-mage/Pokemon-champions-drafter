@@ -3,7 +3,7 @@ status: diagnosed
 phase: 02-host-configured-draft-night
 source: [02-01-SUMMARY.md, 02-02-SUMMARY.md, 02-03-SUMMARY.md, 02-04-SUMMARY.md, 02-05-SUMMARY.md, 02-06-SUMMARY.md, 02-07-SUMMARY.md, 02-08-SUMMARY.md]
 started: 2026-08-14T00:00:00Z
-updated: 2026-08-14T00:00:00Z
+updated: 2026-08-14T18:00:00Z
 ---
 
 ## Current Test
@@ -46,10 +46,9 @@ expected: The pool grid offers a ban mode where clicking a card toggles its ban.
 result: pass
 
 ### 9. Start draft → the two-pane draft screen
-expected: With a valid config, `Start draft` leaves the form and shows the draft screen: pool on one side, board on the other. The board has a cell per player per round. The turn banner names whose pick it is, and the empty board names the first picker. You can switch which pane is expanded, and that choice survives a page reload.
-result: issue
-reported: "there is no way to expand the pool pane, but there is one for the draft board"
-severity: major
+expected: With a valid config, `Start draft` leaves the form and shows the draft screen: pool on one side, board on the other. The board has a cell per player per round. The turn banner names whose pick it is, and the empty board names the first picker. You can expand the draft board to full width and restore it, and that choice survives a page reload. The pool's own expand control is visible but inert while the draft runs, dimmed with the reason `Available once the draft is complete` beside it, and clicking it does nothing; it becomes usable once the draft is over.
+result: pending
+note: "The truth statement was corrected under plan 02-09 — it carried D-18/D-19's unscoped 'switch which pane is expanded' wording, which 02-UI-SPEC.md:116 had already declined. The missing affordance it exposed was built in the same plan: the pool expand now renders inert with a visible reason instead of being omitted. Awaiting re-verification."
 
 ### 10. Pool filters
 expected: The filter bar has a search box, eighteen type buttons, a match-all toggle, a Mega filter, and `Clear filters`. Filtering narrows the grid and the count line updates. Tab moves into the type toolbar as ONE stop — arrow keys move between the eighteen buttons, Tab leaves the group. With no matches you get an empty state that names your query. Filters clear when a pick is committed.
@@ -88,18 +87,28 @@ result: pass
 note: "Closes the human-verify step the Phase 2 security audit deferred for T-02-15 / WR-07. happy-dom implements neither focus nor pointer semantics, so no automated test could prove the click is refused. Confirmed by hand at 132eaec: the gate blocks the screens and leaves the takeover reachable."
 
 ### 16. Bans disclosure on the draft screen is read-only
-expected: During a draft, the `Bans (n)` disclosure expands to list the banned species by name. It contains no buttons — there is no way to add or remove a ban once the draft has started. The count matches what you set in config.
-result: issue
-reported: "pass, but i don't see a disclosure anywhere"
-severity: major
-note: "Host typed pass, but the caveat negates the test's subject — an unobservable surface verifies nothing, so this is recorded as an issue rather than a pass. Diagnosis to determine whether the disclosure is suppressed at zero bans (expected) or genuinely absent from the draft screen."
+setup: |
+  This test needs bans of its own — it must not inherit whatever the previous test left
+  behind. From the landing screen choose `New tournament`, add two players, then in the Bans
+  group ban two species by name. Confirm the group's own count reads `2 bans` before you
+  leave the form, then `Start draft`.
+expected: |
+  During the draft you just started, the top bar shows `Bans (2)`. Expanding it lists exactly
+  the two species you banned, by name. It contains no buttons — there is no way to add or
+  remove a ban once the draft has started.
+
+  Then the zero-ban case: start a second tournament with no bans at all. No disclosure
+  appears — not `Bans (0)`, nothing. Absence is the specified behaviour there
+  (`02-UI-SPEC.md:1013`), not a missing render.
+result: pending
+note: "No code change was warranted. `TopBar.tsx:209-218` matches `02-UI-SPEC.md:1013` and its four tests at `tests/ui/ban-mode.test.tsx:506-548` pass. The defect was this test's missing setup: with no setup step it inherited a zero-ban tournament from test 14 and then asserted a count, which is unobservable as written — so the host's `i don't see a disclosure anywhere` was a correct observation of correct behaviour. Setup added under plan 02-09. Awaiting re-verification."
 
 ## Summary
 
 total: 16
 passed: 14
-issues: 2
-pending: 0
+issues: 0
+pending: 2
 skipped: 0
 blocked: 0
 
