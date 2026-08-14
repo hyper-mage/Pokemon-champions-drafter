@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 02-host-configured-draft-night
 source: [02-01-SUMMARY.md, 02-02-SUMMARY.md, 02-03-SUMMARY.md, 02-04-SUMMARY.md, 02-05-SUMMARY.md, 02-06-SUMMARY.md, 02-07-SUMMARY.md, 02-08-SUMMARY.md]
 started: 2026-08-14T00:00:00Z
@@ -110,17 +110,40 @@ blocked: 0
   reason: "User reported: there is no way to expand the pool pane, but there is one for the draft board"
   severity: major
   test: 9
-  root_cause: ""     # Filled by diagnosis
-  artifacts: []      # Filled by diagnosis
-  missing: []        # Filled by diagnosis
-  debug_session: ""  # Filled by diagnosis
+  root_cause: "Not a code bug. `src/app.tsx:501` sets `poolExpandable = complete`, so the pool expand control appears only after the draft is over. The rule is deliberate, specified twice (02-UI-SPEC.md:116 and :731), prescribed verbatim by 02-06-PLAN.md:672, and pinned green by tests/ui/draft-panes.test.tsx:251 ('offers only the board expand while a draft is running'). It exists because pool-full collapses the board to a 44px strip, which would regress ROADMAP criterion 5 (board visible at every moment). The real defect is that the rule has NO AFFORDANCE — the pool's `pane__chrome` slot renders empty with no disabled control, no text and no announcement, so the host cannot distinguish 'unavailable' from 'broken'. This contradicts the same spec's own stated convention at 02-UI-SPEC.md:787-790 ('a control that appears and disappears is worse on a shared screen than one that is predictably inert') and the `— Not yet available` precedent at :631-633. Compounding it, `.pane__chrome` has no min-height (SplitPanes.css:71-75), so the empty chrome collapses to 0 and the two panes' content misaligns by ~44px, which reads as a failed render."
+  artifacts:
+    - path: "src/app.tsx:501"
+      issue: "`poolExpandable = complete` — the whole rule. Correct; must NOT be changed."
+    - path: "src/ui/components/SplitPanes.tsx:105-126"
+      issue: "Pool `pane__chrome` renders empty mid-draft. This is where an affordance belongs."
+    - path: "src/ui/components/SplitPanes.css:71-75"
+      issue: "`.pane__chrome` has no reserved height, so it collapses to 0 and misaligns the panes."
+    - path: ".planning/phases/02-host-configured-draft-night/02-UI-SPEC.md:104-124, :731"
+      issue: "Source of the rule; internally inconsistent with its own :787-790 and :631-633 conventions."
+    - path: ".planning/phases/02-host-configured-draft-night/02-UAT.md:49"
+      issue: "Test 9's truth is D-18/D-19's unscoped wording, which 02-UI-SPEC.md:116 declined. Stale."
+  missing:
+    - "Render the pool expand control inert mid-draft (aria-disabled=\"true\", dimmed) with a brief reason, matching the :787-790 principle and the `— Not yet available` precedent"
+    - "Reserve `min-height: var(--target-min)` on `.pane__chrome` so the panes stay aligned whether or not the slot has a control"
+    - "Correct test 9's truth to: you can expand the draft board and restore it; the pool expands once the draft completes"
+  constraint: "Do NOT render a WORKING pool expand button mid-draft. That lets pool-full hide the board, regressing ROADMAP criterion 5 and reopening T-02-24, whose mitigation is two independent coercions. Keep `poolExpandable = complete` and both coercions."
+  debug_session: .planning/debug/pool-pane-not-expandable.md
 
 - truth: "During a draft, the `Bans (n)` disclosure expands to list the banned species by name"
   status: failed
   reason: "User reported: pass, but i don't see a disclosure anywhere"
   severity: major
   test: 16
-  root_cause: ""     # Filled by diagnosis
-  artifacts: []      # Filled by diagnosis
-  missing: []        # Filled by diagnosis
-  debug_session: ""  # Filled by diagnosis
+  root_cause: "Not a product defect. The disclosure renders at `src/ui/components/TopBar.tsx:209-218` — the only `<details>` in `src/` — gated on `bannedNames.length > 0` and nothing else (not ownership, not sub-screen, not a flag). 02-UI-SPEC.md:1013 specifies exactly that: `| Bans disclosure, no bans | not rendered. No Bans (0). |`. Implementation matches spec. Four tests at tests/ui/ban-mode.test.tsx:506-548 render the full <App/>, resume to the draft screen and query `details.top-bar__bans`; 16/16 pass at HEAD. Styling is not the issue either — TopBar.css:95-109 gives it the same hairline border, radius and --target-min height as the four buttons beside it, so it reads as a fifth button. The `inert` restructure did not affect it: app.tsx:1000-1021 renders TopBar inside `.sticky-head` on the normal draft screen. The host's tournament simply had zero bans — test 8 ended by confirming `Clear the banlist`, test 13 abandoned, test 14 started fresh, and tests 15-16 added none. Nothing was in the DOM to overlook. The defect is in UAT test 16, which carries no setup step, inherits a zero-ban tournament, then asserts 'the count matches what you set in config' — unobservable as written."
+  artifacts:
+    - path: ".planning/phases/02-host-configured-draft-night/02-UAT.md:90-95"
+      issue: "Test 16 has no setup step and inherits a zero-ban tournament, making its own expectation unobservable."
+    - path: "src/ui/components/TopBar.tsx:209-218"
+      issue: "None — correct as written, no change warranted."
+    - path: ".planning/phases/02-host-configured-draft-night/02-UI-SPEC.md:1013"
+      issue: "None — the governing spec line, which the implementation matches."
+  missing:
+    - "Give test 16 its own setup: create a tournament with at least two bans, start it, then confirm `Bans (2)` in the top bar, expand to two names, and assert no button inside"
+    - "Add the zero-ban non-render as an explicit second assertion — that is what the host actually verified, and it passed"
+  constraint: "Close this gap in 02-UAT.md, not in src/. No implementation change is warranted."
+  debug_session: .planning/debug/bans-disclosure-not-visible.md
