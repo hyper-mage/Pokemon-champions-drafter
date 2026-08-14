@@ -399,6 +399,18 @@ export function App() {
       // holds — and `Resume saved draft` would be a button whose label disagrees with what
       // clicking it produces.
       setSaved(newer);
+
+      // Route unconditionally — on promotion and on a remote save alike — so no tab ever
+      // holds a document it does not render. A secondary that adopted the owner's draft
+      // while sitting on the landing screen would otherwise go on offering
+      // `Resume saved draft` for a tournament it is already holding.
+      //
+      // Unconditional is safe only because the read-only gate now wraps every screen
+      // rather than the draft alone: a secondary tab cannot have been composing anything
+      // on the config screen, so there is no in-progress work for this to discard. The
+      // two changes shipped together and must not be separated — narrowing the gate back
+      // to the draft region turns this line into a form-clobber.
+      setScreen({ name: 'draft' });
     };
 
     claimOwnership({
@@ -873,12 +885,55 @@ export function App() {
 
   return (
     /*
+      The shell root is a FRAGMENT, and that shape is the whole of the read-only gate.
+
+      ## What is inside the gate, and why it is every screen
+
+      One `inert` element wraps the landing screen, the config screen and the draft. One
+      attribute disables pointer, keyboard and focus across all three, and it is
+      Baseline-supported. The hand-rolled alternative — `pointer-events: none` plus
+      `disabled` on each control — leaks in exactly the way that matters: a Tab key still
+      walks into the pool, and a keyboard user reaches a cell that will silently discard
+      their pick.
+
+      Gating the draft alone was not enough, and the hole was not in the draft. A
+      secondary tab could walk the landing screen to `New tournament`, fill the config
+      form, click `Start draft`, and hold a DIFFERENT tournament from the owner's —
+      `dispatch` is deliberately un-gated (`store.ts`). Every autosave is refused while
+      the tab is a secondary, so nothing looks wrong; then `Take over drafting here`
+      makes it the owner and the next save writes that tournament over the owner's draft.
+      The landing and config screens were siblings of the gate, so they are now children
+      of it.
+
+      `undefined` rather than `false` so Preact removes the attribute outright.
+
+      ## What is outside the gate, and why each one has to be
+
+      `inert` strips a subtree from the accessibility tree as well as from the input
+      path, so three things sit beside the gated element rather than inside it:
+
+        `LiveRegion` — the single polite region. Inside the gate it goes silent in
+        precisely the tab that most needs to be told why nothing responds.
+
+        `ReadOnlyBanner` — it announces the sentence explaining the state, and it carries
+        `Take over drafting here`. Inside the gate that button is unreachable, which is a
+        hard lockout: `tab-lock.ts`'s header names that outcome as worse than the race
+        the lock exists to prevent.
+
+        The three dialogs — `inert` applies to a whole subtree, so a modal rendered
+        inside it would render, trap focus, and refuse every click. A dialog nobody can
+        dismiss.
+
+      ## The two shells
+
       The draft screen is the one screen that is not a scrolling page: it is exactly one
       viewport tall and its two panes scroll inside it, so the board is on screen at every
       moment. Every other screen keeps the capped, centred, page-scrolling shell — which
-      is what leaves `FeasibilityBar`'s pinned bar on the config screen untouched.
+      is what leaves `FeasibilityBar`'s pinned bar on the config screen untouched. The
+      viewport height now lives on `#app`, because the banner is no longer inside the
+      element that has to be one viewport tall. See app.css.
     */
-    <div class={screen.name === 'draft' ? 'draft-shell' : 'app-shell'}>
+    <>
       <LiveRegion />
 
       {/*
@@ -889,175 +944,174 @@ export function App() {
       */}
       <ReadOnlyBanner ownership={ownership} />
 
-      {/*
-        The landing screen owns the boot-time storage warning (D-01), because it is what
-        comes first now. It renders that and nothing else until it is acknowledged.
-      */}
-      {screen.name === 'landing' && (
-        <LandingScreen
-          saved={saved}
-          storageBlocked={storageBlockedAtBoot}
-          onAcknowledgeStorage={() => setProbeAcknowledged(true)}
-          onNewTournament={() => setScreen({ name: 'config' })}
-          onResume={handleResume}
-          onImportFile={handleImportFile}
-        />
-      )}
-
-      {/*
-        The roster gates the config screen because every derivation on it — the pool
-        size, the draw, the feasibility gate — reads the snapshot. There is nothing
-        useful to render before it lands, and rendering the form against an empty roster
-        would report a configuration as unsatisfiable that is not.
-      */}
-      {screen.name === 'config' && load.status !== 'ready' && (
-        <p class="app-shell__status">
-          {load.status === 'failed' ? load.message : 'Loading the pool…'}
-        </p>
-      )}
-
-      {screen.name === 'config' && load.status === 'ready' && (
-        <ConfigScreen
-          snapshot={load.bundle.snapshot}
-          entries={entries}
-          spriteMeta={load.bundle.spriteMeta}
-          onStarted={() => setScreen({ name: 'draft' })}
-        />
-      )}
-
-      {screen.name === 'draft' && <h1 class="app-shell__title">Champions Draft</h1>}
-
-      {/*
-        A write that failed mid-draft, which is a different event from the canary and
-        gets its own acknowledgement — see above. It can only reach the host on the draft
-        screen, because that is the only screen a `save` runs behind.
-      */}
-      {screen.name === 'draft' && storageBlockedMidDraft && (
-        <StorageBlocked onAcknowledge={() => setWriteFailureAcknowledged(true)} />
-      )}
-
-      {screen.name === 'draft' && load.status === 'ready' && state !== null && (
-        /*
-          One attribute disables pointer, keyboard, and focus across the entire draft
-          region, and it is Baseline-supported. The hand-rolled alternative —
-          `pointer-events: none` plus `disabled` on each control — leaks in exactly the
-          way that matters: a Tab key still walks into the pool, and a keyboard user
-          reaches a cell that will silently discard their pick.
-          `undefined` rather than `false` so Preact removes the attribute outright.
-        */
-        <div class="draft-region" inert={readOnly ? true : undefined}>
-          {/*
-            TopBar and TurnBanner are both specified as sticky at the top of the
-            viewport, so they stick as one block rather than fighting over the same
-            pixel. See TopBar.css.
-
-            `position: sticky` on this head is a no-op now that the panes own the
-            scrolling — there is no page scroll left for it to stick against. It is left
-            in place rather than deleted: removing it means editing TopBar.css for no
-            behavioural gain, and it re-engages verbatim if a later phase reintroduces
-            page scroll on this screen.
-          */}
-          <div class="sticky-head">
-            <TopBar
-              onDownload={handleDownload}
-              onImportFile={handleImportFile}
-              importError={importFlow.status === 'failed' ? importFlow.message : null}
-              onRequestUndo={handleRequestUndo}
-              onRequestAbandon={handleRequestAbandon}
-              bannedNames={bannedNames}
-            />
-
-            {/*
-              Every number here is derived from the config the host authored. `teams` is
-              the player count rather than `Object.keys(selectTeams(state)).length`: one
-              team per player is what the config asserts, and counting the fold's output
-              would report the same figure by a longer route that can disagree with it.
-            */}
-            <TurnBanner
-              round={turn === null ? null : turn.round}
-              rounds={state.config.rounds}
-              playerName={turnPlayerName}
-              complete={complete}
-              picks={selectPickCount(state)}
-              teams={state.config.players.length}
-              filtersCleared={filtersCleared}
-            />
-
-            {feasibilityNotice !== null && (
-              <p class="draft-notice" role="status">
-                {feasibilityNotice}
-              </p>
-            )}
-
-            {/*
-              A second notice rather than a clause folded into the first. The two describe
-              unrelated facts — one is arithmetic the host authored, the other is the
-              roster moving underneath it — and either can hold without the other.
-            */}
-            {missingFromRoster > 0 && (
-              <p class="draft-notice" role="status">
-                {rosterDriftNotice(missingFromRoster)}
-              </p>
-            )}
-          </div>
-
-          {/*
-            The completed-draft screen takes the POOL's place and nothing else. The head
-            and the board stay exactly where they are, so `Undo last pick` is still one
-            click away — a host who spots a wrong final pick on this screen must be able
-            to unwind it, and the board remains the completed record.
-          */}
-          <SplitPanes
-            pane={pane}
-            onPaneChange={handlePaneChange}
-            poolExpandable={poolExpandable}
-            pool={
-              complete ? (
-                <CompletedDraft
-                  players={state.config.players}
-                  teams={selectTeams(state)}
-                  entryById={entryById}
-                  checkpointReached={complete}
-                  checkpointDismissed={checkpointDismissed}
-                  onDownload={handleDownload}
-                  onDismissCheckpoint={() => setCheckpointDismissed(true)}
-                />
-              ) : (
-                <PoolGrid
-                  entries={availableEntries}
-                  spriteMeta={load.bundle.spriteMeta}
-                  onPick={handlePoolPick}
-                  // Not a ban surface. `null` rather than an empty set, so a draft cell
-                  // cannot report an unpressed toggle state it does not have.
-                  bannedIds={null}
-                />
-              )
-            }
-            board={
-              <BoardGrid
-                players={state.config.players}
-                rounds={state.config.rounds}
-                teams={selectTeams(state)}
-                currentTurn={turn}
-                entryById={entryById}
-                spriteMeta={load.bundle.spriteMeta}
-                pickCount={selectPickCount(state)}
-                // Names in `board-full`, none in `split`. One expression, so the two
-                // pane states cannot each grow their own answer.
-                showName={pane === 'board'}
-                firstPlayerName={turnPlayerName}
-              />
-            }
+      <div
+        class={screen.name === 'draft' ? 'draft-shell' : 'app-shell'}
+        inert={readOnly ? true : undefined}
+      >
+        {/*
+          The landing screen owns the boot-time storage warning (D-01), because it is what
+          comes first now. It renders that and nothing else until it is acknowledged.
+        */}
+        {screen.name === 'landing' && (
+          <LandingScreen
+            saved={saved}
+            storageBlocked={storageBlockedAtBoot}
+            onAcknowledgeStorage={() => setProbeAcknowledged(true)}
+            onNewTournament={() => setScreen({ name: 'config' })}
+            onResume={handleResume}
+            onImportFile={handleImportFile}
           />
-        </div>
-      )}
+        )}
+
+        {/*
+          The roster gates the config screen because every derivation on it — the pool
+          size, the draw, the feasibility gate — reads the snapshot. There is nothing
+          useful to render before it lands, and rendering the form against an empty roster
+          would report a configuration as unsatisfiable that is not.
+        */}
+        {screen.name === 'config' && load.status !== 'ready' && (
+          <p class="app-shell__status">
+            {load.status === 'failed' ? load.message : 'Loading the pool…'}
+          </p>
+        )}
+
+        {screen.name === 'config' && load.status === 'ready' && (
+          <ConfigScreen
+            snapshot={load.bundle.snapshot}
+            entries={entries}
+            spriteMeta={load.bundle.spriteMeta}
+            onStarted={() => setScreen({ name: 'draft' })}
+          />
+        )}
+
+        {screen.name === 'draft' && <h1 class="app-shell__title">Champions Draft</h1>}
+
+        {/*
+          A write that failed mid-draft, which is a different event from the canary and
+          gets its own acknowledgement — see above. It can only reach the host on the draft
+          screen, because that is the only screen a `save` runs behind. Inside the gate
+          costs nothing: a refused write deliberately does not raise `savingBlocked`
+          (`persistence.ts`), so a secondary tab never reaches this branch at all.
+        */}
+        {screen.name === 'draft' && storageBlockedMidDraft && (
+          <StorageBlocked onAcknowledge={() => setWriteFailureAcknowledged(true)} />
+        )}
+
+        {screen.name === 'draft' && load.status === 'ready' && state !== null && (
+          <>
+            {/*
+              TopBar and TurnBanner are both specified as sticky at the top of the
+              viewport, so they stick as one block rather than fighting over the same
+              pixel. See TopBar.css.
+
+              `position: sticky` on this head is a no-op now that the panes own the
+              scrolling — there is no page scroll left for it to stick against. It is left
+              in place rather than deleted: removing it means editing TopBar.css for no
+              behavioural gain, and it re-engages verbatim if a later phase reintroduces
+              page scroll on this screen.
+            */}
+            <div class="sticky-head">
+              <TopBar
+                onDownload={handleDownload}
+                onImportFile={handleImportFile}
+                importError={importFlow.status === 'failed' ? importFlow.message : null}
+                onRequestUndo={handleRequestUndo}
+                onRequestAbandon={handleRequestAbandon}
+                bannedNames={bannedNames}
+              />
+
+              {/*
+                Every number here is derived from the config the host authored. `teams` is
+                the player count rather than `Object.keys(selectTeams(state)).length`: one
+                team per player is what the config asserts, and counting the fold's output
+                would report the same figure by a longer route that can disagree with it.
+              */}
+              <TurnBanner
+                round={turn === null ? null : turn.round}
+                rounds={state.config.rounds}
+                playerName={turnPlayerName}
+                complete={complete}
+                picks={selectPickCount(state)}
+                teams={state.config.players.length}
+                filtersCleared={filtersCleared}
+              />
+
+              {feasibilityNotice !== null && (
+                <p class="draft-notice" role="status">
+                  {feasibilityNotice}
+                </p>
+              )}
+
+              {/*
+                A second notice rather than a clause folded into the first. The two describe
+                unrelated facts — one is arithmetic the host authored, the other is the
+                roster moving underneath it — and either can hold without the other.
+              */}
+              {missingFromRoster > 0 && (
+                <p class="draft-notice" role="status">
+                  {rosterDriftNotice(missingFromRoster)}
+                </p>
+              )}
+            </div>
+
+            {/*
+              The completed-draft screen takes the POOL's place and nothing else. The head
+              and the board stay exactly where they are, so `Undo last pick` is still one
+              click away — a host who spots a wrong final pick on this screen must be able
+              to unwind it, and the board remains the completed record.
+            */}
+            <SplitPanes
+              pane={pane}
+              onPaneChange={handlePaneChange}
+              poolExpandable={poolExpandable}
+              pool={
+                complete ? (
+                  <CompletedDraft
+                    players={state.config.players}
+                    teams={selectTeams(state)}
+                    entryById={entryById}
+                    checkpointReached={complete}
+                    checkpointDismissed={checkpointDismissed}
+                    onDownload={handleDownload}
+                    onDismissCheckpoint={() => setCheckpointDismissed(true)}
+                  />
+                ) : (
+                  <PoolGrid
+                    entries={availableEntries}
+                    spriteMeta={load.bundle.spriteMeta}
+                    onPick={handlePoolPick}
+                    // Not a ban surface. `null` rather than an empty set, so a draft cell
+                    // cannot report an unpressed toggle state it does not have.
+                    bannedIds={null}
+                  />
+                )
+              }
+              board={
+                <BoardGrid
+                  players={state.config.players}
+                  rounds={state.config.rounds}
+                  teams={selectTeams(state)}
+                  currentTurn={turn}
+                  entryById={entryById}
+                  spriteMeta={load.bundle.spriteMeta}
+                  pickCount={selectPickCount(state)}
+                  // Names in `board-full`, none in `split`. One expression, so the two
+                  // pane states cannot each grow their own answer.
+                  showName={pane === 'board'}
+                  firstPlayerName={turnPlayerName}
+                />
+              }
+            />
+          </>
+        )}
+      </div>
 
       {/*
-        OUTSIDE the draft region, and that placement is load-bearing rather than tidy.
-        `inert` applies to a subtree, so a modal rendered inside it in a read-only tab
-        would render, trap focus, and refuse every click — a dialog nobody can dismiss.
-        Rendered here it is unaffected by the attribute, and the pick count it quotes is
-        the CURRENT draft's, which is the thing about to be lost.
+        A SIBLING of the gated element above, and that placement is load-bearing rather
+        than tidy. `inert` applies to a whole subtree, so a modal rendered inside it in a
+        read-only tab would render, trap focus, and refuse every click — a dialog nobody
+        can dismiss. Rendered here it is unaffected by the attribute, and the pick count
+        it quotes is the CURRENT draft's, which is the thing about to be lost.
       */}
       {importFlow.status === 'confirm' && state !== null && (
         <ImportConfirmDialog
@@ -1097,6 +1151,6 @@ export function App() {
           onSafe={closeConfirm}
         />
       )}
-    </div>
+    </>
   );
 }

@@ -29,9 +29,9 @@
  * --- A PROHIBITION, NOT A PREFERENCE ---
  *
  * None of the five containing-block-creating properties that `app.css` names in its
- * `.draft-region` comment may be declared on `.draft-panes`, `.pane` or `.pane__scroll`.
+ * `.draft-shell` comment may be declared on `.draft-panes`, `.pane` or `.pane__scroll`.
  * Any one of them silently kills a `position: sticky` descendant, which is precisely why
- * `.draft-region` is styleless in the first place. The rule is stated here rather than
+ * that comment forbids them on the two shells as well. The rule is stated here rather than
  * assumed, because this file is the one most likely to attract a compositing hint from
  * someone optimising a scroll.
  *
