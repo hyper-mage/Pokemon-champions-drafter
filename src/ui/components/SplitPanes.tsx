@@ -18,6 +18,18 @@ import './SplitPanes.css';
  * they own survives the toggle — which is what a reader who believes this paragraph will
  * assume, and what the component did not do until the assumption was checked.
  *
+ * The AVAILABILITY of an expand is carried by the control's STATE, not by its presence.
+ * An unavailable expand renders inert — `aria-disabled`, a visible reason beside it, and
+ * a refused click — rather than being omitted. 02-UI-SPEC section 8 item 3: a control
+ * that appears and disappears is worse on a shared screen than one that is predictably
+ * inert. The pool expand was the one control in this phase handled by omission, and a
+ * host read the empty chrome slot as a broken render.
+ *
+ * None of which makes this component an authority on WHICH states are available. It holds
+ * no opinion at all: `expandable` remains the sole input, and the parent remains the only
+ * place the rule is decided. What changed is how a `false` is communicated, not who
+ * decides it.
+ *
  * It renders no heading and no chrome for its children. `PoolGrid` and `BoardGrid` keep
  * their own headings and their own roots, and the pool root keeps the density attribute
  * 02-03 put on it — deliberately not repeated on the pane wrapper here, because a density
@@ -40,14 +52,27 @@ const POOL_EXPANDED_MESSAGE = 'Pool expanded to full width.';
 const BOARD_EXPANDED_MESSAGE = 'Draft board expanded to full width.';
 const SPLIT_MESSAGE = 'Pool and draft board shown side by side.';
 
+/**
+ * Why the pool's expand is inert while a draft runs.
+ *
+ * No trailing period: it is a fragment annotating a control, the same shape as the
+ * `— Not yet available` suffix the ban-mode options carry. The em dash separator is NOT
+ * part of this string — `SplitPanes.css` generates it, so the constant stays byte-identical
+ * to 02-UI-SPEC's copy table and to the exact-equality assertion in `draft-panes.test.tsx`.
+ */
+const POOL_EXPAND_REASON = 'Available once the draft is complete';
+
 export interface SplitPanesProps {
   /** 'split' | 'pool' | 'board' — the value from `src/adapters/view-prefs.ts`. */
   pane: PaneState;
   onPaneChange: (pane: PaneState) => void;
   /**
-   * False while a draft is in progress: the pool pane's expand button is not rendered,
-   * because `pool-full` would put the board behind a toggle and fail criterion 5
-   * (02-UI-SPEC §A tension in the locked set).
+   * False while a draft is in progress, because `pool-full` would put the board behind a
+   * toggle and fail criterion 5 (02-UI-SPEC §A tension in the locked set).
+   *
+   * The button is ALWAYS rendered. `false` does not remove it — it makes it inert:
+   * `aria-disabled`, a visible reason beside it, and a click that returns early. Omission
+   * left the host unable to tell "unavailable" from "broken".
    */
   poolExpandable: boolean;
   pool: ComponentChildren;
@@ -89,10 +114,17 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
     restoreLabel: string,
     expandedMessage: string,
     expandable: boolean,
+    reason: string | null,
   ) {
     // Expanded here means "this side has the whole width", which is exactly when the
     // other side is collapsed and already offers the way back.
     const isFullWidth = pane === key;
+
+    // Derived from `key` rather than held as a module constant, so this function stays
+    // honest about being generic — even though only the pool can currently reach the
+    // inert branch.
+    const reasonId = `${key}-expand-reason`;
+    const showReason = !expandable && reason !== null;
 
     return (
       <section class={collapsed ? 'pane pane--collapsed' : 'pane'} data-side={key}>
@@ -112,15 +144,41 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
               {restoreLabel}
             </button>
           ) : (
-            !isFullWidth &&
-            expandable && (
-              <button
-                type="button"
-                class="pane__button"
-                onClick={() => change(key, expandedMessage)}
-              >
-                {expandLabel}
-              </button>
+            /*
+              `expandable` is NOT part of the membership test. An unavailable expand is
+              rendered and made inert; only an already-expanded pane carries no control,
+              because the restore lives on the collapsed strip opposite.
+
+              `aria-disabled` alone, and deliberately no native `disabled` — the same trade
+              `FeasibilityBar` documents. A natively disabled button is not focusable, so a
+              keyboard user could never reach the explanation, and the explanation is the
+              whole reason for rendering the control.
+            */
+            !isFullWidth && (
+              <>
+                <button
+                  type="button"
+                  class="pane__button"
+                  aria-disabled={expandable ? undefined : 'true'}
+                  aria-describedby={showReason ? reasonId : undefined}
+                  onClick={() => {
+                    // The early return IS the refusal, exactly as `handleStart` does it.
+                    // `change` is never called for an inert control, so nothing reaches
+                    // `onPaneChange` and nothing is written or announced.
+                    if (!expandable) return;
+                    change(key, expandedMessage);
+                  }}
+                >
+                  {expandLabel}
+                </button>
+
+                {/* Button first, reason second, in DOM order as in visual order. */}
+                {showReason && (
+                  <span class="pane__reason" id={reasonId}>
+                    {reason}
+                  </span>
+                )}
+              </>
             )
           )}
         </div>
@@ -147,6 +205,7 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
         POOL_EXPANDED_MESSAGE,
         // The one asymmetry between the two sides, and it is scoped rather than structural.
         poolExpandable,
+        POOL_EXPAND_REASON,
       )}
 
       {side(
@@ -156,7 +215,9 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
         EXPAND_BOARD_LABEL,
         RESTORE_BOARD_LABEL,
         BOARD_EXPANDED_MESSAGE,
+        // The board's expand is never inert, so it never needs a reason.
         true,
+        null,
       )}
     </div>
   );
