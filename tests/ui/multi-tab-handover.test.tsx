@@ -269,7 +269,7 @@ describe('Resume saved draft adopts the record as it is NOW', () => {
     await click(buttonNamed('Resume saved draft'));
 
     expect(pickCount()).toBe(2);
-    expect(host.querySelector('.draft-region')).not.toBeNull();
+    expect(host.querySelector('.draft-shell')).not.toBeNull();
   });
 });
 

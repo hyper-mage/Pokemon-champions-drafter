@@ -789,7 +789,7 @@ describe('the abandoned announcement', () => {
     const b = boot(createTabLock({ tabId: 'b', channel: bus.connect(), onAbandoned }));
 
     // A secondary cannot have abandoned anything: the top bar is inside the `inert`
-    // draft region, so the dialog that reaches `clearSaved` is unreachable there.
+    // shell, so the dialog that reaches `clearSaved` is unreachable there.
     b.notifyAbandoned();
     expect(onAbandoned).not.toHaveBeenCalled();
   });

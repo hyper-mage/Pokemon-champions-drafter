@@ -8,8 +8,8 @@
  * the same operation, and a confirm attached to the button leaves that path walking
  * straight past it. 02-RESEARCH files it as Pitfall 6. The test named for it below
  * dispatches a real `keydown` on `document` rather than calling a handler, because
- * dispatching on `document` is the only thing that proves the listener OUTSIDE the
- * `inert` draft region routes through the gate.
+ * dispatching on `document` is the only thing that proves the listener — which is on the
+ * document rather than inside the `inert` shell — routes through the gate.
  *
  * The rest of the file pins the copy contract and the two ordering rules that make a
  * confirm safe: the confirming button is first in DOM order and the safe button second,
@@ -508,7 +508,7 @@ describe('abandoning a draft', () => {
     // the defect this test is about.
     await startAFreshTournament();
 
-    expect(host.querySelector('.draft-region')).not.toBeNull();
+    expect(host.querySelector('.draft-shell')).not.toBeNull();
     // An answer to a question asked about a draft that no longer exists.
     expect(host.textContent).not.toContain(IMPORT_WRONG_SHAPE);
   });

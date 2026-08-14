@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 /**
- * `inert` on the draft region — PERS-03 / D-12, UI-SPEC section 4(b).
+ * The read-only gate — PERS-03 / D-12 / T-02-15, UI-SPEC section 4(b).
  *
  * The banner explains; `inert` is what actually stops a read-only tab being clicked. It
  * is one attribute, which makes it exactly the kind of thing that gets quietly dropped
@@ -12,12 +12,29 @@
  * So it is asserted here against the real `App`, on a real DOM, rather than by grepping
  * the JSX for the word.
  *
+ * ## The gate has two halves, and both rot silently
+ *
+ * `inert` sits on the shell element holding every SCREEN — landing, config and draft
+ * alike. What it must never cover is the live region, the read-only banner, or the
+ * dialogs, all of which are siblings of it. So this file asserts CONTAINMENT in both
+ * directions:
+ *
+ *   Too narrow is a data-loss bug. A gate around the draft alone leaves a secondary tab
+ *   free to walk the landing screen to `New tournament` and build a competing
+ *   tournament that one autosave after promotion writes over the owner's draft.
+ *
+ *   Too wide is a lockout. `inert` strips its subtree from the accessibility tree, so a
+ *   banner inside the gate silences its own announcement and a takeover button inside it
+ *   can never be pressed — which `tab-lock.ts`'s header calls worse than the race the
+ *   lock exists to prevent.
+ *
  * What this file cannot prove: that `inert` genuinely blocks focus and pointer events.
  * happy-dom parses the attribute but does not implement its focus semantics, and no
  * amount of unit testing substitutes for a browser here. That is step 3 of the plan's
  * human-verify checkpoint, and it stays there deliberately. What IS proved here is the
  * half that silently rots: that the attribute is present exactly when the tab is a
- * secondary, and absent the rest of the time.
+ * secondary, that it is absent the rest of the time, and that it covers exactly the
+ * right subtree.
  */
 
 import { render } from 'preact';
@@ -83,6 +100,8 @@ vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
 
 import { App } from '../../src/app';
 import { save as saveTournament } from '../../src/adapters/persistence';
+import { announce } from '../../src/ui/components/LiveRegion';
+import { READ_ONLY_SENTENCE, TAKEOVER_LABEL } from '../../src/ui/components/ReadOnlyBanner';
 import {
   CLAIM_WINDOW_MS,
   claimOwnership,
@@ -132,6 +151,12 @@ let host: HTMLDivElement;
 
 beforeEach(() => {
   localStorage.clear();
+
+  // `announce` writes to a module-level signal that outlives any render, so a sentence
+  // left behind by the previous test would satisfy the live-region assertion below
+  // without the banner ever having spoken.
+  announce('');
+
   host = document.createElement('div');
   document.body.append(host);
 });
@@ -154,8 +179,30 @@ async function mountApp(): Promise<void> {
   });
 }
 
-function draftRegion(): HTMLElement | null {
-  return host.querySelector('.draft-region');
+/**
+ * The element that carries the gate.
+ *
+ * Queried by the class the shell actually renders rather than by `[inert]`, so a test can
+ * assert the attribute is ABSENT as well as present — `[inert]` would return null in both
+ * the healthy no-gate case and the case where the shell stopped rendering at all.
+ *
+ * Two classes because the shell wears one or the other by screen: `.app-shell` on landing
+ * and config, `.draft-shell` on the draft. `.app-shell__title` is a different class and
+ * does not match either.
+ */
+function shell(): HTMLElement | null {
+  return host.querySelector('.draft-shell, .app-shell');
+}
+
+function buttonNamed(name: string): HTMLButtonElement | undefined {
+  return Array.from(host.querySelectorAll('button')).find(
+    (button) => (button.textContent ?? '').trim() === name,
+  );
+}
+
+/** The single polite region, as a NODE — its text is asserted on it, never on `host`. */
+function liveRegion(): HTMLElement | null {
+  return host.querySelector('[role="status"][aria-live="polite"]');
 }
 
 function stamp(intent: Intent, seq: number): Action {
@@ -217,9 +264,7 @@ function seedSavedDraft(): void {
 
 /** Click through the landing screen to the draft. */
 async function resumeSavedDraft(): Promise<void> {
-  const resume = Array.from(host.querySelectorAll('button')).find(
-    (button) => button.textContent?.trim() === 'Resume saved draft',
-  );
+  const resume = buttonNamed('Resume saved draft');
   expect(resume).toBeDefined();
 
   await act(async () => {
@@ -228,36 +273,49 @@ async function resumeSavedDraft(): Promise<void> {
   });
 }
 
-describe('the draft region in a read-only tab', () => {
+/**
+ * Put another tab in charge, then mount this one as the secondary.
+ *
+ * Engaging this tab's lock BEFORE mounting is what makes `App`'s own `claimOwnership` a
+ * no-op, which is how the fake channel gets injected into a component that quite rightly
+ * does not take one as a prop.
+ */
+function rivalTabTakesTheLock(): ReturnType<typeof createTabLock> {
+  const bus = makeBus();
+
+  vi.useFakeTimers();
+  const rival = createTabLock({ tabId: 'rival', channel: bus.connect() });
+  rival.claim();
+  vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+  claimOwnership({ channel: bus.connect() });
+  vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+  vi.useRealTimers();
+
+  return rival;
+}
+
+describe('the gate in a read-only tab', () => {
   it('is inert while another tab is drafting, and stops being inert on takeover', async () => {
     seedSavedDraft();
-    const bus = makeBus();
-
-    // Another tab already holds the lock. Engaging this tab's lock BEFORE mounting is
-    // what makes `App`'s own `claimOwnership` a no-op, which is how the fake channel
-    // gets injected into a component that quite rightly does not take one as a prop.
-    vi.useFakeTimers();
-    const rival = createTabLock({ tabId: 'rival', channel: bus.connect() });
-    rival.claim();
-    vi.advanceTimersByTime(CLAIM_WINDOW_MS);
-    claimOwnership({ channel: bus.connect() });
-    vi.advanceTimersByTime(CLAIM_WINDOW_MS);
-    vi.useRealTimers();
+    const rival = rivalTabTakesTheLock();
 
     await mountApp();
     await resumeSavedDraft();
 
-    const region = draftRegion();
-    expect(region).not.toBeNull();
+    const gate = shell();
+    expect(gate).not.toBeNull();
 
     // Present, and that is the whole assertion: `inert=""` is how a bare boolean
     // attribute serialises, so presence is the signal rather than any particular value.
-    expect(region?.hasAttribute('inert')).toBe(true);
+    expect(gate?.hasAttribute('inert')).toBe(true);
+
+    // One gate, not two. A second `inert` somewhere in the tree would mean the shell gate
+    // and a leftover inner one had both been kept, and the inner one going stale would
+    // then be invisible.
+    expect(host.querySelectorAll('[inert]')).toHaveLength(1);
 
     // The banner explains why, in the contracted words.
-    expect(host.textContent).toContain(
-      'Another tab is drafting this tournament. This tab is read-only.',
-    );
+    expect(host.textContent).toContain(READ_ONLY_SENTENCE);
 
     // Now the host takes over.
     await act(async () => {
@@ -265,7 +323,8 @@ describe('the draft region in a read-only tab', () => {
       await Promise.resolve();
     });
 
-    expect(draftRegion()?.hasAttribute('inert')).toBe(false);
+    expect(shell()?.hasAttribute('inert')).toBe(false);
+    expect(host.querySelectorAll('[inert]')).toHaveLength(0);
     expect(rival.state().readOnly).toBe(true);
 
     rival.dispose();
@@ -284,8 +343,65 @@ describe('the draft region in a read-only tab', () => {
 
     // The ordinary case, and the one a regression would hit hardest: a lone tab that
     // cannot be drafted in is a broken app, not a cautious one.
-    expect(draftRegion()).not.toBeNull();
-    expect(draftRegion()?.hasAttribute('inert')).toBe(false);
+    expect(shell()).not.toBeNull();
+    expect(shell()?.hasAttribute('inert')).toBe(false);
     expect(host.textContent).not.toContain('read-only');
+  });
+
+  it('covers the landing screen, so a secondary tab cannot start a rival tournament', async () => {
+    seedSavedDraft();
+    const rival = rivalTabTakesTheLock();
+
+    // Deliberately no resume: this tab stays on the landing screen, which is where the
+    // T-02-15 sequence starts. Step 4 of 02-SECURITY.md is the host clicking
+    // `New tournament` here, filling the config form, and clicking `Start draft` —
+    // `handleStart` has no ownership check, `dispatch` is deliberately un-gated, and one
+    // autosave after promotion writes that rival tournament over the owner's draft.
+    await mountApp();
+
+    const gate = shell();
+    expect(gate).not.toBeNull();
+    expect(gate?.hasAttribute('inert')).toBe(true);
+
+    // CONTAINMENT, not a click. happy-dom parses `inert` but implements neither its focus
+    // nor its pointer semantics, so it would fire the handler quite happily and a click
+    // assertion here would prove the opposite of what it claimed. Whether the attribute
+    // truly blocks the press is the browser checkpoint's job; whether the button is under
+    // the attribute at all is this test's, and that is the half that rots in a refactor.
+    const newTournament = buttonNamed('New tournament');
+    expect(newTournament).toBeDefined();
+    expect(gate?.contains(newTournament ?? null)).toBe(true);
+
+    // The other half of the same assertion, and the reason it lives in this test rather
+    // than a separate one: a gate that swallowed the whole tree would satisfy the line
+    // above and lock the host out of the only route back. That was the retracted answer,
+    // and it would wear a passing test.
+    const takeover = buttonNamed(TAKEOVER_LABEL);
+    expect(takeover).toBeDefined();
+    expect(gate?.contains(takeover ?? null)).toBe(false);
+
+    rival.dispose();
+  });
+
+  it('leaves the polite live region outside itself, still carrying the sentence', async () => {
+    seedSavedDraft();
+    const rival = rivalTabTakesTheLock();
+
+    await mountApp();
+
+    const gate = shell();
+    const region = liveRegion();
+    expect(region).not.toBeNull();
+
+    // `inert` removes a subtree from the accessibility tree as well as from the input
+    // path, so a live region inside the gate is a live region that says nothing in
+    // precisely the tab that most needs to be told why it does not respond.
+    expect(gate?.contains(region)).toBe(false);
+
+    // On the region NODE, never on `host.textContent`: the banner renders the same
+    // sentence as visible copy, so a host-level assertion passes with the region silent.
+    expect(region?.textContent?.trim()).toBe(READ_ONLY_SENTENCE);
+
+    rival.dispose();
   });
 });

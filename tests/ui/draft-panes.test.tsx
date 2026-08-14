@@ -178,7 +178,7 @@ function seedSavedDraft(options: { poolSize?: number; picks?: number } = {}): vo
   expect(saveTournament(doc)).toBe(true);
 }
 
-/** Claim the tab lock so the draft region is never inert. */
+/** Claim the tab lock so the shell holding the screens is never inert. */
 function claimLock(): void {
   vi.useFakeTimers();
   claimOwnership();

@@ -156,8 +156,8 @@ describe('the read-only banner', () => {
 
     // Read-only is not an error — another tab simply got there first. The UI-SPEC
     // reserves the destructive colour for two surfaces and this is neither, so the
-    // non-colour signals (the sentence, and `inert` on the draft region) are the whole
-    // of the signalling. Even in the stale state, which is the tempting one to redden.
+    // non-colour signals (the sentence, and `inert` on the shell holding every screen)
+    // are the whole of the signalling. Even in the stale state, the tempting one to redden.
     expect(host.innerHTML).not.toContain('danger');
   });
 

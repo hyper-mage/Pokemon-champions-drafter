@@ -2,9 +2,10 @@
  * The store's write paths under the tab lock — PERS-03 / T-01-40 / CR-02.
  *
  * `dispatch` and `undo` are the two ways the document changes, and only one of them can
- * be reached from outside the `inert` draft region. `TopBar` registers `Ctrl+Z` on
- * `document`, which is not inside that subtree, so a read-only secondary tab could undo
- * the owner's pick from the keyboard while every visible control was correctly disabled.
+ * be reached from outside the `inert` shell that holds every screen. `TopBar` registers
+ * `Ctrl+Z` on `document`, which is not inside that subtree, so a read-only secondary tab
+ * could undo the owner's pick from the keyboard while every visible control was correctly
+ * disabled.
  *
  * The damage is not immediate and that is why it is worth a test at this level rather than
  * at the keyboard's. `persistence.save()` declines the write on the spot, so the secondary
