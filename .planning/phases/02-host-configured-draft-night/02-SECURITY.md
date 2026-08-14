@@ -5,7 +5,7 @@ status: draft
 threats_open: 1
 asvs_level: 1
 created: 2026-08-13
-audited_at: 49259a2
+audited_at: a67fa17
 diff_base: bc95fdd
 threats_total: 42
 threats_closed: 41
@@ -27,6 +27,10 @@ resource exhaustion in pure compute, and the cross-tab ownership model.
 Every threat was verified against code at commit `49259a2`. Line numbers cited in the eight
 PLAN.md files predate the eleven review-fix commits and were re-located rather than reported
 as misses. Evidence below is `file:line` at HEAD.
+
+The second run (`a67fa17`) re-established that `git diff 49259a2..HEAD -- src/ tests/ scripts/`
+is empty and the working tree is clean, so the 41 closed verdicts carry forward on unchanged
+code. Only the open threat was re-checked in source; see "Re-verification — 2026-08-13, run 2".
 
 ---
 
@@ -200,6 +204,25 @@ a Fragment so `inert` wraps the screens alone, delete the `.draft-region` `inert
 same change so there is one gate rather than two, then route unconditionally in
 `adoptWhateverIsNewer`.
 
+### Re-verification — 2026-08-13, run 2
+
+`/gsd-secure-phase 2` was re-run at `a67fa17`. `git log 49259a2..HEAD` contains one commit and
+it is the docs commit that added this file; `git diff 49259a2..HEAD -- src/ tests/ scripts/` is
+empty and `git status --porcelain` is empty. No mitigation could have appeared, and none did.
+
+The three load-bearing facts behind the failing sequence were re-read in source rather than
+carried over on trust:
+
+| Claim | Re-checked at `a67fa17` | Result |
+|---|---|---|
+| `inert` covers only the draft region, leaving the screens operable | `app.tsx:948` is the sole `inert` binding in `src/**/*.tsx`; `LandingScreen` `:896`, `ConfigScreen` `:919` are siblings outside it | unchanged — step 3 holds |
+| A promoted secondary keeps its own tournament | `adoptWhateverIsNewer` still early-returns on `loadIfNewer() === null`, `app.tsx:393-394` | unchanged — step 8 holds |
+| `handleStart` is reachable without ownership | `grep isOwner src/ui/screens/ConfigScreen.tsx` → no match | unchanged — step 4 holds |
+
+Offered the gate a second time, the host again chose to **hold** rather than accept. T-02-15
+was not re-dispositioned and was not entered in the Accepted Risks Log. `threats_open` stays
+`1` and phase advancement stays blocked.
+
 ---
 
 ## Accepted Risks Log
@@ -252,6 +275,7 @@ Two audit notes, neither a blocker:
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-08-13 | 42 | 41 | 1 | gsd-security-auditor (Claude) |
+| 2026-08-13 (run 2, `a67fa17`) | 42 | 41 | 1 | /gsd-secure-phase orchestrator — no code change since run 1; open threat re-checked in source |
 
 Gates run as part of this audit:
 
@@ -277,7 +301,7 @@ Gates run as part of this audit:
 - [ ] `threats_open: 0` confirmed — **currently 1 (T-02-15)**
 - [ ] `status: verified` set in frontmatter
 
-**Approval:** pending — blocked on T-02-15.
+**Approval:** pending — blocked on T-02-15. Gate held twice, 2026-08-13.
 
 Next: fix WR-07 by 02-REVIEW.md's carried-forward sequence, or re-disposition T-02-15 with a
 rationale that survives the failing sequence above, then re-run `/gsd-secure-phase 2`.
