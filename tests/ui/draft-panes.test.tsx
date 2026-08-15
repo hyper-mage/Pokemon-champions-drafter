@@ -406,6 +406,16 @@ describe('expanding a pane', () => {
 
   it('collapses the pool to a strip that offers the way back', async () => {
     await reachDraft();
+
+    /*
+     * WR-04. Held across the collapse so the assertions below can say CLEARED rather than
+     * merely absent — on a node that never carried them, "no `aria-disabled`" proves
+     * nothing, and 02-11's whole change is that this one node serves as both controls.
+     */
+    const poolControl = buttonNamed('Expand the pool');
+    expect(poolControl?.getAttribute('aria-disabled')).toBe('true');
+    expect(poolControl?.hasAttribute('aria-describedby')).toBe(true);
+
     await click(buttonNamed('Expand the draft board'));
 
     const strip = host.querySelector('.pane--collapsed');
@@ -429,6 +439,21 @@ describe('expanding a pane', () => {
 
     const restore = buttonNamed('Show the pool');
     expect(restore).toBeDefined();
+
+    /*
+     * The same DOM node as the inert expand above — stated as an assertion, because every
+     * line after it depends on it.
+     *
+     * The characteristic failure of node reuse is an attribute that gets SET and never
+     * cleared. Here that is a recovery control that works while announcing itself disabled,
+     * and an `aria-describedby` still pointing at the id of a reason span that no longer
+     * exists — a dangling reference, which is the worse half. The child-count assertions
+     * above cannot see either, and the pane-change assertion below would stay green through
+     * both, so this would ship green without these two lines.
+     */
+    expect(restore).toBe(poolControl);
+    expect(restore?.hasAttribute('aria-disabled')).toBe(false);
+    expect(restore?.hasAttribute('aria-describedby')).toBe(false);
 
     await click(restore);
 
