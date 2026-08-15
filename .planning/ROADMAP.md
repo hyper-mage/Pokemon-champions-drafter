@@ -103,7 +103,7 @@ Plans:
   4. Anyone at the table finds a Pokémon by name or narrows the pool by type and Mega-capability, and reads its sprite, typing, and base stats from across the room at any of the three density settings.
   5. At every moment the shared screen shows whose turn it is, the full players × rounds board as pick history, and each player's team as it fills; every destructive action confirms before committing.
 
-**Plans**: 10 plans
+**Plans**: 13 plans
 
 Plans:
 **Wave 1**
@@ -139,6 +139,18 @@ Plans:
 **Wave 8** *(blocked on Wave 7 completion)*
 
 - [x] 02-10-PLAN.md — human verification of the affordance and the pane alignment, which happy-dom cannot compute
+
+**Wave 9** *(gap closure, from 02-VERIFICATION.md CR-01 — new set, plan frontmatter `wave: 1`)*
+
+- [ ] 02-11-PLAN.md — one chrome vnode shape and a focus handoff, so a pane change never drops keyboard focus to `<body>` in either direction (CR-01, WR-08, WR-07, IN-02)
+
+**Wave 10** *(blocked on Wave 9 completion — plan frontmatter `wave: 2`)*
+
+- [ ] 02-12-PLAN.md — hover excluded on the inert control, a chrome row that wraps, comments corrected to the real mechanism, the whole visible reason string under one assertion, and the deferrals written down (WR-01, WR-02, WR-03, WR-05, WR-06)
+
+**Wave 11** *(blocked on Wave 10 completion — plan frontmatter `wave: 3`)*
+
+- [ ] 02-13-PLAN.md — human verification of focus, hover, alignment, copy and wrapping, none of which happy-dom can compute
 
 **UI hint**: yes
 **Notes**: This is the first phase that satisfies a draft-only night end to end. Research need MEDIUM-LOW, concentrated in the general feasibility arithmetic: pool-dry, worst-case ban starvation, and the ~34-player absolute ceiling (`players × 6 ≤ 207`). Mega-specific feasibility deliberately does NOT belong here — it needs the compiled schedule from Phase 3 to know how many Mega rounds exist. Pick order in this phase is a plain randomized rotating order; Phase 3 replaces it with priority cards. DRFT-09's "composing with the round's own restriction" is trivially satisfied here (no round restrictions exist yet) and becomes load-bearing in Phase 3. The legibility requirement (DRFT-14) is an acceptance criterion for the whole shared screen, not a polish item.
