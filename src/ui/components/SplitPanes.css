@@ -86,14 +86,40 @@
  * states, and a host confirmed this layout on a real screen under plan 02-10. Reclaiming that
  * height is not worth reopening a human-verified layout.
  *
- * `flex-wrap: wrap` is the reachability guarantee. This row holds a button and a
- * ~38-character label, neither of which shrinks below its content, and a `flex-end` row that
- * does not fit overflows its START edge — which no scroll in any browser can reach, and it is
- * the button that goes off the side, not the label. At every width where the row fits,
- * wrapping changes nothing; it only changes the case that was broken. `min-height` stays a
- * floor, so the chrome is exactly one target tall whenever the row fits and grows only when
- * the alternative is losing the control. `FeasibilityBar.css:14` is the precedent: the same
- * structure, a row holding a button plus a reason.
+ * `flex-wrap: wrap` is a reachability guarantee, and it is worth stating narrowly because the
+ * previous version of this comment overstated it in two ways a reader would act on.
+ *
+ * What holds: a `justify-content: flex-end` row that overflows does so past its START edge,
+ * which no scroll in any browser can reach, and the button is first in DOM order so it is the
+ * BUTTON that goes off the side rather than the label. Losing the control is the failure this
+ * rule exists to make unreachable.
+ *
+ * What does NOT hold is that neither item shrinks below its content. Both shrink: `flex-shrink`
+ * defaults to `1` and a flex item's automatic minimum size is `min-content`, and neither the
+ * button nor the span opts out of either. So there are two thresholds, not one. The row WRAPS
+ * when the sum of max-content widths stops fitting — button plus gap plus the ~38-character
+ * reason, on the order of 370 px. It only OVERFLOWS when the sum of min-content widths does,
+ * roughly `Expand` beside `complete`, well under 150 px, which no reachable viewport produces.
+ *
+ * Nor is it true that wrapping changes nothing wherever the row fits. Between those two
+ * thresholds is a band that was not broken and that this rule did change: the old declaration
+ * shrank both items and wrapped the reason's TEXT beside the button, and this one breaks the
+ * line and puts the reason BELOW it. That band is reachable — a phone inside the single-column
+ * query — and it is the case 02-13's host looked at directly and confirmed reads correctly on
+ * two rows rather than clipping.
+ *
+ * Which leaves chrome alignment untouched either way. Above the `80rem` query the reason only
+ * ever renders in a pool pane at `60fr` — about 725 px at the query's own width and wider
+ * beyond it — so the row does not wrap there at all. Below it the panes are stacked grid ROWS
+ * at full viewport width, so reaching ~370 px of pane means a viewport that narrow, and a
+ * stacked layout has no cross-pane chrome alignment to disturb.
+ *
+ * `min-height` stays a floor, so the chrome is exactly one target tall whenever the row fits
+ * and grows only when the alternative is losing the control. `FeasibilityBar.css:14` is the
+ * precedent: the same structure, a row holding a button plus a reason.
+ *
+ * The figures above are arithmetic over this file's own tokens and copy, not measurements:
+ * nothing in the suite computes layout, so 02-13's checkpoint owns what was actually seen.
  *
  * `align-items: center` does NOT prevent a wrap, and never did — nothing does now that
  * `flex-wrap` is declared, and a single row comes from the row fitting. What it buys is
