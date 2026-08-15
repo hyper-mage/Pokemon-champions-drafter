@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 2 planned — 8 plans across 6 waves, plan-checker passed after revision
-last_updated: "2026-08-14T23:49:35.438Z"
-last_activity: 2026-08-14 -- Phase 02 execution started
+last_updated: "2026-08-15T03:03:32.055Z"
+last_activity: 2026-08-15 -- Phase 02 planning complete
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 21
-  completed_plans: 19
+  total_plans: 24
+  completed_plans: 21
   percent: 20
 ---
 
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-08-03)
 Phase: 02 (host-configured-draft-night) — EXECUTING
 Plan: 1 of 10
 Plans: 8 of 8 written, 6 waves
-Status: Executing Phase 02
-Last activity: 2026-08-14 -- Phase 02 execution started
+Status: Ready to execute
+Last activity: 2026-08-15 -- Phase 02 planning complete
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -139,6 +139,11 @@ locked decisions tracing to an implementing task.
    each verified content-covered by hand (D-15 → 02-01+02-04; D-18/19 →
    02-06 `SplitPanes`; D-20 → 02-03 `view-prefs.ts`; D-25/26/28/30/31 →
    02-03). Gate measures citation location, not coverage.
+   **Re-hit and re-overridden 2026-08-15** on the `--gaps` run that added
+   02-11/02-12/02-13 (3/39 again, now against 13 plans). The three new plans
+   are a keyboard-focus regression fix and cite only D-21; requiring them to
+   claim 36 config/pool/ban decisions they do not touch would be false
+   traceability. Overridden with explicit user assent.
 
 2. **02-06 Task 3 is knowingly over the 30% per-task context budget** (~35%,
    12 files). Left whole on purpose: a confirm on `Abandon draft` while
