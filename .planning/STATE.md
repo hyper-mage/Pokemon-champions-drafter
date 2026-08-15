@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 02 complete (8/8) — ready to discuss Phase 3
-last_updated: 2026-08-12T22:47:32.842Z
-last_activity: 2026-08-11 -- Phase 02 execution started
+status: executing
+stopped_at: Phase 2 planned — 8 plans across 6 waves, plan-checker passed after revision
+last_updated: "2026-08-14T23:49:35.438Z"
+last_activity: 2026-08-14 -- Phase 02 execution started
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 19
+  completed_phases: 1
+  total_plans: 21
   completed_plans: 19
-  percent: 40
+  percent: 20
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** A group of friends can run an entire draft tournament — rules, bans, picks, swaps, brackets, results — start to finish inside the tool, without anyone reaching for a spreadsheet or a Discord message to track state.
-**Current focus:** Phase 3 — compiled rules, priority cards, swaps
+**Current focus:** Phase 02 — host-configured-draft-night
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
+Phase: 02 (host-configured-draft-night) — EXECUTING
+Plan: 1 of 10
 Plans: 8 of 8 written, 6 waves
-Status: Ready to plan
-Last activity: 2026-08-14 - Completed quick task 260813-tep: Fix WR-07 / T-02-15 — one inert gate around every screen
+Status: Executing Phase 02
+Last activity: 2026-08-14 -- Phase 02 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
