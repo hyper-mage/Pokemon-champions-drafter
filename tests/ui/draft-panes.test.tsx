@@ -466,6 +466,19 @@ describe('expanding a pane', () => {
   it("moves focus to the collapsed pane's restore control when a pane expands", async () => {
     await reachDraft();
 
+    /*
+     * WR-03. Captured BEFORE the change, because identity is what this test was missing
+     * and afterwards there is nothing left to compare against.
+     *
+     * The sibling test above pins reuse for `board → split`. This direction had no pin,
+     * and the focus effect is precisely what would hide its absence: if Preact remounted
+     * the pool's button here, the FRESHLY MOUNTED node would be the one `collapsedControlRef`
+     * caught, the effect would focus that, and both assertions at the bottom would pass
+     * while CR-01 — a destroyed-and-recreated recovery control — had been reintroduced.
+     */
+    const poolControl = buttonNamed('Expand the pool');
+    expect(poolControl).toBeDefined();
+
     // WR-08: an expanded pane carries no control of its own, so the button the host just
     // pressed is genuinely gone. The fix is not to keep it — it is to hand focus to its
     // successor, which is the restore on the strip opposite.
@@ -473,6 +486,10 @@ describe('expanding a pane', () => {
 
     const restore = buttonNamed('Show the pool');
     expect(restore).toBeDefined();
+
+    // The same DOM node, relabelled — not a new button wearing the expected name.
+    expect(restore).toBe(poolControl);
+
     expect(document.activeElement).toBe(restore);
     expect(document.activeElement).not.toBe(document.body);
   });
