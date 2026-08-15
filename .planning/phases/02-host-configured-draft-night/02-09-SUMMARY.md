@@ -153,6 +153,21 @@ None.
 - Plan 02-10 inherits two named, scoped visual checks: chrome alignment across all pane-state combinations, and whether the inert control reads as unavailable at three metres.
 - The inert-with-reason pattern is now established in two components (`FeasibilityBar`, `SplitPanes`) and is the phase's answer to any control that must be visible but unavailable.
 
+## Self-Check: PASSED
+
+All four claimed files exist on disk. All three task commits plus this metadata commit are
+present in `git log`: `941349a`, `110600a`, `c56a205`, `d7f05b0`.
+
+## TDD Gate Compliance
+
+Task 1 carried `tdd="true"` and its gate sequence is intact in git history:
+
+- **RED** — `941349a` `test(02-09)`, test-only, verified failing (2 failed / 18 passed, both
+  failures `expected undefined to be defined` against `Expand the pool`).
+- **GREEN** — `110600a` `feat(02-09)`, implementation, scoped run 20/20 then `npm run verify`
+  green.
+- **REFACTOR** — none. The implementation needed no cleanup, which the protocol permits.
+
 ---
 *Phase: 02-host-configured-draft-night*
 *Completed: 2026-08-14*
