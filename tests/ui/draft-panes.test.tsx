@@ -29,6 +29,14 @@
  *     `::before` content. Whether it reaches the control's accessible description is not
  *     observable here — and it most likely DOES reach it in a real browser. That is
  *     accepted as cosmetic, not avoided.
+ *
+ * A third joined under plan 02-11, and it is about focus rather than layout: nothing here
+ * can observe how a real browser moves focus on POINTER activation. happy-dom's
+ * `element.click()` does not focus its target, and Safari genuinely does not focus a button
+ * when it is clicked. So the focus assertions below pin the KEYBOARD path — they focus the
+ * control explicitly first, which is what `focusAndClick` is for and why it proves the
+ * focus took before it clicks. Plan 02-13 owns the real-browser confirmation of both
+ * directions.
  */
 
 import { render } from 'preact';
@@ -221,6 +229,20 @@ async function click(element: HTMLElement | undefined): Promise<void> {
   });
 }
 
+/**
+ * Put the keyboard on a control, PROVE it landed there, and only then activate it.
+ *
+ * The middle step is not ceremony. happy-dom's `focus()` no-ops silently on anything it
+ * does not treat as focusable, and without the pre-assertion every focus test below would
+ * be comparing `document.body` to `document.body` and passing for the wrong reason.
+ */
+async function focusAndClick(element: HTMLElement | undefined): Promise<void> {
+  expect(element).toBeDefined();
+  element?.focus();
+  expect(document.activeElement).toBe(element);
+  await click(element);
+}
+
 /** Land on the draft screen through the resume route — the shortest of the three. */
 async function reachDraft(options: { poolSize?: number; picks?: number } = {}): Promise<void> {
   seedSavedDraft(options);
@@ -304,9 +326,14 @@ describe('the pool and the board are on screen together', () => {
   it('refuses the pool expand mid-draft, so the board cannot be hidden', async () => {
     await reachDraft();
 
-    await click(buttonNamed('Expand the pool'));
+    const poolExpand = buttonNamed('Expand the pool');
+    await focusAndClick(poolExpand);
 
     expect(panesRoot()?.getAttribute('data-pane')).toBe('split');
+
+    // A refusal moves nothing, and that includes focus. The host is still on the control
+    // they pressed, free to tab onward from where they were rather than from `<body>`.
+    expect(document.activeElement).toBe(poolExpand);
 
     // "Not that message" rather than emptiness: reaching the draft makes `TurnBanner`
     // announce whose turn it is, which the coercion test below already establishes.
@@ -377,6 +404,15 @@ describe('expanding a pane', () => {
     const chrome = strip?.querySelector('.pane__chrome');
     expect(chrome?.querySelectorAll('button')).toHaveLength(1);
 
+    /*
+     * IN-02. The button count alone cannot see a `<span>` leaking in, and after 02-11
+     * merged the two chrome branches into one subtree the `!collapsed` guard on
+     * `showReason` is the only thing keeping a ~38-character reason out of a strip one
+     * target wide, whose button is `writing-mode: vertical-rl`.
+     */
+    expect(chrome?.childElementCount).toBe(1);
+    expect(strip?.querySelector('.pane__reason')).toBeNull();
+
     const restore = buttonNamed('Show the pool');
     expect(restore).toBeDefined();
 
@@ -384,6 +420,47 @@ describe('expanding a pane', () => {
 
     expect(panesRoot()?.getAttribute('data-pane')).toBe('split');
     expect(liveRegionText()).toBe('Pool and draft board shown side by side.');
+  });
+
+  /*
+   * CR-01 and WR-08 — the two halves of one regression, one test each.
+   *
+   * The test directly above asserted `data-pane` and the live-region message after this
+   * exact click and never once looked at `document.activeElement`, which is precisely why
+   * CR-01 shipped: `.pane--collapsed .pane__button` is `writing-mode: vertical-rl`, so a
+   * button Preact destroyed and recreated looks identical on screen. Only a keyboard, a
+   * switch or a screen reader can tell, and none of them was asserted.
+   */
+  it('keeps focus on the restore control across the collapse-to-split change', async () => {
+    await reachDraft();
+    await click(buttonNamed('Expand the draft board'));
+
+    const restore = buttonNamed('Show the pool');
+    expect(restore).toBeDefined();
+
+    await focusAndClick(restore);
+
+    expect(document.activeElement).toBe(restore);
+    expect(document.activeElement).not.toBe(document.body);
+
+    // Node IDENTITY, not label equality. This is the assertion that proves Preact reused
+    // the element — a fix that merely moved focus back onto a freshly created button
+    // would satisfy the line above and fail this one.
+    expect(buttonNamed('Expand the pool')).toBe(restore);
+  });
+
+  it("moves focus to the collapsed pane's restore control when a pane expands", async () => {
+    await reachDraft();
+
+    // WR-08: an expanded pane carries no control of its own, so the button the host just
+    // pressed is genuinely gone. The fix is not to keep it — it is to hand focus to its
+    // successor, which is the restore on the strip opposite.
+    await focusAndClick(buttonNamed('Expand the draft board'));
+
+    const restore = buttonNamed('Show the pool');
+    expect(restore).toBeDefined();
+    expect(document.activeElement).toBe(restore);
+    expect(document.activeElement).not.toBe(document.body);
   });
 
   /**
@@ -430,6 +507,12 @@ describe('expanding a pane', () => {
     // Read in a state initializer, so the very first paint is already the host's pane.
     // An effect would render `split` and then jump.
     expect(panesRoot()?.getAttribute('data-pane')).toBe('board');
+
+    // The no-focus-stealing pin, and it belongs here because this is the only test whose
+    // pane state is set by something other than a control activation. The focus handoff
+    // 02-11 added must fire for a host who pressed a button and for nobody else — a
+    // stored preference restoring on mount moves focus nowhere.
+    expect(document.activeElement).toBe(document.body);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact';
+import { useLayoutEffect, useRef } from 'preact/hooks';
 
 import type { PaneState } from '../../adapters/view-prefs';
 import { announce } from './LiveRegion';
@@ -62,6 +63,43 @@ const SPLIT_MESSAGE = 'Pool and draft board shown side by side.';
  */
 const POOL_EXPAND_REASON = 'Available once the draft is complete';
 
+/**
+ * Whether a side's expand is available and, when it is not, why — as ONE value, because it
+ * is one fact.
+ *
+ * These were two independent parameters: an `expandable` boolean, and a nullable `reason`
+ * string. The pair `(false, null)` compiled, and it rendered an `aria-disabled` control with no
+ * `aria-describedby` and no visible text: precisely the state UAT test 9 reported, silently
+ * reintroducible at any time (WR-07). This file's doc blocks already asserted that "the
+ * explanation is the whole reason for rendering the control", and nothing enforced it.
+ *
+ * The union is the enforcement. An unavailable expand without its explanation is no longer
+ * a bug to be caught in review — it does not type-check.
+ */
+type PaneAvailability = { available: true } | { available: false; reason: string };
+
+/**
+ * `side()`'s parameters, named.
+ *
+ * Plan 02-09 deliberately chose an eighth POSITIONAL parameter here, on the grounds that
+ * every other piece of copy `side()` renders was already positional. That decision is
+ * reversed rather than forgotten: it left eight parameters with four adjacent strings, and
+ * transposing any two of them is clean at compile time and surfaces as the wrong copy on a
+ * shared screen. Five strings in a row cannot be checked by eye, so the call sites name
+ * them instead.
+ *
+ * An interface rather than an inline type literal, so these names have one definition.
+ */
+interface SideOptions {
+  key: 'pool' | 'board';
+  collapsed: boolean;
+  children: ComponentChildren;
+  expandLabel: string;
+  restoreLabel: string;
+  expandedMessage: string;
+  availability: PaneAvailability;
+}
+
 export interface SplitPanesProps {
   /** 'split' | 'pool' | 'board' — the value from `src/adapters/view-prefs.ts`. */
   pane: PaneState;
@@ -89,11 +127,61 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
   const boardExpanded = pane === 'board';
 
   /**
+   * The restore control on whichever side is currently collapsed — the successor a focus
+   * handoff aims at, and the only way back from a strip.
+   *
+   * Attached conditionally in `side()`, because both panes call that function and at most
+   * one of them is collapsed at a time. An unconditional attach would let the second call
+   * overwrite what the first stored.
+   */
+  const collapsedControlRef = useRef<HTMLButtonElement | null>(null);
+
+  /**
+   * The control the host actually activated — and only when the keyboard was genuinely on
+   * it. Recorded in the click handler, consumed and cleared by the effect below.
+   */
+  const activatedControlRef = useRef<HTMLButtonElement | null>(null);
+
+  /**
+   * Hand focus to the successor control — and ONLY when the one the host activated has
+   * left the document.
+   *
+   * WR-08: an expanded pane carries no control of its own, so pressing an expand removes
+   * the very button that was pressed and focus falls to `<body>`. That is the correct
+   * markup — the restore lives on the collapsed strip opposite, where the missing content
+   * is — so the fix is not to keep the node, it is to pass focus on.
+   *
+   * What this deliberately does NOT do is move focus for a pane change nobody activated.
+   * The stored-preference restore on mount and the mid-draft coercion in `app.tsx` both
+   * change `pane` with no host input, and stealing focus from either would be a worse bug
+   * than the one being fixed. Two conditions guard it, both read rather than assumed: the
+   * activated element was `document.activeElement` at activation time, and it is no longer
+   * `isConnected`.
+   *
+   * `isConnected` rather than keying this effect on `pane` and inferring the direction: the
+   * effect then states its own precondition instead of encoding a map from pane transitions
+   * to outcomes that a later change to the membership rule would silently invalidate. The
+   * collapsed-to-split case needs no handoff at all, because that button is reused — which
+   * is exactly what `isConnected` observes.
+   *
+   * No dependency array on purpose: it runs after every render and always clears its own
+   * state, so a recorded control can never survive into a later, unrelated render.
+   */
+  useLayoutEffect(() => {
+    const activated = activatedControlRef.current;
+    activatedControlRef.current = null;
+
+    if (activated === null) return;
+    if (activated.isConnected) return;
+
+    collapsedControlRef.current?.focus();
+  });
+
+  /**
    * One side, in one of its two shapes — and it is ONE SUBTREE in both of them.
    *
-   * `collapsed` narrows the pane to a strip and swaps the control in its chrome for the
-   * one that brings the other side back; the children go on rendering either way, and CSS
-   * hides the track. That is not a stylistic preference: unmounting them discarded the
+   * `collapsed` narrows the pane to a strip; the children go on rendering either way, and
+   * CSS hides the track. That is not a stylistic preference: unmounting them discarded the
    * pool's ephemeral state, which `PoolGrid` owns and which includes the host's search
    * text and type filters. A host who narrowed the pool to Fire, expanded the board to
    * check a rival's team and came back found their filters gone with no announcement —
@@ -105,17 +193,31 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
    * The pane that is currently expanded carries no control of its own — the restore lives
    * on the collapsed strip, where the missing content is, and two buttons saying the same
    * thing on one screen is how a host learns to stop reading either.
+   *
+   * --- ONE CONTROL, ONE SHAPE, AND WHY THAT IS A CONTRACT ---
+   *
+   * The chrome does not SWAP one control for another across the collapsed boundary. There
+   * is exactly one control in exactly one vnode shape, and `collapsed` changes its LABEL
+   * and what its click does — nothing structural.
+   *
+   * That is load-bearing rather than tidy. This function used to render a bare button
+   * vnode in the collapsed branch and a Fragment in the other, so that the reason span
+   * could sit beside the expand. Preact cannot reuse a DOM node across a vnode type: it
+   * unmounted the old subtree and mounted a new one, `document.activeElement` fell to
+   * `<body>`, and it did so on the one control whose entire job is recovery (CR-01). The
+   * strip's button is `writing-mode: vertical-rl`, so nothing about it looked different and
+   * only a keyboard, a switch or a screen reader could tell.
+   *
+   * --- AVAILABILITY AND ITS EXPLANATION ARE ONE PARAMETER ---
+   *
+   * See `PaneAvailability` above for why. In short: they are one fact, they were two
+   * independent parameters, and the combination "unavailable, no reason given" was
+   * therefore representable and reproduced the exact defect UAT test 9 reported (WR-07).
    */
-  function side(
-    key: 'pool' | 'board',
-    collapsed: boolean,
-    children: ComponentChildren,
-    expandLabel: string,
-    restoreLabel: string,
-    expandedMessage: string,
-    expandable: boolean,
-    reason: string | null,
-  ) {
+  function side(options: SideOptions) {
+    const { key, collapsed, children, expandLabel, restoreLabel, expandedMessage, availability } =
+      options;
+
     // Expanded here means "this side has the whole width", which is exactly when the
     // other side is collapsed and already offers the way back.
     const isFullWidth = pane === key;
@@ -124,7 +226,25 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
     // honest about being generic — even though only the pool can currently reach the
     // inert branch.
     const reasonId = `${key}-expand-reason`;
-    const showReason = !expandable && reason !== null;
+
+    // The chrome carries a control whenever this pane is collapsed OR is not the pane
+    // holding the whole width. Named rather than inlined: the whole point of the change
+    // that introduced it is that a later reader can see there is ONE shape here.
+    const hasControl = collapsed || !isFullWidth;
+
+    // A restore control is never inert; only an unavailable EXPAND is.
+    const isInert = !collapsed && !availability.available;
+
+    // The ternary is where TypeScript narrows the union, so `availability.reason` is
+    // reachable only on the branch that has one — no cast, no non-null assertion, and no
+    // optional chaining standing in for a proof.
+    const reason = availability.available ? null : availability.reason;
+
+    // The `!collapsed` guard is load-bearing, not defensive. While the two chrome states
+    // were separate subtrees the collapsed branch simply had no span to render; now that
+    // both share one subtree, this guard is the only thing keeping a ~38-character reason
+    // out of a strip one `--target-min` wide whose button is set vertically.
+    const showReason = !collapsed && reason !== null;
 
     return (
       <section class={collapsed ? 'pane pane--collapsed' : 'pane'} data-side={key}>
@@ -135,51 +255,64 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
           they are deep in a long pool and cannot tell two sprites apart.
         */}
         <div class="pane__chrome">
-          {collapsed ? (
-            <button
-              type="button"
-              class="pane__button"
-              onClick={() => change('split', SPLIT_MESSAGE)}
-            >
-              {restoreLabel}
-            </button>
-          ) : (
-            /*
-              `expandable` is NOT part of the membership test. An unavailable expand is
-              rendered and made inert; only an already-expanded pane carries no control,
-              because the restore lives on the collapsed strip opposite.
+          {/*
+            `expandable` is NOT part of the membership test. An unavailable expand is
+            rendered and made inert; only an already-expanded pane carries no control,
+            because the restore lives on the collapsed strip opposite.
 
-              `aria-disabled` alone, and deliberately no native `disabled` — the same trade
-              `FeasibilityBar` documents. A natively disabled button is not focusable, so a
-              keyboard user could never reach the explanation, and the explanation is the
-              whole reason for rendering the control.
-            */
-            !isFullWidth && (
-              <>
-                <button
-                  type="button"
-                  class="pane__button"
-                  aria-disabled={expandable ? undefined : 'true'}
-                  aria-describedby={showReason ? reasonId : undefined}
-                  onClick={() => {
-                    // The early return IS the refusal, exactly as `handleStart` does it.
-                    // `change` is never called for an inert control, so nothing reaches
-                    // `onPaneChange` and nothing is written or announced.
-                    if (!expandable) return;
-                    change(key, expandedMessage);
-                  }}
-                >
-                  {expandLabel}
-                </button>
+            `aria-disabled` alone, and deliberately no native `disabled` — the same trade
+            `FeasibilityBar` documents. A natively disabled button is not focusable, so a
+            keyboard user could never reach the explanation, and the explanation is the
+            whole reason for rendering the control.
+          */}
+          {hasControl && (
+            <>
+              <button
+                type="button"
+                class="pane__button"
+                // Only the collapsed side holds the ref: it is the successor the focus
+                // handoff aims at, and only one side can be collapsed at a time.
+                //
+                // `null` rather than `undefined` for the other side, and that is the
+                // compiler's call, not a style choice: `Ref<T>` is
+                // `RefObject<T> | RefCallback<T> | null`, and `exactOptionalPropertyTypes`
+                // is on, so `undefined` here does not type-check. Preact detaches on
+                // either, since it only re-attaches for a truthy ref.
+                ref={collapsed ? collapsedControlRef : null}
+                aria-disabled={isInert ? 'true' : undefined}
+                aria-describedby={showReason ? reasonId : undefined}
+                onClick={(event) => {
+                  // The early return IS the refusal, exactly as `handleStart` does it.
+                  // `change` is never called for an inert control, so nothing reaches
+                  // `onPaneChange`, nothing is written and nothing is announced — and
+                  // `activatedControlRef` is left untouched, so focus does not move either.
+                  if (isInert) return;
 
-                {/* Button first, reason second, in DOM order as in visual order. */}
-                {showReason && (
-                  <span class="pane__reason" id={reasonId}>
-                    {reason}
-                  </span>
-                )}
-              </>
-            )
+                  // Arm the handoff, but only for a host who was actually ON this control.
+                  // Without the `activeElement` test a pointer user who clicked without
+                  // focusing would have focus yanked somewhere they never put it.
+                  const button = event.currentTarget;
+                  activatedControlRef.current =
+                    document.activeElement === button ? button : null;
+
+                  if (collapsed) {
+                    change('split', SPLIT_MESSAGE);
+                    return;
+                  }
+
+                  change(key, expandedMessage);
+                }}
+              >
+                {collapsed ? restoreLabel : expandLabel}
+              </button>
+
+              {/* Button first, reason second, in DOM order as in visual order. */}
+              {showReason && (
+                <span class="pane__reason" id={reasonId}>
+                  {reason}
+                </span>
+              )}
+            </>
           )}
         </div>
 
@@ -196,29 +329,30 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
         without an argument — see that file's responsive comment for the one place
         02-UI-SPEC asks for the opposite and why this order wins.
       */}
-      {side(
-        'pool',
-        boardExpanded,
-        pool,
-        EXPAND_POOL_LABEL,
-        RESTORE_POOL_LABEL,
-        POOL_EXPANDED_MESSAGE,
+      {side({
+        key: 'pool',
+        collapsed: boardExpanded,
+        children: pool,
+        expandLabel: EXPAND_POOL_LABEL,
+        restoreLabel: RESTORE_POOL_LABEL,
+        expandedMessage: POOL_EXPANDED_MESSAGE,
         // The one asymmetry between the two sides, and it is scoped rather than structural.
-        poolExpandable,
-        POOL_EXPAND_REASON,
-      )}
+        availability: poolExpandable
+          ? { available: true }
+          : { available: false, reason: POOL_EXPAND_REASON },
+      })}
 
-      {side(
-        'board',
-        poolExpanded,
-        board,
-        EXPAND_BOARD_LABEL,
-        RESTORE_BOARD_LABEL,
-        BOARD_EXPANDED_MESSAGE,
-        // The board's expand is never inert, so it never needs a reason.
-        true,
-        null,
-      )}
+      {side({
+        key: 'board',
+        collapsed: poolExpanded,
+        children: board,
+        expandLabel: EXPAND_BOARD_LABEL,
+        restoreLabel: RESTORE_BOARD_LABEL,
+        expandedMessage: BOARD_EXPANDED_MESSAGE,
+        // The board's expand is never inert, so it never needs a reason — and now it
+        // cannot supply one.
+        availability: { available: true },
+      })}
     </div>
   );
 }
