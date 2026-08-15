@@ -14,26 +14,38 @@ A group of friends can run an entire draft tournament — rules, bans, picks, sw
 
 ### Validated
 
-(None yet — ship to validate)
+**Validated in Phase 2: Host-Configured Draft Night** — a group can configure a tournament for N
+named players, ban directly, build a pool, and draft on one shared screen. Requirement IDs are
+traced in `REQUIREMENTS.md`; `02-VERIFICATION.md` scores 11/11 must-haves.
+
+- [x] Host configures a tournament: player count, player names, format label (singles/doubles), and rule set — `DRFT-01`
+- [x] Tool auto-sizes the draft pool from player count with enough leftovers for swaps; host can override the size — `DRFT-02`, `DRFT-03`
+- [x] Pool displays each Pokémon with sprite, typing, and base stats; host toggles display density (minimal / standard / full) — `DRFT-05`, `DRFT-06`
+- [x] Drafted Pokémon leave the pool immediately and cannot be picked again — `DRFT-07`
+- [x] Pool supports search by name — `DRFT-08`
+- [x] Pool supports filtering by type and Mega-capability, composing with the round's own restriction — `DRFT-09`
+- [x] A draft board grid (players × rounds) doubles as pick history — `DRFT-10`
+- [x] Each player's roster is visible as it fills, during the draft and not only at completion — `DRFT-11`
+- [x] A clear on-the-clock indicator shows whose turn it is — `DRFT-12`
+- [x] Destructive actions confirm before committing — `DRFT-13`
+- [x] Pool and board are legible from across a room, since everyone is reading one shared screen — `DRFT-14`
+- [x] For dual-Mega species (Charizard, Raichu, Meowstic), the host sets X, Y, or Either at config time — `DRFT-15`
+- [x] An initial player-order randomizer — `DRFT-16`
+- [x] Host chooses the ban mode when creating the tournament — `BAN-01`
+- [x] Host mode: host defines the banlist directly, no per-player bans — `BAN-02`
+- [x] Banned Pokémon never appear in the pool at all — `BAN-08`
+- [x] A config-time feasibility check runs before the draft starts, disabling Start with a stated reason when the rules, player count, bans, and roster cannot all be satisfied — `RULE-07`
+
+> Phase 1's requirements (`ROST-*`, `SHEL-*`, `PERS-*`, `EXPO-01`–`03`) are marked Complete in
+> `REQUIREMENTS.md` but were never migrated into this section when that phase closed. They belong
+> here; migrating them is outstanding.
 
 ### Active
 
 **Draft core**
 
-- [ ] Host configures a tournament: player count, player names, format label (singles/doubles), and rule set
-- [ ] Tool auto-sizes the draft pool from player count with enough leftovers for swaps; host can override the size
-- [ ] Draft runs six rounds, one pick per player per round, until every player has a team of six
-- [ ] Pool displays each Pokémon with sprite, typing, and base stats; host toggles display density (minimal / standard / full)
-- [ ] Drafted Pokémon leave the pool immediately and cannot be picked again
+- [ ] Draft runs six rounds, one pick per player per round, until every player has a team of six — `DRFT-04`, Phase 3
 - [ ] Host can undo or edit the last pick at any point
-- [ ] Pool supports search by name
-- [ ] Pool supports filtering by type and Mega-capability, composing with the round's own restriction
-- [ ] A draft board grid (players × rounds) doubles as pick history
-- [ ] Each player's roster is visible as it fills, during the draft and not only at completion
-- [ ] A clear on-the-clock indicator shows whose turn it is
-- [ ] Destructive actions confirm before committing
-- [ ] Pool and board are legible from across a room, since everyone is reading one shared screen
-- [ ] For dual-Mega species (Charizard, Raichu, Meowstic), the host sets X, Y, or Either at config time
 
 **Pick order — priority cards**
 
@@ -47,11 +59,8 @@ A group of friends can run an entire draft tournament — rules, bans, picks, sw
 
 **Bans**
 
-- [ ] Host chooses the ban mode when creating the tournament
 - [ ] Blind mode: each player submits bans privately, all revealed together before the pool is built
 - [ ] Snake mode: players ban in turn order with previous bans visible
-- [ ] Host mode: host defines the banlist directly, no per-player bans
-- [ ] Banned Pokémon never appear in the pool at all
 - [ ] Host chooses the duplicate-ban policy at config time: both bans apply with one wasted, or a collision grants a re-ban
 - [ ] Blind mode uses a real full-screen pass-the-device interstitial, not an input mask, and the back button cannot resurrect a private screen
 
@@ -62,7 +71,6 @@ A group of friends can run an entire draft tournament — rules, bans, picks, sw
 - [ ] Host can maintain a Mega-ban list: Pokémon that are Mega-capable but not permitted to Mega this tournament, excluded from Mega rounds
 - [ ] Compiled rounds type the resulting team slots, so a slot's constraint survives swaps
 - [ ] Host can reorder the derived round schedule; a full generic schedule editor is out of scope for v1
-- [ ] A config-time feasibility check runs before the draft starts, disabling Start with a stated reason when the rules, player count, bans, and roster cannot all be satisfied
 - [ ] Feasibility is re-checked after the ban reveal, since bans change the arithmetic
 
 **Swaps**
@@ -84,7 +92,6 @@ A group of friends can run an entire draft tournament — rules, bans, picks, sw
 - [ ] One numeric result field per match (Pokémon remaining or KO differential) to feed the standings tiebreak
 - [ ] A short deterministic standings tiebreak chain — record, then differential, then head-to-head — ending in an explicit host override rather than an automatic Buchholz-style computation
 - [ ] A seeded top-N cut connecting round robin into the elimination bracket
-- [ ] An initial player-order randomizer
 - [ ] A free-text house-rules field on the tournament page
 
 **Export**
@@ -221,4 +228,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-03 after initialization and domain research*
+*Last updated: 2026-08-15 after Phase 2 (Host-Configured Draft Night) completed — 13/13 plans, 11/11 must-haves verified*
