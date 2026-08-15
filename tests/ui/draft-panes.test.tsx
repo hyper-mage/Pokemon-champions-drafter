@@ -478,6 +478,54 @@ describe('expanding a pane', () => {
   });
 
   /**
+   * WR-01 — the regression 02-11's own handoff introduced.
+   *
+   * The handoff moves focus to the control opposite, and that control is activated by the
+   * same key that caused the move. A held Enter auto-repeats `keydown` and a `<button>`
+   * activates on every repeat, so one hold walked split → board → split → pool → split for
+   * as long as it was held, writing the view preference and rewriting the live region on
+   * each step.
+   *
+   * WHAT THIS PINS, AND WHAT IT DELIBERATELY DOES NOT — the header's rule, applied to the
+   * test that most invites breaking it. happy-dom does not activate a button from an Enter
+   * `keydown`: probed directly, a dispatched `keydown` produces zero `click` events. So the
+   * obvious test — press Enter three times, assert the pane did not move — passes just as
+   * green against a component with NO guard at all, because nothing ever activated. That is
+   * the assertion this file's header calls worse than none.
+   *
+   * What is observable here is the DECISION: a repeat is cancelled, a first press is not,
+   * and Space is untouched. That `preventDefault()` on `keydown` suppresses the activation
+   * is browser behaviour, and it belongs with the pointer-path focus note above — a real
+   * browser owns it.
+   */
+  it('refuses a repeated Enter, so a held key cannot walk the panes', async () => {
+    // The completed draft, where all three pane states are reachable and the cycle is
+    // therefore unbounded. Mid-draft it self-terminates after two steps only because the
+    // pool expand happens to be inert, which is luck rather than a guard.
+    await reachDraft({ picks: 12 });
+
+    const expand = buttonNamed('Expand the draft board');
+    expect(expand).toBeDefined();
+
+    function press(key: string, repeat: boolean): KeyboardEvent {
+      const event = new KeyboardEvent('keydown', { key, repeat, bubbles: true, cancelable: true });
+      expand?.dispatchEvent(event);
+      return event;
+    }
+
+    // The press itself still has to work. Refusing this would make the button unusable
+    // from the keyboard, which is a worse bug than the one being fixed.
+    expect(press('Enter', false).defaultPrevented).toBe(false);
+
+    // Every repeat after it is that same press, still held down.
+    expect(press('Enter', true).defaultPrevented).toBe(true);
+
+    // Space activates on keyup, so its repeats activate nothing and there is nothing to
+    // refuse — cancelling here would take the press with them.
+    expect(press(' ', true).defaultPrevented).toBe(false);
+  });
+
+  /**
    * "What an expand button changes is the RATIO, never the membership" — the component's
    * own doc block, and until this test the component did the opposite.
    *

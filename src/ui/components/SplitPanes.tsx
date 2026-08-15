@@ -303,6 +303,21 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
                 ref={collapsed ? collapsedControlRef : null}
                 aria-disabled={isInert ? 'true' : undefined}
                 aria-describedby={showReason ? reasonId : undefined}
+                // A held Enter auto-repeats `keydown`, and a `<button>` activates on every
+                // repeat — so the handoff above delivers the NEXT control under a key that is
+                // still down. Before this guard one hold walked split → board → split → pool
+                // → split for as long as it was held, writing the view preference and
+                // rewriting the live region on every step, and the host landed on whichever
+                // pane the release happened to fall on (WR-01). The handoff is correct; what
+                // is wrong is treating a repeat as a second press, so it is refused here
+                // rather than compensated for in the effect.
+                //
+                // Enter ONLY. A button activates on Space's KEYUP, so Space repeats activate
+                // nothing and there is nothing to refuse — while cancelling their `keydown`
+                // would suppress the press itself.
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && event.repeat) event.preventDefault();
+                }}
                 onClick={(event) => {
                   // The early return IS the refusal, exactly as `handleStart` does it.
                   // `change` is never called for an inert control, so nothing reaches
