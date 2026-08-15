@@ -69,18 +69,40 @@
 }
 
 /*
- * The `min-height` is LOAD-BEARING, not cosmetic. An expanded pane's chrome holds no
- * control at all, so it collapsed to zero height and that pane's scroll track started one
- * target-height above the other's. Reserving the height makes both panes' content start on
- * the same line in every combination of states — that misalignment is what UAT test 9
- * reported as a failed render.
+ * --- WHAT EQUALISES THE TWO CHROMES, AND IT IS NOT THIS RULE ---
  *
- * `align-items: center` keeps the button and its reason on one row, so the chrome stays
- * exactly one target tall rather than growing to two.
+ * In every reachable state that shows two scroll tracks, each chrome holds a control, and
+ * what makes the two the same height is the button's own `min-height` on `.pane__button`
+ * below. Rendering that button is what fixed UAT test 9; the misalignment reported there was
+ * a symptom of the control being omitted, not a separate defect. Enumerating `side()`: a
+ * chrome is empty only when `!collapsed && isFullWidth`, and that pane's sibling is then
+ * `pane--collapsed` with its `.pane__scroll` at `display: none` — so an empty chrome and two
+ * visible tracks never co-occur.
+ *
+ * What the reservation here DOES do is hold the row open in the two full-width states, so an
+ * expanded pane's empty chrome does not jump its content upward on every toggle. The cost is
+ * stated rather than hidden: one target's worth of scroll height, in a pane whose whole
+ * premise is `100dvh`. It is kept anyway — dropping it moves content in exactly those two
+ * states, and a host confirmed this layout on a real screen under plan 02-10. Reclaiming that
+ * height is not worth reopening a human-verified layout.
+ *
+ * `flex-wrap: wrap` is the reachability guarantee. This row holds a button and a
+ * ~38-character label, neither of which shrinks below its content, and a `flex-end` row that
+ * does not fit overflows its START edge — which no scroll in any browser can reach, and it is
+ * the button that goes off the side, not the label. At every width where the row fits,
+ * wrapping changes nothing; it only changes the case that was broken. `min-height` stays a
+ * floor, so the chrome is exactly one target tall whenever the row fits and grows only when
+ * the alternative is losing the control. `FeasibilityBar.css:14` is the precedent: the same
+ * structure, a row holding a button plus a reason.
+ *
+ * `align-items: center` does NOT prevent a wrap, and never did — nothing does now that
+ * `flex-wrap` is declared, and a single row comes from the row fitting. What it buys is
+ * vertically centring the shorter reason span against the taller button.
  */
 .pane__chrome {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
   gap: var(--space-2);
@@ -137,7 +159,18 @@
   transition: background-color 120ms ease;
 }
 
-.pane__button:hover {
+/*
+ * The exclusion is the point. Without it the refused control lights up exactly like the live
+ * one while `cursor: not-allowed` applies at the same time, so the host gets one signal
+ * saying pressable and one saying not-pressable on the same element, followed by a click that
+ * does nothing.
+ *
+ * `:not([aria-disabled='true'])` rather than `:not(:disabled)`, because 02-09 deliberately
+ * dropped the native attribute so the control stays focusable and the reason beside it stays
+ * reachable — `:not(:disabled)` would match every button here and exclude nothing. Three
+ * in-repo precedents for the shape: `TopBar.css:70`, `SegmentedControl.css:105`, `app.css:228`.
+ */
+.pane__button:hover:not([aria-disabled='true']) {
   background: var(--color-surface-raised);
 }
 
@@ -152,6 +185,24 @@
  * signal, and here it is not the signal at all: the reason beside the button is what
  * actually says why. Same treatment as `FeasibilityBar`'s blocked Start, reached through
  * `aria-disabled` because this button deliberately has no native `disabled`.
+ *
+ * --- WHAT THE DIMMING REACHES, AND WHAT IT DELIBERATELY DOES NOT ---
+ *
+ * `.pane__reason` is a SIBLING of this button, not a child, so the explanation sits
+ * deliberately outside the dimmed subtree and measures 7.65:1. Recorded because it is easy to
+ * undo by accident: moving that span inside the button to "tidy" the markup would take the
+ * explanation down with the label, and the explanation is the whole reason 02-09 renders an
+ * inert control rather than omitting it.
+ *
+ * The measured figures, so the next reader does not have to recompute them to see that the
+ * exemption was considered: the dimmed label composites to 4.04:1, under AA's 4.5:1 for a
+ * label at this size and weight; the hairline border lands at 1.76:1; the focus ring survives
+ * at 3.32:1, so the tab stop stays findable. WCAG 1.4.3 exempts inactive components and
+ * `aria-disabled="true"` is a defensible claim to that exemption, and the identical recipe is
+ * already established at `FeasibilityBar.css:41` and `TopBar.css:80` — changing it here alone
+ * would fork a convention rather than fix one. The project-wide alternative is a dedicated
+ * muted-ink token applied to all three call sites at once, deferred as D4 in this phase's
+ * `deferred-items.md`.
  */
 .pane__button[aria-disabled='true'] {
   opacity: 0.45;
