@@ -142,7 +142,7 @@ Plans:
 
 **Wave 9** *(gap closure, from 02-VERIFICATION.md CR-01 — new set, plan frontmatter `wave: 1`)*
 
-- [ ] 02-11-PLAN.md — one chrome vnode shape and a focus handoff, so a pane change never drops keyboard focus to `<body>` in either direction (CR-01, WR-08, WR-07, IN-02)
+- [x] 02-11-PLAN.md — one chrome vnode shape and a focus handoff, so a pane change never drops keyboard focus to `<body>` in either direction (CR-01, WR-08, WR-07, IN-02)
 
 **Wave 10** *(blocked on Wave 9 completion — plan frontmatter `wave: 2`)*
 
@@ -216,7 +216,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
-| 2. Host-Configured Draft Night | 10/10 | Complete   | 2026-08-15 |
+| 2. Host-Configured Draft Night | 11/13 | In Progress|  |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
