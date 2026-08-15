@@ -146,7 +146,7 @@ Plans:
 
 **Wave 10** *(blocked on Wave 9 completion — plan frontmatter `wave: 2`)*
 
-- [ ] 02-12-PLAN.md — hover excluded on the inert control, a chrome row that wraps, comments corrected to the real mechanism, the whole visible reason string under one assertion, and the deferrals written down (WR-01, WR-02, WR-03, WR-05, WR-06)
+- [x] 02-12-PLAN.md — hover excluded on the inert control, a chrome row that wraps, comments corrected to the real mechanism, the whole visible reason string under one assertion, and the deferrals written down (WR-01, WR-02, WR-03, WR-05, WR-06)
 
 **Wave 11** *(blocked on Wave 10 completion — plan frontmatter `wave: 3`)*
 
@@ -216,7 +216,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
-| 2. Host-Configured Draft Night | 11/13 | In Progress|  |
+| 2. Host-Configured Draft Night | 12/13 | In Progress|  |
 | 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
