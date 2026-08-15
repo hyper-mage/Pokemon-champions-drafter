@@ -209,24 +209,19 @@
   cursor: not-allowed;
 }
 
+/*
+ * The em dash that precedes this text is an `aria-hidden` span inside this element, not
+ * generated content, and the reason is in `SplitPanes.tsx` beside `POOL_EXPAND_REASON`.
+ *
+ * The honest half of what the deleted rule's comment said still stands and is kept: textual
+ * generated content IS included in the computed accessible description in current Chrome and
+ * Firefox, which is why the separator moved into markup that can be marked hidden rather
+ * than staying here. The half that decided it was that a separator living in this file put
+ * half of a visible line outside every test in the repository.
+ */
 .pane__reason {
   font: var(--text-label);
   color: var(--color-text-muted);
-}
-
-/*
- * The em dash is generated rather than part of the string for exactly one reason: the
- * constant in `SplitPanes.tsx` has to stay byte-identical to 02-UI-SPEC's Phase 2 string
- * table and to the exact-equality assertion in `draft-panes.test.tsx`, and a separator
- * glyph is presentation rather than copy.
- *
- * It is NOT kept out of the DOM to keep it out of what a screen reader announces — that
- * would be false. Textual `::before` content IS included in the computed accessible
- * description in current Chrome and Firefox, so the dash will most likely be announced.
- * Accepted as cosmetic: a redundant separator, not a broken control.
- */
-.pane__reason::before {
-  content: '— ';
 }
 
 /*
