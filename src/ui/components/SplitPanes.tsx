@@ -140,6 +140,32 @@ export interface SplitPanesProps {
 }
 
 export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: SplitPanesProps) {
+  /**
+   * Report the pane change, then announce it.
+   *
+   * --- AN OPEN QUESTION, RECORDED SO IT IS NOT RE-DERIVED (WR-02) ---
+   *
+   * On the two EXPAND transitions this `announce` is committed in the same tick as the focus
+   * handoff below, and a focus move makes assistive technology speak the newly focused
+   * control at once. A `aria-live="polite"` update queued in that same tick is routinely
+   * preempted or dropped — so `Pool expanded to full width.` and `Draft board expanded to
+   * full width.` are precisely the two messages most likely never to be heard, and 02-11
+   * changed the conditions they operate under without re-checking them.
+   *
+   * UNRESOLVED, and deliberately not resolved by guessing. Settling it needs a real screen
+   * reader (NVDA or VoiceOver): happy-dom computes no accessible name, no description and no
+   * announcement queue, so no test in this repo can reach it, and 02-13's human checkpoint
+   * did not cover it — that list is focus visibility, the hover exclusion, the 02-10
+   * alignment and the reason line.
+   *
+   * If the message does turn out to be preempted, the honest resolution is to stop announcing
+   * on the two transitions that MOVE focus: the restore control's own name — `Show the pool` —
+   * already states the new state as it takes focus, and an announcement that is emitted and
+   * swallowed is worse than none. It is not removed pre-emptively, because the
+   * collapse-to-split transition moves no focus and the announcement is the only signal a
+   * screen-reader user gets there; dropping it on an untested premise would trade a possible
+   * silence for a certain one. Record the outcome here either way.
+   */
   function change(next: PaneState, message: string): void {
     onPaneChange(next);
     announce(message);
