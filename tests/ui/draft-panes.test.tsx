@@ -25,10 +25,11 @@
  *   - `.pane__chrome`'s reserved `min-height` is what keeps the two panes' content
  *     starting on the same line when one chrome holds no control. No layout means no way
  *     to assert alignment. Plan 02-10 owns that check.
- *   - The em dash separating the inert expand control from its reason is CSS-generated
- *     `::before` content. Whether it reaches the control's accessible description is not
- *     observable here — and it most likely DOES reach it in a real browser. That is
- *     accepted as cosmetic, not avoided.
+ *   - The em dash separating the inert expand control from its reason was generated content
+ *     when that was written. Plan 02-12 moved it into an `aria-hidden` span (WR-03), and the
+ *     part that stays unobservable is the same either way: happy-dom computes no accessible
+ *     name and no accessible description, so what the assertions below pin is the MECHANISM
+ *     that keeps the separator out of the description, never the description itself.
  *
  * A third joined under plan 02-11, and it is about focus rather than layout: nothing here
  * can observe how a real browser moves focus on POINTER activation. happy-dom's
@@ -319,8 +320,21 @@ describe('the pool and the board are on screen together', () => {
 
     const reason = host.querySelector(`#${reasonId}`);
     expect(reason).not.toBeNull();
-    // Exact equality, never `includes` — this is a contract string.
-    expect(reason?.textContent?.trim()).toBe('Available once the draft is complete');
+
+    // Exact equality on the WHOLE visible line, separator included — never `includes`, this
+    // is a contract string and CLAUDE.md's convention covers every one of them.
+    //
+    // WR-03: the em dash used to be `content: '— '` in `SplitPanes.css`, so half of what a
+    // host reads lived in a stylesheet nothing asserted on. Changing it to a hyphen, an en
+    // dash or nothing at all altered shipped copy with this suite staying green.
+    expect(reason?.textContent?.trim()).toBe('— Available once the draft is complete');
+
+    // And the mechanism that keeps the separator out of the accessible description: it is a
+    // hidden span INSIDE the reason, not generated content and not a bare text node. Pinned
+    // for the same WR-03 reason — the shape is what makes the assertion above possible.
+    const separator = reason?.querySelector('[aria-hidden="true"]');
+    expect(separator).not.toBeNull();
+    expect(separator?.textContent).toBe('— ');
   });
 
   it('refuses the pool expand mid-draft, so the board cannot be hidden', async () => {

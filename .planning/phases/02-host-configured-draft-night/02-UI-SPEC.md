@@ -1010,7 +1010,7 @@ configuration so the host can read it back before committing.
 | Density legend | `Display density` |
 | Density options | `Minimal` · `Standard` · `Full` |
 | Expand pool | `Expand the pool` |
-| Expand pool, unavailable | `Available once the draft is complete` — the reason beside the inert control. The `— ` separator is CSS-generated and is not part of the string. |
+| Expand pool, unavailable | `Available once the draft is complete` — the reason beside the inert control. The visible line is `— Available once the draft is complete`; the `— ` separator is rendered as an `aria-hidden` span beside the reason rather than as generated content, and the constant excludes it so the string table, the source constant and the test assertion stay one value (amended by plan 02-12, WR-03). |
 | Expand board | `Expand the draft board` |
 | Restore pool | `Show the pool` |
 | Restore board | `Show the draft board` |
