@@ -63,6 +63,43 @@ const SPLIT_MESSAGE = 'Pool and draft board shown side by side.';
  */
 const POOL_EXPAND_REASON = 'Available once the draft is complete';
 
+/**
+ * Whether a side's expand is available and, when it is not, why — as ONE value, because it
+ * is one fact.
+ *
+ * These were two independent parameters: an `expandable` boolean, and a nullable `reason`
+ * string. The pair `(false, null)` compiled, and it rendered an `aria-disabled` control with no
+ * `aria-describedby` and no visible text: precisely the state UAT test 9 reported, silently
+ * reintroducible at any time (WR-07). This file's doc blocks already asserted that "the
+ * explanation is the whole reason for rendering the control", and nothing enforced it.
+ *
+ * The union is the enforcement. An unavailable expand without its explanation is no longer
+ * a bug to be caught in review — it does not type-check.
+ */
+type PaneAvailability = { available: true } | { available: false; reason: string };
+
+/**
+ * `side()`'s parameters, named.
+ *
+ * Plan 02-09 deliberately chose an eighth POSITIONAL parameter here, on the grounds that
+ * every other piece of copy `side()` renders was already positional. That decision is
+ * reversed rather than forgotten: it left eight parameters with four adjacent strings, and
+ * transposing any two of them is clean at compile time and surfaces as the wrong copy on a
+ * shared screen. Five strings in a row cannot be checked by eye, so the call sites name
+ * them instead.
+ *
+ * An interface rather than an inline type literal, so these names have one definition.
+ */
+interface SideOptions {
+  key: 'pool' | 'board';
+  collapsed: boolean;
+  children: ComponentChildren;
+  expandLabel: string;
+  restoreLabel: string;
+  expandedMessage: string;
+  availability: PaneAvailability;
+}
+
 export interface SplitPanesProps {
   /** 'split' | 'pool' | 'board' — the value from `src/adapters/view-prefs.ts`. */
   pane: PaneState;
@@ -170,17 +207,17 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
    * `<body>`, and it did so on the one control whose entire job is recovery (CR-01). The
    * strip's button is `writing-mode: vertical-rl`, so nothing about it looked different and
    * only a keyboard, a switch or a screen reader could tell.
+   *
+   * --- AVAILABILITY AND ITS EXPLANATION ARE ONE PARAMETER ---
+   *
+   * See `PaneAvailability` above for why. In short: they are one fact, they were two
+   * independent parameters, and the combination "unavailable, no reason given" was
+   * therefore representable and reproduced the exact defect UAT test 9 reported (WR-07).
    */
-  function side(
-    key: 'pool' | 'board',
-    collapsed: boolean,
-    children: ComponentChildren,
-    expandLabel: string,
-    restoreLabel: string,
-    expandedMessage: string,
-    expandable: boolean,
-    reason: string | null,
-  ) {
+  function side(options: SideOptions) {
+    const { key, collapsed, children, expandLabel, restoreLabel, expandedMessage, availability } =
+      options;
+
     // Expanded here means "this side has the whole width", which is exactly when the
     // other side is collapsed and already offers the way back.
     const isFullWidth = pane === key;
@@ -195,11 +232,19 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
     // that introduced it is that a later reader can see there is ONE shape here.
     const hasControl = collapsed || !isFullWidth;
 
+    // A restore control is never inert; only an unavailable EXPAND is.
+    const isInert = !collapsed && !availability.available;
+
+    // The ternary is where TypeScript narrows the union, so `availability.reason` is
+    // reachable only on the branch that has one — no cast, no non-null assertion, and no
+    // optional chaining standing in for a proof.
+    const reason = availability.available ? null : availability.reason;
+
     // The `!collapsed` guard is load-bearing, not defensive. While the two chrome states
     // were separate subtrees the collapsed branch simply had no span to render; now that
     // both share one subtree, this guard is the only thing keeping a ~38-character reason
     // out of a strip one `--target-min` wide whose button is set vertically.
-    const showReason = !collapsed && !expandable && reason !== null;
+    const showReason = !collapsed && reason !== null;
 
     return (
       <section class={collapsed ? 'pane pane--collapsed' : 'pane'} data-side={key}>
@@ -234,15 +279,14 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
                 // is on, so `undefined` here does not type-check. Preact detaches on
                 // either, since it only re-attaches for a truthy ref.
                 ref={collapsed ? collapsedControlRef : null}
-                // A restore control is never inert. Only an unavailable EXPAND is.
-                aria-disabled={!collapsed && !expandable ? 'true' : undefined}
+                aria-disabled={isInert ? 'true' : undefined}
                 aria-describedby={showReason ? reasonId : undefined}
                 onClick={(event) => {
                   // The early return IS the refusal, exactly as `handleStart` does it.
                   // `change` is never called for an inert control, so nothing reaches
                   // `onPaneChange`, nothing is written and nothing is announced — and
                   // `activatedControlRef` is left untouched, so focus does not move either.
-                  if (!collapsed && !expandable) return;
+                  if (isInert) return;
 
                   // Arm the handoff, but only for a host who was actually ON this control.
                   // Without the `activeElement` test a pointer user who clicked without
@@ -285,29 +329,30 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
         without an argument — see that file's responsive comment for the one place
         02-UI-SPEC asks for the opposite and why this order wins.
       */}
-      {side(
-        'pool',
-        boardExpanded,
-        pool,
-        EXPAND_POOL_LABEL,
-        RESTORE_POOL_LABEL,
-        POOL_EXPANDED_MESSAGE,
+      {side({
+        key: 'pool',
+        collapsed: boardExpanded,
+        children: pool,
+        expandLabel: EXPAND_POOL_LABEL,
+        restoreLabel: RESTORE_POOL_LABEL,
+        expandedMessage: POOL_EXPANDED_MESSAGE,
         // The one asymmetry between the two sides, and it is scoped rather than structural.
-        poolExpandable,
-        POOL_EXPAND_REASON,
-      )}
+        availability: poolExpandable
+          ? { available: true }
+          : { available: false, reason: POOL_EXPAND_REASON },
+      })}
 
-      {side(
-        'board',
-        poolExpanded,
-        board,
-        EXPAND_BOARD_LABEL,
-        RESTORE_BOARD_LABEL,
-        BOARD_EXPANDED_MESSAGE,
-        // The board's expand is never inert, so it never needs a reason.
-        true,
-        null,
-      )}
+      {side({
+        key: 'board',
+        collapsed: poolExpanded,
+        children: board,
+        expandLabel: EXPAND_BOARD_LABEL,
+        restoreLabel: RESTORE_BOARD_LABEL,
+        expandedMessage: BOARD_EXPANDED_MESSAGE,
+        // The board's expand is never inert, so it never needs a reason — and now it
+        // cannot supply one.
+        availability: { available: true },
+      })}
     </div>
   );
 }
