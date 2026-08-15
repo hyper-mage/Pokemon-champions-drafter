@@ -18,6 +18,17 @@
  * internal scrollbar, and whether any chip name ellipsises at 1920px are all invisible
  * here. Those are 02-UI-SPEC assertions 6 and 7 and they belong to this plan's
  * human-verify checkpoint, which is where they stay.
+ *
+ * Two more joined that list under plan 02-09, and they are named here rather than covered
+ * by tests that would only appear to cover them:
+ *
+ *   - `.pane__chrome`'s reserved `min-height` is what keeps the two panes' content
+ *     starting on the same line when one chrome holds no control. No layout means no way
+ *     to assert alignment. Plan 02-10 owns that check.
+ *   - The em dash separating the inert expand control from its reason is CSS-generated
+ *     `::before` content. Whether it reaches the control's accessible description is not
+ *     observable here — and it most likely DOES reach it in a real browser. That is
+ *     accepted as cosmetic, not avoided.
  */
 
 import { render } from 'preact';
@@ -248,12 +259,82 @@ describe('the pool and the board are on screen together', () => {
     expect(host.querySelector('.app-shell')).toBeNull();
   });
 
-  it('offers only the board expand while a draft is running', async () => {
+  /*
+   * These three replaced a single test whose second assertion was
+   * `expect(buttonNamed('Expand the pool')).toBeUndefined()`. A reviewer who sees a
+   * `toBeUndefined()` deleted is entitled to suspect the pin was loosened to fit the code,
+   * so: it was not.
+   *
+   * The old assertion proved the pool could not be expanded mid-draft BY OMISSION — the
+   * button was not in the document, so no host could press it. The replacement proves the
+   * same invariant BY EXERCISE: the button IS in the document, the host CAN press it, and
+   * the pane does not change when they do. That is strictly stronger. Absence was only
+   * ever a proxy for unreachability, and it was a proxy that could not distinguish
+   * "refused" from "not built" — which is exactly the confusion the host hit in UAT test
+   * 9, where an empty chrome slot was reported as a broken render.
+   */
+  it('renders the pool expand inert, with its reason, while a draft is running', async () => {
     await reachDraft();
 
-    // `pool-full` would hide the board, which criterion 5 forbids mid-draft.
-    expect(buttonNamed('Expand the draft board')).toBeDefined();
-    expect(buttonNamed('Expand the pool')).toBeUndefined();
+    // The board's control is never inert, and this change does not touch it.
+    const boardExpand = buttonNamed('Expand the draft board');
+    expect(boardExpand).toBeDefined();
+    expect(boardExpand?.hasAttribute('aria-disabled')).toBe(false);
+
+    const poolExpand = buttonNamed('Expand the pool');
+    expect(poolExpand).toBeDefined();
+    expect(poolExpand?.getAttribute('aria-disabled')).toBe('true');
+
+    // Focusable on purpose. A native `disabled` would take the button out of the tab
+    // order and put the explanation beside it out of reach of the keyboard — and the
+    // explanation is the entire reason for rendering the control at all.
+    expect(poolExpand?.hasAttribute('disabled')).toBe(false);
+
+    // Resolve the id off the attribute rather than hard-coding a selector, so the
+    // ASSOCIATION is what is under test and not merely the presence of some span.
+    const reasonId = poolExpand?.getAttribute('aria-describedby') ?? '';
+    expect(reasonId).not.toBe('');
+
+    const reason = host.querySelector(`#${reasonId}`);
+    expect(reason).not.toBeNull();
+    // Exact equality, never `includes` — this is a contract string.
+    expect(reason?.textContent?.trim()).toBe('Available once the draft is complete');
+  });
+
+  it('refuses the pool expand mid-draft, so the board cannot be hidden', async () => {
+    await reachDraft();
+
+    await click(buttonNamed('Expand the pool'));
+
+    expect(panesRoot()?.getAttribute('data-pane')).toBe('split');
+
+    // "Not that message" rather than emptiness: reaching the draft makes `TurnBanner`
+    // announce whose turn it is, which the coercion test below already establishes.
+    expect(liveRegionText()).not.toBe('Pool expanded to full width.');
+
+    // The assertion that proves the refusal happened BEFORE `onPaneChange`, not after —
+    // a click that reached the parent would have been written through to storage.
+    const stored = JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}') as { pane?: string };
+    expect(stored.pane).not.toBe('pool');
+
+    // Criterion 5, asserted directly on the surface the constraint is actually about.
+    expect(host.querySelector('.board')).not.toBeNull();
+  });
+
+  it('makes the pool expand real once the draft is complete', async () => {
+    // 2 players x 6 rounds — the same count the completed-state test below uses.
+    await reachDraft({ picks: 12 });
+
+    const poolExpand = buttonNamed('Expand the pool');
+    expect(poolExpand).toBeDefined();
+    expect(poolExpand?.hasAttribute('aria-disabled')).toBe(false);
+
+    // Gone, not merely hidden. A reason with nothing to explain is noise.
+    expect(host.querySelector('.pane__reason')).toBeNull();
+
+    await click(poolExpand);
+
+    expect(panesRoot()?.getAttribute('data-pane')).toBe('pool');
   });
 });
 

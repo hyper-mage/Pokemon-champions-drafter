@@ -113,7 +113,7 @@ fails it". `pool-full` puts the board behind a toggle.
 | Screen | States available |
 |--------|-----------------|
 | Config screen (ban grid section) | `split` is meaningless here — the ban grid is full-width by default; the density control and filter bar are shared, the expand control is not rendered |
-| Draft screen, draft in progress | `split` and `board-full` only. The pool pane's expand button is **not rendered.** |
+| Draft screen, draft in progress | `split` and `board-full` only. The pool pane's expand button is **always rendered, and is inert here** — `aria-disabled="true"`, no native `disabled` so it stays focusable, with the visible reason `Available once the draft is complete` beside it. It is never removed from the document. |
 | Completed-draft screen | `split`, `pool-full`, `board-full` — the draft is over, criterion 5 no longer binds, and 8 stacked export panels are exactly what wants full width |
 
 The persisted state model still carries all three values (D-20), so the control's shape is set
@@ -122,6 +122,31 @@ screen mounts, it is **coerced to `split`** and the coercion is silent.
 
 This is recorded as a spec resolution rather than absorbed silently, because it declines part
 of a locked decision's reach. The planner should read it as such.
+
+**Amended by plan 02-09 — omission replaced by an inert control:**
+
+The availability scoping above is UNCHANGED. `pool-full` is still unreachable while a draft
+is running, and the coercion is still silent. What changed is only how a `false` is
+COMMUNICATED: the pool's expand button used to be omitted from the document entirely, and it
+is now rendered inert with a reason beside it.
+
+The superseded wording was "The pool pane's expand button is **not rendered.**" It was wrong
+on this document's own terms. §8 item 3 says a control that appears and disappears is worse
+on a shared screen than one that is predictably inert, and §Ban modes renders Blind and Snake
+disabled with a visible `— Not yet available`. The pool expand was the single control in this
+phase handled by omission, and it was the one that broke.
+
+The evidence is UAT test 9. The host read the empty chrome slot as a broken render and
+reported it as a bug: "there is no way to expand the pool pane, but there is one for the
+draft board". Absence cannot distinguish "unavailable" from "not built". The missing
+`min-height` on that chrome compounded it, misaligning the two panes by a full target height.
+
+What did NOT change, and must not: `poolExpandable = complete` in `src/app.tsx`, and both
+T-02-24 coercions — the union check in `src/adapters/view-prefs.ts` and the
+stored-pool-to-split coercion in `src/app.tsx`. The inert control's click handler returns
+early, so it is a third independent layer rather than a hole in the first two.
+
+`Amended by plan 02-09`, closing gap 1 in `02-UAT.md`.
 
 ---
 
@@ -728,7 +753,8 @@ Header, two rows:
 
 - **Row 1:** `Pool` at `--text-heading`; `{n} available` at `--text-label` in
   `--color-text-muted`; `Display density` segmented control; the expand button
-  (**not rendered while a draft is in progress** — see §A tension in the locked set).
+  (**rendered inert while a draft is in progress**, with its reason beside it — see §A
+  tension in the locked set).
 - **Row 2:** the `FilterBar`.
 
 Grid and cells are Phase 1's contract with the density additions. Retained from Phase 1
@@ -984,6 +1010,7 @@ configuration so the host can read it back before committing.
 | Density legend | `Display density` |
 | Density options | `Minimal` · `Standard` · `Full` |
 | Expand pool | `Expand the pool` |
+| Expand pool, unavailable | `Available once the draft is complete` — the reason beside the inert control. The `— ` separator is CSS-generated and is not part of the string. |
 | Expand board | `Expand the draft board` |
 | Restore pool | `Show the pool` |
 | Restore board | `Show the draft board` |

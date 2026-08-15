@@ -68,10 +68,23 @@
   min-width: 0;
 }
 
+/*
+ * The `min-height` is LOAD-BEARING, not cosmetic. An expanded pane's chrome holds no
+ * control at all, so it collapsed to zero height and that pane's scroll track started one
+ * target-height above the other's. Reserving the height makes both panes' content start on
+ * the same line in every combination of states — that misalignment is what UAT test 9
+ * reported as a failed render.
+ *
+ * `align-items: center` keeps the button and its reason on one row, so the chrome stays
+ * exactly one target tall rather than growing to two.
+ */
 .pane__chrome {
   flex: none;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
 }
 
 .pane__scroll {
@@ -132,6 +145,37 @@
   writing-mode: vertical-rl;
   min-width: var(--target-min);
   padding: var(--space-3) 0;
+}
+
+/*
+ * The visual echo of a state `aria-disabled` already carries — colour is never the only
+ * signal, and here it is not the signal at all: the reason beside the button is what
+ * actually says why. Same treatment as `FeasibilityBar`'s blocked Start, reached through
+ * `aria-disabled` because this button deliberately has no native `disabled`.
+ */
+.pane__button[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pane__reason {
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+/*
+ * The em dash is generated rather than part of the string for exactly one reason: the
+ * constant in `SplitPanes.tsx` has to stay byte-identical to 02-UI-SPEC's Phase 2 string
+ * table and to the exact-equality assertion in `draft-panes.test.tsx`, and a separator
+ * glyph is presentation rather than copy.
+ *
+ * It is NOT kept out of the DOM to keep it out of what a screen reader announces — that
+ * would be false. Textual `::before` content IS included in the computed accessible
+ * description in current Chrome and Firefox, so the dash will most likely be announced.
+ * Accepted as cosmetic: a redundant separator, not a broken control.
+ */
+.pane__reason::before {
+  content: '— ';
 }
 
 /*
