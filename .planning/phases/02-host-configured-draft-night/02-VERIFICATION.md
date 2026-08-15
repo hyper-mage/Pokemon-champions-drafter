@@ -21,8 +21,7 @@ mode_note: >-
   ROADMAP.md's `Mode:` field to drop the `mvp` tag, so the next phase verification
   does not hit the same fork.
 re_verification:
-  previous_status: passed (orchestrator-inline, 2026-08-12, no gaps: section — not a
-    tracked re-verification predecessor)
+  previous_status: "passed (orchestrator-inline, 2026-08-12, no gaps: section — not a tracked re-verification predecessor)"
   previous_score: "5/5 success criteria, orchestrator-inline, not an independent gsd-verifier pass"
   gaps_closed:
     - "UAT test 9: pool expand control mid-draft is now rendered inert with a stated reason instead of omitted (plan 02-09), and the alignment/perception claims 02-09 could not test were confirmed by a human on a real screen (plan 02-10)"
