@@ -169,9 +169,59 @@ Plans:
   4. Each player holds cards `1..R` matching the compiled round count, plays them face-up one per round in a rotating order while seeing what has already been played and what everyone has left, and the resolved pick order is displayed before picking begins; when players outnumber rounds, ties break by a visible deterministic rule that never depends on player-entry order.
   5. A player spends a swap mid-draft, or passes or swaps in a dedicated post-draft swap round that has its own stated pick-order source, and the leftover pool they are shown is filtered by the target slot's own predicate — a Mega slot cannot be swapped into a non-Mega Pokémon.
 
-**Plans**: 3 plans
+**Plans**: 12 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — schema 3 across every config site, and the Swaps config group (SWAP-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-02-PLAN.md — compile(), the schedule/compiled action, the schedule selectors, and typed board round headers (RULE-02, CARD-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-03-PLAN.md — the compiled-schedule preview and its up/down reorder, config-time only (RULE-01, RULE-06)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03-04-PLAN.md — isMegaEligible, and the 76-cell Mega-forme ban surface (RULE-04)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 03-05-PLAN.md — the RULE-09 gate re-measured over eligible species, three new feasibility codes, and the draw's eligibility partition (RULE-09)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 03-06-PLAN.md — the Mega round at the table: a filtered pool, an inert Mega control, and the slot deciding the export stone (RULE-03)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 03-07-PLAN.md — cards/played and order/resolved, the derived hands and the rotation, and the board-row hand strips (CARD-01, CARD-06, CARD-07)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 03-08-PLAN.md — selectPhase, the rewritten turn selector and its three callers, and the card-play step on screen (CARD-03, CARD-05, CARD-08, DRFT-04)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 03-09-PLAN.md — Hall's-condition card legality, the inert card face, and one undo stack for the whole log (CARD-04)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 03-10-PLAN.md — the mid-draft swap: replace-in-place, a swappable board cell, and a pool already filtered by the target slot (SWAP-02, SWAP-05, SWAP-06, RULE-05)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 03-11-PLAN.md — dedicated swap rounds, passing, and the two completion states that gate the exports (SWAP-03, SWAP-04, SWAP-07)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 03-12-PLAN.md — the three-metre legibility pass, the screen-reader pass, and the card-mechanic playtest *(not autonomous — three blocking checkpoints)*
+
 **UI hint**: yes
-**Notes**: Research need HIGH on the rules compiler — the compilable-vs-non-compilable rule-class taxonomy is reasoned analysis with no prior art found in any surveyed draft tooling; validate the class boundaries against real host configuration attempts and keep the "pick guard" escape hatch as a named, unbuilt extension point rather than building it speculatively. Research need MEDIUM on the priority-card redesign — an El Grande-style open-sequential mechanic retrofitted mid-spec; the tiebreak rule and the play flow should be playtested with the target 4–8 friend group, not just implemented from the write-up. Ordering inside this phase is not negotiable: the compiler establishes typed slots, and swaps built before typed slots exist can silently violate composition rules with nothing left to catch them, because the compiler deliberately removes runtime validation.
+**Notes**: Research need HIGH on the rules compiler — the compilable-vs-non-compilable rule-class taxonomy is reasoned analysis with no prior art found in any surveyed draft tooling; validate the class boundaries against real host configuration attempts and keep the "pick guard" escape hatch as a named, unbuilt extension point rather than building it speculatively. Research need MEDIUM on the priority-card redesign — an El Grande-style open-sequential mechanic retrofitted mid-spec; the tiebreak rule and the play flow should be playtested with the target 4–8 friend group, not just implemented from the write-up. Ordering inside this phase is not negotiable: the compiler establishes typed slots, and swaps built before typed slots exist can silently violate composition rules with nothing left to catch them, because the compiler deliberately removes runtime validation. **Plan count revised from 3 to 12 at planning time**: 23 requirements over three strictly ordered units, a schema 2 to 3 migration, five new action families and eleven new or reshaped surfaces do not fit three plans at the 2-3-task, ~50%-context ceiling — Phase 2 was roadmapped at 8 and shipped 13 for less. The three units survive as the wave order: 03-01 through 03-06 are the compiler, 03-07 through 03-09 the cards, 03-10 and 03-11 the swaps, and 03-12 is the physical and human acceptance happy-dom cannot give.
 
 ### Phase 4: Blind and Snake Bans
 
@@ -217,7 +267,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
-| 3. Compiled Rules, Priority Cards, Swaps | 0/3 | Not started | - |
+| 3. Compiled Rules, Priority Cards, Swaps | 0/12 | Not started | - |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
