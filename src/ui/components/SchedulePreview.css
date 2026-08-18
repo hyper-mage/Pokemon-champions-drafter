@@ -1,0 +1,102 @@
+/*
+ * SchedulePreview — the compiled round schedule and its reorder controls.
+ *
+ * Tokens only: no raw hex and no raw length. No :focus rule and no :active rule — the
+ * global accent ring in app.css owns focus, and a per-component ring is how a design
+ * system drifts. Geometry and copy both come from 03-UI-SPEC §2.
+ */
+
+.schedule-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 60ch;
+}
+
+.schedule-preview__rounds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * A row is an <li> of an <ol> — the ordinal is the information here, which is the same
+ * test PlayerList applies when it decides its own two lists differently.
+ *
+ * list-style: none removes the browser marker deliberately. The round number is already
+ * IN the row text ("Round 3 — Mega"), and a marker beside it would number every row
+ * twice, disagreeing with the text the moment a schedule is ever rendered from anything
+ * but position.
+ */
+.schedule-preview__round {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border-radius: var(--radius);
+}
+
+.schedule-preview__round-label {
+  font: var(--text-body);
+}
+
+.schedule-preview__controls {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/*
+ * Same shape as PlayerList's row actions and ConfigScreen's re-roll, because they are the
+ * same kind of thing — a secondary control inside a form group. Accent is reserved and
+ * this is not one of its uses.
+ *
+ * --target-min in BOTH axes, per 03-UI-SPEC §Interaction, which is why min-width is here
+ * as well as min-height.
+ */
+.schedule-preview__move {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-label);
+  cursor: pointer;
+  /* Motion budget: colour only, at most 120ms. A reorder itself is not animated. */
+  transition: background-color 120ms ease;
+}
+
+.schedule-preview__move:hover {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * An inert button is dimmed, not hidden and not natively disabled — it stays focusable so
+ * a keyboard user can reach the reason its accessible name carries. The hover fill is
+ * cancelled rather than left in place: a control that lights up under the pointer and then
+ * does nothing teaches the host their clicks do not matter.
+ */
+.schedule-preview__move--inert {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.schedule-preview__move--inert:hover {
+  background: transparent;
+}
+
+/*
+ * The single rule line, and the nothing-to-reorder line, share this. Muted and at
+ * --text-label so it reads as an aside about the list above it rather than as a row.
+ */
+.schedule-preview__rule {
+  margin: 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
