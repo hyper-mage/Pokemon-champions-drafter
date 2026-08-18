@@ -78,7 +78,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **RULE-01**: Host defines composition requirements as a rule set at config time
 - [x] **RULE-02**: Composition requirements compile into a round schedule before the draft starts, rather than validating picks afterward
-- [ ] **RULE-03**: A requirement of N Mega Evolutions produces N Mega-only rounds where the pool is filtered to Mega-capable Pokémon
+- [x] **RULE-03**: A requirement of N Mega Evolutions produces N Mega-only rounds where the pool is filtered to Mega-capable Pokémon
 - [x] **RULE-04**: Host maintains a Mega-ban list of Mega-capable Pokémon not permitted to Mega this tournament
 - [ ] **RULE-05**: Compiled rounds type the resulting team slots, so a slot's constraint survives swaps
 - [x] **RULE-06**: Host can reorder the derived round schedule
@@ -242,7 +242,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CARD-08 | Phase 3 | Pending |
 | RULE-01 | Phase 3 | Complete |
 | RULE-02 | Phase 3 | Complete |
-| RULE-03 | Phase 3 | Pending |
+| RULE-03 | Phase 3 | Complete |
 | RULE-04 | Phase 3 | Complete |
 | RULE-05 | Phase 3 | Pending |
 | RULE-06 | Phase 3 | Complete |
