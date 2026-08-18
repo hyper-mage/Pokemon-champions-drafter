@@ -84,7 +84,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **RULE-06**: Host can reorder the derived round schedule
 - [ ] **RULE-07**: A feasibility check runs at config time and disables Start with a stated reason when the rules, player count, bans, and roster cannot all be satisfied
 - [ ] **RULE-08**: Feasibility is re-checked after the ban reveal, since bans change the arithmetic
-- [ ] **RULE-09**: Mega-round feasibility enforces `players × megaRounds ≤ megaCapableSpecies − megaBans`
+- [x] **RULE-09**: Mega-round feasibility enforces `players × megaRounds ≤ megaCapableSpecies − megaBans`
 
 ### Bans
 
@@ -248,7 +248,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | RULE-06 | Phase 3 | Complete |
 | RULE-07 | Phase 2 | Complete |
 | RULE-08 | Phase 4 | Pending |
-| RULE-09 | Phase 3 | Pending |
+| RULE-09 | Phase 3 | Complete |
 | BAN-01 | Phase 2 | Complete |
 | BAN-02 | Phase 2 | Complete |
 | BAN-03 | Phase 4 | Pending |

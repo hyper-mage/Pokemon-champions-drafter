@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-02 — the compiled schedule, in the log and on the board
-last_updated: "2026-08-18T14:50:29.946Z"
+stopped_at: Completed 03-05 — the RULE-09 gate and the draw that honours it
+last_updated: "2026-08-18T15:33:40.823Z"
 last_activity: 2026-08-18
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 36
-  completed_plans: 27
+  completed_plans: 29
   percent: 40
 ---
 
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-08-03)
 ## Current Position
 
 Phase: 03 (compiled-rules-priority-cards-swaps) — EXECUTING
-Plan: 5 of 12
+Plan: 6 of 12
 Plans: 8 of 8 written, 6 waves
 Status: Ready to execute
 Last activity: 2026-08-18
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [████████░░] 75%
 | Phase 03 P02 | 28min | 3 tasks | 18 files |
 | Phase 03 P03 | 14min | 2 tasks | 6 files |
 | Phase 03 P04 | 35min | 3 tasks | 22 files |
+| Phase 03 P05 | 27min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,10 @@ Recent decisions affecting current work:
 - [Phase 03]: isMegaEligible is one pure predicate with four named consumers; the X/Y pin compares MegaForme.forme and never a name
 - [Phase 03]: Pool cell, grid, typeahead and chip list widened over a PoolSubject type parameter rather than a bare union, so existing narrow call sites keep narrow handlers
 - [Phase 03]: PoolGrid and FilterBar take an idPrefix — two grids now mount on one screen, which falsified 02-08's fixed-id assumption
+- [Phase 03]: RULE-09 is measured over the candidate set, never the drawn pool — the draw is null whenever the gate has anything to say, and drawPool stage 2 carries the count into the pool by construction
+- [Phase 03]: The pool draw partitions on Mega ELIGIBILITY, not the megaCapable flag — the flag lets the quota fill with species whose every forme is banned
+- [Phase 03]: A host-typed numeric field is bounded at the same constant the import guard uses, so the build cannot create a document isValidTournament refuses to re-open
+- [Phase 03]: swapRoundsOnExactPool sits above poolExactlyMinimum — the two always hold together and the bar renders only problems[0], so the lower one would be unrenderable
 
 ### Pending Todos
 
@@ -125,8 +130,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-18T14:50:00.722Z
-Stopped at: Completed 03-02 — the compiled schedule, in the log and on the board
+Last session: 2026-08-18T15:33:02.424Z
+Stopped at: Completed 03-05 — the RULE-09 gate and the draw that honours it
 Resume file: None
 
 ### Phase 2 planning is complete
