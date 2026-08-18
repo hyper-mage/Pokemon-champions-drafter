@@ -12,8 +12,21 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { draftStarted, pickMade, poolBuilt, type Action, type Intent } from '../../src/core/actions';
-import { initialState, SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
+import {
+  draftStarted,
+  pickMade,
+  poolBuilt,
+  type Action,
+  type Intent,
+  type RoundKind,
+} from '../../src/core/actions';
+import {
+  initialState,
+  SCHEMA_VERSION,
+  type DraftState,
+  type TournamentConfig,
+  type TournamentDoc,
+} from '../../src/core/model';
 import { fold } from '../../src/core/reduce';
 import {
   selectAvailablePool,
@@ -21,6 +34,9 @@ import {
   selectIsComplete,
   selectPickCount,
   selectPlayerName,
+  selectRoundKind,
+  selectSchedule,
+  selectSlotKind,
   selectTeams,
 } from '../../src/core/selectors';
 
@@ -264,6 +280,127 @@ describe('selectPlayerName', () => {
 
   it('returns null for an id the tournament does not know', () => {
     expect(selectPlayerName(initialState(CONFIG), 'ghost')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The compiled schedule — RULE-02, D-07, D-08
+// ---------------------------------------------------------------------------
+
+/** A state carrying the given kinds as its schedule, built without a reducer arm. */
+function stateWithSchedule(kinds: readonly RoundKind[]): DraftState {
+  return {
+    ...initialState(CONFIG),
+    schedule: kinds.map((kind, position) => ({ index: position + 1, kind })),
+  };
+}
+
+describe('selectSchedule', () => {
+  it('returns the stored schedule when it matches the configured round count', () => {
+    const state = stateWithSchedule(['mega', 'mega', 'open', 'open', 'open', 'open']);
+
+    expect(selectSchedule(state)).toEqual([
+      { index: 1, kind: 'mega' },
+      { index: 2, kind: 'mega' },
+      { index: 3, kind: 'open' },
+      { index: 4, kind: 'open' },
+      { index: 5, kind: 'open' },
+      { index: 6, kind: 'open' },
+    ]);
+  });
+
+  it('folds an empty schedule as all-open, which is what that draft actually ran', () => {
+    // A schema-2 tournament was drafted before the compiler existed and ran flat rounds.
+    // `migrateV2ToV3` performs no log surgery, so its log carries no `schedule/compiled`
+    // and its folded schedule is empty. All-open is the truth about it, not a guess.
+    const state = initialState(CONFIG);
+    expect(state.schedule).toEqual([]);
+
+    const schedule = selectSchedule(state);
+    expect(schedule).toHaveLength(CONFIG.rounds);
+    expect(schedule.map((spec) => spec.kind)).toEqual(['open', 'open', 'open', 'open', 'open', 'open']);
+    expect(schedule.map((spec) => spec.index)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('falls back to all-open when the stored length disagrees with the round count', () => {
+    const short = stateWithSchedule(['mega', 'mega']);
+
+    expect(selectSchedule(short)).toHaveLength(CONFIG.rounds);
+    expect(selectSchedule(short).every((spec) => spec.kind === 'open')).toBe(true);
+  });
+
+  it('returns a fresh copy — mutating it cannot reach the state', () => {
+    const state = stateWithSchedule(['mega', 'open', 'open', 'open', 'open', 'open']);
+
+    const schedule = selectSchedule(state);
+    const first = schedule[0];
+    expect(first).toBeDefined();
+    if (first === undefined) return;
+    first.kind = 'open';
+    schedule.push({ index: 99, kind: 'mega' });
+
+    expect(state.schedule).toHaveLength(CONFIG.rounds);
+    expect(state.schedule[0]).toEqual({ index: 1, kind: 'mega' });
+  });
+});
+
+describe('selectRoundKind', () => {
+  const state = stateWithSchedule(['open', 'mega', 'open', 'mega', 'open', 'open']);
+
+  it('answers every round in range from the stored schedule', () => {
+    expect([1, 2, 3, 4, 5, 6].map((round) => selectRoundKind(state, round))).toEqual([
+      'open',
+      'mega',
+      'open',
+      'mega',
+      'open',
+      'open',
+    ]);
+  });
+
+  it('answers open for a round outside 1..rounds rather than throwing', () => {
+    for (const round of [0, -1, 7, 600]) {
+      expect(selectRoundKind(state, round)).toBe('open');
+    }
+  });
+
+  it('answers open for every round of a tournament with no compiled schedule', () => {
+    const migrated = initialState(CONFIG);
+    expect([1, 2, 3, 4, 5, 6].map((round) => selectRoundKind(migrated, round))).toEqual([
+      'open',
+      'open',
+      'open',
+      'open',
+      'open',
+      'open',
+    ]);
+  });
+});
+
+describe('selectSlotKind', () => {
+  it('inverts selectTeams’s round-to-slot join for every slot', () => {
+    // `selectTeams` files a round-`r` pick into slot `r - 1` (`selectors.ts:63-79`).
+    // Nothing stores a slot's type — D-08 derives it, so the two cannot disagree.
+    const state = stateWithSchedule(['mega', 'open', 'mega', 'open', 'open', 'open']);
+
+    for (let slotIndex = 0; slotIndex < CONFIG.rounds; slotIndex++) {
+      expect(selectSlotKind(state, slotIndex)).toBe(selectRoundKind(state, slotIndex + 1));
+    }
+
+    expect([0, 1, 2, 3, 4, 5].map((slot) => selectSlotKind(state, slot))).toEqual([
+      'mega',
+      'open',
+      'mega',
+      'open',
+      'open',
+      'open',
+    ]);
+  });
+
+  it('answers open for a slot index the schedule has no round for', () => {
+    const state = stateWithSchedule(['mega', 'open', 'open', 'open', 'open', 'open']);
+    expect(selectSlotKind(state, -1)).toBe('open');
+    expect(selectSlotKind(state, 6)).toBe('open');
   });
 });
 
