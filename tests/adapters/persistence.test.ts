@@ -84,6 +84,10 @@ const CONFIG: TournamentConfig = {
   megasRequiredPerTeam: 0,
   dualMegaChoices: [],
   depth: 'draftOnly',
+  rules: [{ kind: 'mega', count: 0 }],
+  megaFormeBans: [],
+  swapBudget: 0,
+  swapRounds: 0,
 };
 
 function stamp(intent: Intent, seq: number): Action {
@@ -395,14 +399,14 @@ describe('a draft saved by Phase 1', () => {
     expect(load()).not.toBeNull();
   });
 
-  it('comes back at version 2, not at the version it was stored as', () => {
+  it('comes back at the current version, not at the version it was stored as', () => {
     // `isValidTournament` is a PREDICATE: it calls `migrate` and throws the result away.
     // Returning the narrowed object therefore hands back the un-migrated document, which
     // `adoptTournament` refuses one call later.
     storage.backing.set(STORAGE_KEY, v1Record());
 
     expect(load()?.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(load()?.schemaVersion).toBe(2);
+    expect(load()?.schemaVersion).toBe(3);
   });
 
   it('lands with the pool size its log actually recorded', () => {
@@ -430,21 +434,21 @@ describe('a draft saved by Phase 1', () => {
     const imported = parseTournamentFile(text, text.length);
     expect(imported.ok).toBe(true);
     if (!imported.ok) return;
-    expect(imported.doc.schemaVersion).toBe(2);
+    expect(imported.doc.schemaVersion).toBe(3);
 
     storage.backing.set(STORAGE_KEY, v1Record());
     const restored = load();
-    expect(restored?.schemaVersion).toBe(2);
+    expect(restored?.schemaVersion).toBe(3);
 
     expect(adoptTournament(imported.doc)).toBe(true);
-    expect(getDoc()?.schemaVersion).toBe(2);
+    expect(getDoc()?.schemaVersion).toBe(3);
   });
 
   it('adopts an un-migrated v1 document rather than refusing it', () => {
     // `adoptTournament` is reachable with a raw v1 document, so it migrates rather than
     // comparing — and the state it publishes is the fold of the MIGRATED document.
     expect(adoptTournament(v1Doc() as TournamentDoc)).toBe(true);
-    expect(getDoc()?.schemaVersion).toBe(2);
+    expect(getDoc()?.schemaVersion).toBe(3);
     expect(getState()?.poolIds).toHaveLength(4);
   });
 

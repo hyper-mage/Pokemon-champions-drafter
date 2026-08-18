@@ -59,9 +59,10 @@
  */
 
 import type { Action } from './actions';
-import { migrate, V1_CONFIG_DEFAULTS } from './migrate';
+import { migrate, V1_CONFIG_DEFAULTS, V2_CONFIG_DEFAULTS } from './migrate';
 import type {
   BanMode,
+  CompositionRule,
   DualMegaChoice,
   DualMegaForme,
   PlayerConfig,
@@ -430,6 +431,15 @@ function buildConfig(value: unknown): TournamentConfig | null {
     depth = raw['depth'];
   }
 
+  // Derived rather than defaulted, and derived from the value validated above — the same
+  // wrap `migrateV2ToV3` performs, so a file that predates the field and a file that was
+  // migrated say the same thing about the same tournament.
+  const rules: CompositionRule[] = [{ kind: 'mega', count: megasRequiredPerTeam }];
+
+  const megaFormeBans: string[] = [...V2_CONFIG_DEFAULTS.megaFormeBans];
+  const swapBudget: number = V2_CONFIG_DEFAULTS.swapBudget;
+  const swapRounds: number = V2_CONFIG_DEFAULTS.swapRounds;
+
   return {
     formatLabel,
     players,
@@ -442,6 +452,10 @@ function buildConfig(value: unknown): TournamentConfig | null {
     megasRequiredPerTeam,
     dualMegaChoices,
     depth,
+    rules,
+    megaFormeBans,
+    swapBudget,
+    swapRounds,
   };
 }
 

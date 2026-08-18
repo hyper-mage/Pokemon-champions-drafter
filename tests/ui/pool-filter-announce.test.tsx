@@ -353,6 +353,10 @@ const CONFIG: TournamentConfig = {
   megasRequiredPerTeam: 0,
   dualMegaChoices: [],
   depth: 'draftOnly',
+  rules: [{ kind: 'mega', count: 0 }],
+  megaFormeBans: [],
+  swapBudget: 0,
+  swapRounds: 0,
 };
 
 function seedSavedDraft(): void {

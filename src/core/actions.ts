@@ -67,6 +67,38 @@ export interface PoolBuiltPayload {
   megaCapableCount: number;
 }
 
+/**
+ * What a round's pool is filtered by (D-07).
+ *
+ * A TAG, never a resolved id list. The round says what it wants and the eligibility
+ * selector answers it against the roster the document is pinned to; a materialized id
+ * list would freeze one regulation's answer into a document that outlives it.
+ *
+ * A string-literal union with a comment per member, for the same reason {@link
+ * ../model.BanMode} is one: these exact strings are written into a saved document and
+ * read back by a later build, which makes them closer to an API than to a label.
+ * Renaming one breaks every tournament already on disk.
+ */
+export type RoundKind =
+  /** The slot only accepts a Pokémon that can Mega Evolve under this document's rules. */
+  | 'mega'
+  /** The slot accepts anything still in the pool. The default, and what an empty schedule folds as. */
+  | 'open';
+
+/**
+ * One round of the compiled schedule.
+ *
+ * `index` is 1-based, matching `DraftPick.round` and the `R1`…`R6` board headers, and it
+ * is CARRIED rather than taken from array position: a schedule read back from a file is
+ * an array whose order a hand-edit can change without the reader noticing. 03-02's
+ * structural guard pins `rounds[i].index === i + 1` so the two can never disagree
+ * silently.
+ */
+export interface RoundSpec {
+  index: number;
+  kind: RoundKind;
+}
+
 /** The starting order, materialized from the seed at creation time. */
 export interface DraftStartedPayload {
   type: typeof DRAFT_STARTED;

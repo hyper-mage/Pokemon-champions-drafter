@@ -704,6 +704,13 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       // saved tournament needs migrating for it later.
       dualMegaChoices: dualMegaChoicesForConfig,
       depth,
+      // The same wrap `migrateV2ToV3` and `import-guard.buildConfig` perform, so a
+      // tournament created here and one recovered from a Phase 2 save describe their Mega
+      // requirement identically. A fresh array, never one shared with this screen.
+      rules: [{ kind: 'mega', count: megasRequiredPerTeam ?? 0 }],
+      megaFormeBans: [],
+      swapBudget: 0,
+      swapRounds: 0,
     };
 
     const created = createTournament({

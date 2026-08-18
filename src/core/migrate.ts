@@ -1,11 +1,13 @@
 /**
  * migrate.ts — PERS-07. The version decision, in one place, before there is a decision.
  *
- * There is one schema version and version 1 is a passthrough, so this file does nothing
- * today. It exists anyway, and the reason is structural rather than anticipatory: the
- * alternative to a named home for version handling is `if (doc.someNewField === undefined)`
- * accreting across the reducer, the selectors and the guard, at which point the question
- * "can this build read this file" has no answer that lives anywhere.
+ * Three schema versions now, and one arm each. The file was written while version 1 was
+ * still a passthrough and it did nothing, and the reason it existed anyway was structural
+ * rather than anticipatory: the alternative to a named home for version handling is
+ * `if (doc.someNewField === undefined)` accreting across the reducer, the selectors and
+ * the guard, at which point the question "can this build read this file" has no answer
+ * that lives anywhere. Two bumps later there are two upgrade arms and a chain that runs
+ * them in order, all in one place, which is what that structure bought.
  *
  * ## Refusal is a feature
  *
@@ -20,7 +22,21 @@
  * Pure, like everything under `src/core`. It reads its argument and nothing else.
  */
 
-import { SCHEMA_VERSION, type TournamentDoc } from './model';
+import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from './model';
+
+/**
+ * The version 2 config shape: `TournamentConfig` minus everything version 3 added.
+ *
+ * Written as an `Omit` rather than as a cast so that each arm below stays strictly typed
+ * against the shape it actually produces. `migrateV1ToV2` returns a document that is NOT
+ * a `TournamentDoc` any more — it is missing four required fields — and saying so in the
+ * type is what keeps `migrateV2ToV3` from being optional in the chain. A current
+ * `TournamentDoc` is still assignable to {@link V2Doc}, which is what lets the version 2
+ * arm hand `migrate`'s own argument straight to `migrateV2ToV3`.
+ */
+type V2Config = Omit<TournamentConfig, 'rules' | 'megaFormeBans' | 'swapBudget' | 'swapRounds'>;
+
+type V2Doc = Omit<TournamentDoc, 'config'> & { config: V2Config };
 
 /**
  * Every version this build can fold.
@@ -29,7 +45,7 @@ import { SCHEMA_VERSION, type TournamentDoc } from './model';
  * is a real possibility and a `>= MIN` check could not express it. Kept in sync with
  * `SCHEMA_VERSION` by test, not by hope.
  */
-export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [1, 2];
+export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [1, 2, 3];
 
 /**
  * What every version 2 config field is worth in a version 1 document.
@@ -49,6 +65,26 @@ export const V1_CONFIG_DEFAULTS = {
   megasRequiredPerTeam: 0,
   dualMegaChoices: [],
   depth: 'draftOnly',
+} as const;
+
+/**
+ * What every version 3 config field is worth in a version 2 document.
+ *
+ * Same contract as {@link V1_CONFIG_DEFAULTS}: one place, imported by
+ * `import-guard.buildConfig` rather than repeated, because two copies of a default table
+ * is two tables that can disagree about what a Phase 2 tournament was.
+ *
+ * `rules` is deliberately NOT here, for exactly the reason `poolSize` is absent from the
+ * version 1 table. A version 2 document is already carrying the true answer in
+ * `megasRequiredPerTeam`, so defaulting the rule list would be inventing a number the
+ * document is holding. It is DERIVED — `[{ kind: 'mega', count: megasRequiredPerTeam }]` —
+ * and both `migrateV2ToV3` and the import guard derive it the same way, so a file that
+ * predates the field and a file that was migrated agree about what it says.
+ */
+export const V2_CONFIG_DEFAULTS = {
+  megaFormeBans: [],
+  swapBudget: 0,
+  swapRounds: 0,
 } as const;
 
 export type MigrateRejectionReason =
@@ -117,7 +153,7 @@ function recordedPoolSize(log: TournamentDoc['log']): number | null {
  * Never mutates its argument. Every object it returns is a fresh literal, because the
  * caller in the persistence path is holding the parsed record and re-reads it afterwards.
  */
-function migrateV1ToV2(doc: TournamentDoc): TournamentDoc {
+function migrateV1ToV2(doc: TournamentDoc): V2Doc {
   const { config } = doc;
 
   return {
@@ -162,6 +198,54 @@ function migrateV1ToV2(doc: TournamentDoc): TournamentDoc {
   };
 }
 
+/**
+ * Version 2 to version 3.
+ *
+ * Config only. Three fields come from {@link V2_CONFIG_DEFAULTS} and are lossless by
+ * definition — a version 2 tournament banned no Mega formes, granted no swaps and ran no
+ * swap rounds. The fourth, `rules`, is DERIVED rather than defaulted: the document is
+ * already carrying `megasRequiredPerTeam`, and the rule list is that same fact in the
+ * shape the compiler reads.
+ *
+ * `megasRequiredPerTeam` STAYS. It is still the host-facing number the config screen
+ * shows and edits, while the compiler reads the list — one fact in two shapes, and 03-03
+ * owns keeping them in step. Dropping the scalar here would blank a field the host typed.
+ *
+ * **The log is passed through unchanged, entry for entry.** This is the difference from
+ * {@link migrateV1ToV2}, which rewrote entries because `isPoolBuiltAction` requires fields
+ * a version 1 entry lacks. Nothing in schema 3 makes an existing entry unfoldable, so
+ * there is no surgery to do — and splicing a synthetic `schedule/compiled` in would be
+ * worse than doing nothing: it would need a fresh `seq` and would therefore be stamped
+ * after picks it logically precedes. An empty `DraftState.schedule` folds as all-open,
+ * which is precisely what a version 2 draft was.
+ *
+ * Never mutates its argument. Every object it returns is a fresh literal.
+ */
+function migrateV2ToV3(doc: V2Doc): TournamentDoc {
+  const { config } = doc;
+
+  return {
+    schemaVersion: 3,
+    id: doc.id,
+    createdAt: doc.createdAt,
+    config: {
+      ...config,
+      players: config.players.map((player) => ({ id: player.id, name: player.name })),
+      bans: config.bans.map((id) => id),
+      dualMegaChoices: config.dualMegaChoices.map((choice) => ({
+        speciesId: choice.speciesId,
+        forme: choice.forme,
+      })),
+      rules: [{ kind: 'mega', count: config.megasRequiredPerTeam }],
+      megaFormeBans: [...V2_CONFIG_DEFAULTS.megaFormeBans],
+      swapBudget: V2_CONFIG_DEFAULTS.swapBudget,
+      swapRounds: V2_CONFIG_DEFAULTS.swapRounds,
+    },
+    rng: { seed: doc.rng.seed, cursor: doc.rng.cursor },
+    log: [...doc.log],
+  };
+}
+
 export function migrate(doc: TournamentDoc): MigrateResult {
   const version = doc.schemaVersion;
 
@@ -184,8 +268,9 @@ export function migrate(doc: TournamentDoc): MigrateResult {
   // gets one arm and one test; the current version is the passthrough, and it returns the
   // document by IDENTITY because a passthrough that rebuilt it would be doing undisclosed
   // work that a caller comparing references would notice.
-  if (version === 2) return { ok: true, doc };
-  if (version === 1) return { ok: true, doc: migrateV1ToV2(doc) };
+  if (version === 3) return { ok: true, doc };
+  if (version === 2) return { ok: true, doc: migrateV2ToV3(doc) };
+  if (version === 1) return { ok: true, doc: migrateV2ToV3(migrateV1ToV2(doc)) };
 
   // Reachable only by adding a version to the list without giving it an arm. Refusing is
   // the right answer to that: a version this function cannot name is one it cannot fold.
