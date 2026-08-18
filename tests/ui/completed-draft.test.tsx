@@ -20,8 +20,15 @@ import { render } from 'preact';
 import { act } from 'preact/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PlayerConfig } from '../../src/core/model';
-import type { RosterEntry } from '../../src/core/roster/types';
+import type { RoundKind } from '../../src/core/actions';
+import {
+  initialState,
+  type DraftPick,
+  type DraftState,
+  type PlayerConfig,
+  type TournamentConfig,
+} from '../../src/core/model';
+import type { MegaForme, RosterEntry } from '../../src/core/roster/types';
 import {
   CHECKPOINT_CTA,
   CHECKPOINT_DISMISS,
@@ -36,7 +43,19 @@ import { CompletedDraft } from '../../src/ui/screens/CompletedDraft';
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function entry(id: string, name: string): RosterEntry {
+function megaForme(id: string, name: string, stone: string): MegaForme {
+  return {
+    id,
+    name,
+    forme: 'Mega',
+    requiredItem: stone,
+    spriteId: null,
+    types: ['Normal'],
+    baseStats: { hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1 },
+  };
+}
+
+function entry(id: string, name: string, megaFormes: MegaForme[] = []): RosterEntry {
   return {
     id,
     name,
@@ -45,8 +64,8 @@ function entry(id: string, name: string): RosterEntry {
     baseStats: { hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1 },
     baseSpeciesId: id,
     forme: null,
-    megaCapable: false,
-    megaFormes: [],
+    megaCapable: megaFormes.length > 0,
+    megaFormes,
     spriteId: id,
     spriteMissing: false,
   };
@@ -54,14 +73,20 @@ function entry(id: string, name: string): RosterEntry {
 
 // Deliberately awkward names: a hyphenated base species, an internal full stop, and a
 // U+2019 apostrophe. Each has broken a naive exporter somewhere.
+//
+// Venusaur and Garchomp can Mega, which is what makes the D-04 assertions below possible:
+// the same two species export bare from an open slot and with a stone from a Mega one, so
+// the slot is provably what decides it.
 const ROSTER = new Map<string, RosterEntry>([
-  ['venusaur', entry('venusaur', 'Venusaur')],
-  ['garchomp', entry('garchomp', 'Garchomp')],
+  ['venusaur', entry('venusaur', 'Venusaur', [megaForme('venusaurmega', 'Venusaur-Mega', 'Venusaurite')])],
+  ['garchomp', entry('garchomp', 'Garchomp', [megaForme('garchompmega', 'Garchomp-Mega', 'Garchompite')])],
   ['kommoo', entry('kommoo', 'Kommo-o')],
   ['mrrime', entry('mrrime', 'Mr. Rime')],
   ['farfetchd', entry('farfetchd', 'Farfetch’d')],
   ['rotomwash', entry('rotomwash', 'Rotom-Wash')],
 ]);
+
+const ROSTER_ENTRIES: readonly RosterEntry[] = [...ROSTER.values()];
 
 const PLAYERS: PlayerConfig[] = [
   { id: 'p1', name: 'Ash' },
@@ -72,6 +97,63 @@ const TEAMS: Record<string, (string | null)[]> = {
   p1: ['venusaur', 'kommoo', 'farfetchd'],
   p2: ['garchomp', 'mrrime', 'rotomwash'],
 };
+
+const CONFIG: TournamentConfig = {
+  formatLabel: 'Champions Test',
+  players: PLAYERS,
+  rounds: 3,
+  rosterVersion: 'mb',
+  rosterChecksum: 'test-checksum',
+  poolSize: 6,
+  bans: [],
+  banMode: 'hostBanlist',
+  megasRequiredPerTeam: 0,
+  dualMegaChoices: [],
+  depth: 'draftOnly',
+  rules: [{ kind: 'mega', count: 0 }],
+  megaFormeBans: [],
+  swapBudget: 0,
+  swapRounds: 0,
+};
+
+/** A schema-2 document's schedule: none at all, which `selectSchedule` folds to all-open. */
+const MIGRATED: readonly RoundKind[] = [];
+const ALL_OPEN: readonly RoundKind[] = ['open', 'open', 'open'];
+const MEGA_FIRST: readonly RoundKind[] = ['mega', 'open', 'open'];
+
+/**
+ * The folded state the screen reads, built from a team map for legibility.
+ *
+ * The screen takes the FOLD rather than a `teams` record since 03-06, because the stone a
+ * Mega slot exports with is read off the schedule and the picks together. Written this way
+ * round, every test below still names its teams in the shape a reader can check by eye.
+ */
+function stateWith(
+  kinds: readonly RoundKind[],
+  teams: Record<string, (string | null)[]> = TEAMS,
+  config: TournamentConfig = CONFIG,
+): DraftState {
+  const picks: DraftPick[] = [];
+
+  for (const [playerId, slots] of Object.entries(teams)) {
+    slots.forEach((monId, slotIndex) => {
+      if (monId === null) return;
+      picks.push({
+        playerId,
+        monId,
+        round: slotIndex + 1,
+        pickIndex: picks.length,
+        seq: picks.length + 2,
+      });
+    });
+  }
+
+  return {
+    ...initialState(config),
+    picks,
+    schedule: kinds.map((kind, position) => ({ index: position + 1, kind })),
+  };
+}
 
 let host: HTMLDivElement;
 
@@ -92,7 +174,8 @@ function drawCompleted(overrides: Partial<Parameters<typeof CompletedDraft>[0]> 
     render(
       <CompletedDraft
         players={PLAYERS}
-        teams={TEAMS}
+        state={stateWith(MIGRATED)}
+        entries={ROSTER_ENTRIES}
         entryById={ROSTER}
         checkpointReached
         checkpointDismissed={false}
@@ -248,7 +331,9 @@ describe('the export panels', () => {
   });
 
   it('drops unfilled slots rather than emitting blank records', () => {
-    drawCompleted({ teams: { p1: ['venusaur', null, 'kommoo'], p2: [null, null, null] } });
+    drawCompleted({
+      state: stateWith(MIGRATED, { p1: ['venusaur', null, 'kommoo'], p2: [null, null, null] }),
+    });
     const [ash, misty] = pasteBlocks();
 
     expect(ash?.textContent).toBe('Venusaur\n\nKommo-o\n');
@@ -372,7 +457,8 @@ describe('copying', () => {
           <LiveRegion />
           <CompletedDraft
             players={PLAYERS}
-            teams={TEAMS}
+            state={stateWith(MIGRATED)}
+            entries={ROSTER_ENTRIES}
             entryById={ROSTER}
             checkpointReached
             checkpointDismissed={false}
@@ -413,7 +499,8 @@ describe('copying', () => {
           <LiveRegion />
           <CompletedDraft
             players={PLAYERS}
-            teams={TEAMS}
+            state={stateWith(MIGRATED)}
+            entries={ROSTER_ENTRIES}
             entryById={ROSTER}
             checkpointReached
             checkpointDismissed={false}
@@ -434,5 +521,97 @@ describe('copying', () => {
     expect(host.querySelector('[role="status"]')?.textContent).toBe(
       'Ash team paste not copied — select the text below.',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The slot decides the export — D-04, EXPO-02
+// ---------------------------------------------------------------------------
+
+/**
+ * Every assertion in this block is EXACT STRING EQUALITY on the whole paste.
+ *
+ * `toContain` is the assertion that would not catch the failure this file exists to
+ * prevent. Showdown reads `A\n\nB` as two Pokemon and `A\nB` as one, silently discarding
+ * the rest, and a substring check passes identically against both. The blank-line
+ * separator and the single trailing newline are part of the value, so they are part of
+ * the expectation.
+ */
+describe('a Mega slot exports with its stone', () => {
+  function pasteFor(player: 'p1' | 'p2'): string {
+    return pasteBlocks()[player === 'p1' ? 0 : 1]?.textContent ?? '';
+  }
+
+  it('emits Species @ StoneItemName for a slot the schedule typed as Mega', () => {
+    drawCompleted({ state: stateWith(MEGA_FIRST) });
+
+    expect(pasteFor('p1')).toBe('Venusaur @ Venusaurite\n\nKommo-o\n\nFarfetch’d\n');
+    expect(pasteFor('p2')).toBe('Garchomp @ Garchompite\n\nMr. Rime\n\nRotom-Wash\n');
+  });
+
+  /**
+   * The D-04 assertion, made from the slot side rather than the species side.
+   *
+   * Venusaur can Mega and exports BARE here, because round 1 is open in this schedule and
+   * open slots are untyped. Reading the stone off the species instead would pass every
+   * test of the roster table and quietly claim a Mega nobody drafted.
+   */
+  it('emits a Mega-CAPABLE species bare when its slot is open', () => {
+    drawCompleted({ state: stateWith(ALL_OPEN) });
+
+    expect(ROSTER.get('venusaur')?.megaCapable).toBe(true);
+    expect(pasteFor('p1')).toBe('Venusaur\n\nKommo-o\n\nFarfetch’d\n');
+    expect(pasteFor('p1')).not.toContain(' @ ');
+    expect(pasteFor('p2')).not.toContain(' @ ');
+  });
+
+  it('keeps the blank-line separator and the single trailing newline with a stone present', () => {
+    drawCompleted({ state: stateWith(MEGA_FIRST) });
+
+    const text = pasteFor('p1');
+    expect(text.split('\n\n')).toHaveLength(3);
+    expect(text.endsWith('\n')).toBe(true);
+    expect(text.endsWith('\n\n')).toBe(false);
+    // And the naive form is genuinely absent, not merely unlikely.
+    expect(text).not.toBe('Venusaur @ Venusaurite\nKommo-o\nFarfetch’d\n');
+  });
+
+  it('emits a Mega slot bare when the species has no legal forme left', () => {
+    // D-10 as behaviour rather than as an error: every forme banned means the species
+    // simply cannot Mega in this tournament. Reachable in the export only from an imported
+    // document — the Mega round would never have offered it.
+    const banned = { ...CONFIG, megaFormeBans: ['venusaurmega'] };
+    drawCompleted({ state: stateWith(MEGA_FIRST, TEAMS, banned) });
+
+    expect(pasteFor('p1')).toBe('Venusaur\n\nKommo-o\n\nFarfetch’d\n');
+    // The other player's Mega slot is untouched by a ban on somebody else's forme.
+    expect(pasteFor('p2')).toBe('Garchomp @ Garchompite\n\nMr. Rime\n\nRotom-Wash\n');
+  });
+
+  it('exports a migrated schema-2 document byte-identically to before Phase 3', () => {
+    // No `schedule/compiled` in its log, so its folded schedule is empty and every slot is
+    // open — which is what that draft actually ran. The expectation below is the string
+    // this file asserted before Mega rounds existed, unchanged.
+    drawCompleted({ state: stateWith(MIGRATED) });
+    const migrated = [pasteFor('p1'), pasteFor('p2')];
+
+    expect(migrated).toEqual([
+      'Venusaur\n\nKommo-o\n\nFarfetch’d\n',
+      'Garchomp\n\nMr. Rime\n\nRotom-Wash\n',
+    ]);
+
+    // And an explicitly compiled all-open schedule produces the same bytes, so the two
+    // routes to "no Mega rounds" cannot diverge.
+    drawCompleted({ state: stateWith(ALL_OPEN) });
+    expect([pasteFor('p1'), pasteFor('p2')]).toEqual(migrated);
+  });
+
+  it('drops an unfilled Mega slot rather than emitting a lone stone', () => {
+    drawCompleted({
+      state: stateWith(MEGA_FIRST, { p1: [null, 'kommoo', null], p2: [null, null, null] }),
+    });
+
+    expect(pasteFor('p1')).toBe('Kommo-o\n');
+    expect(pasteFor('p2')).toBe('');
   });
 });

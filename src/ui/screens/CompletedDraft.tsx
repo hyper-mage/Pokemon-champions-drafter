@@ -1,6 +1,7 @@
 import { toShowdownPaste, type PasteSlot } from '../../core/export/paste';
-import type { PlayerConfig } from '../../core/model';
+import type { DraftState, PlayerConfig } from '../../core/model';
 import type { RosterEntry } from '../../core/roster/types';
+import { selectSlotStone, selectTeams } from '../../core/selectors';
 import { CheckpointPrompt } from '../components/CheckpointPrompt';
 import { ExportPanel } from '../components/ExportPanel';
 
@@ -31,8 +32,22 @@ import { ExportPanel } from '../components/ExportPanel';
 export interface CompletedDraftProps {
   /** In board order, so the panels and the board rows read down the page together. */
   players: readonly PlayerConfig[];
-  /** `selectTeams` output: player id to slot array, `null` for an unfilled slot. */
-  teams: Record<string, (string | null)[]>;
+  /**
+   * The folded document. Both the slot contents and the slot KINDS come from it.
+   *
+   * It replaced a `teams` prop in 03-06, and not for tidiness: the stone a slot exports
+   * with is `selectSlotStone`'s answer, which reads the schedule and the picks off this
+   * state. A separate `teams` prop would have been a second copy of the same fold, free to
+   * name a different species from the one the stone was resolved for — and the export is
+   * the last surface in the app, with nothing downstream to catch the disagreement.
+   */
+  state: DraftState;
+  /**
+   * The roster, for `selectSlotStone`. Ambient data the core RECEIVES rather than holds:
+   * `DraftState` has no roster field and must not gain one.
+   */
+  entries: readonly RosterEntry[];
+  /** The same roster as a lookup, for `toShowdownPaste`. One memo upstream feeds both. */
   entryById: ReadonlyMap<string, RosterEntry>;
   /** Whether the checkpoint milestone has been reached. */
   checkpointReached: boolean;
@@ -44,18 +59,41 @@ export interface CompletedDraftProps {
 /**
  * A player's slots in the shape `toShowdownPaste` accepts.
  *
- * Phase 1 never produces a Mega-typed slot — there are no Mega rounds and no X-versus-Y
- * selection — so `megaStone` is deliberately not set. The plumbing exists and is
- * fixture-tested so that Phase 3 extends a tested function rather than reopening the
- * export format.
+ * ## The SLOT decides the stone, never the species — D-04
+ *
+ * `selectSlotStone` answers per slot index, and it answers from the compiled schedule: a
+ * Mega round's slot carries its forme's `requiredItem`, and every other slot carries
+ * `null`. So a Mega-CAPABLE species drafted into an open round occupies an untyped slot
+ * and exports bare, which is the case that reads backwards if the stone is taken off the
+ * species instead — and it would produce a paste claiming a Mega nobody drafted, with no
+ * test of the species table able to see it.
+ *
+ * Nothing about the format is re-decided here. Phase 1 settled `PasteSlot.megaStone` for
+ * exactly this caller, which is why `toShowdownPaste`'s signature did not change; and
+ * `declaredStone` inside it re-derives the name from the entry's OWN copy, so every
+ * character reaching text the host pastes into a third-party site originates in the
+ * committed snapshot. A slot whose species has no matching forme yields `null` there and
+ * exports bare with no special case, which is what makes the zero-legal-formes case
+ * ordinary rather than an error (D-10).
  */
-function toSlots(slots: readonly (string | null)[]): (PasteSlot | null)[] {
-  return slots.map((monId) => (monId === null ? null : { monId }));
+function toSlots(
+  state: DraftState,
+  entries: readonly RosterEntry[],
+  playerId: string,
+): (PasteSlot | null)[] {
+  const slots = selectTeams(state)[playerId] ?? [];
+
+  return slots.map((monId, slotIndex) =>
+    monId === null
+      ? null
+      : { monId, megaStone: selectSlotStone(state, entries, playerId, slotIndex) },
+  );
 }
 
 export function CompletedDraft({
   players,
-  teams,
+  state,
+  entries,
   entryById,
   checkpointReached,
   checkpointDismissed,
@@ -81,7 +119,7 @@ export function CompletedDraft({
         <ExportPanel
           key={player.id}
           playerName={player.name}
-          paste={toShowdownPaste(toSlots(teams[player.id] ?? []), entryById)}
+          paste={toShowdownPaste(toSlots(state, entries, player.id), entryById)}
         />
       ))}
     </div>

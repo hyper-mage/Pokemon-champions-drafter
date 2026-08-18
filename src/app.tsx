@@ -1189,7 +1189,11 @@ export function App() {
                 complete ? (
                   <CompletedDraft
                     players={state.config.players}
-                    teams={selectTeams(state)}
+                    // The fold itself, not `selectTeams(state)`. The stone a Mega slot
+                    // exports with is read off the schedule and the picks together, so a
+                    // pre-folded team array would have been a second copy of one fact.
+                    state={state}
+                    entries={entries}
                     entryById={entryById}
                     checkpointReached={complete}
                     checkpointDismissed={checkpointDismissed}
