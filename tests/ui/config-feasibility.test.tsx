@@ -240,6 +240,59 @@ function nameEveryone(names: readonly string[]): void {
 
 const EIGHT_NAMES = ['Ada', 'Bo', 'Cy', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal'];
 
+/** Twelve players, which is where three forme bans are enough to break the arithmetic. */
+const TWELVE_NAMES = [...EIGHT_NAMES, 'Ida', 'Jo', 'Kit', 'Lou'];
+
+/**
+ * Three species carrying exactly ONE Mega forme, and that one forme each.
+ *
+ * One forme apiece is what makes the arithmetic legible: each ban removes exactly one
+ * species from the eligible count, so the sentence the host reads quotes three bans and a
+ * count three lower. Charizard and Raichu would need two bans apiece (D-09), which is the
+ * same test with a worse trail. Every id and name is READ from the roster.
+ */
+const SINGLE_FORME_VICTIMS = ENTRIES.filter((entry) => entry.megaFormes.length === 1).slice(0, 3);
+
+/** The `Mega-forme bans` sub-section — the species ban grid renders the same classes. */
+function megaFormeSection(): HTMLElement {
+  const heading = [...host.querySelectorAll('h2')].find(
+    (element) => element.textContent?.trim() === 'Mega-forme bans',
+  );
+  const container = heading?.closest<HTMLElement>('.config-screen__section');
+  if (container === null || container === undefined) {
+    throw new Error('the Mega-forme bans sub-section is not on the screen');
+  }
+  return container;
+}
+
+function banForme(name: string): void {
+  const card = [...megaFormeSection().querySelectorAll<HTMLButtonElement>('.mon-card')].find(
+    (element) => element.querySelector('.mon-card__name')?.textContent === name,
+  );
+  if (card === undefined) throw new Error(`no Mega-forme cell for ${name}`);
+  act(() => {
+    card.click();
+  });
+}
+
+function megasField(): HTMLInputElement {
+  const input = fieldLabelled('Megas required per team');
+  if (input === null) throw new Error('Megas required per team is not on the screen');
+  return input;
+}
+
+function swapBudgetField(): HTMLInputElement {
+  const input = fieldLabelled('Swap budget per player');
+  if (input === null) throw new Error('Swap budget per player is not on the screen');
+  return input;
+}
+
+function swapRoundsField(): HTMLInputElement {
+  const input = fieldLabelled('Swap rounds after the draft');
+  if (input === null) throw new Error('Swap rounds after the draft is not on the screen');
+  return input;
+}
+
 function fortyNames(): string[] {
   return Array.from({ length: 40 }, (_, index) => `Player-${index + 1}`);
 }
@@ -712,3 +765,225 @@ describe('a pool drawn at Exact', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The two swap fields reaching the gate — 03-05
+// ---------------------------------------------------------------------------
+
+describe('the Swaps group reaching the gate', () => {
+  it('blocks the start when the swap budget is emptied', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    type(swapBudgetField(), '');
+
+    // Same shape as the pool-size hole one group up: read arithmetically an empty numeric
+    // field is `NaN`, every comparison with it is false, and a gate that merely compared
+    // would enable Start on a configuration the host has not finished stating.
+    expect(reasonText()).toBe('Swap budget needs a whole number. Enter 0 for no swaps.');
+    expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
+    expect(readout()).toBeNull();
+  });
+
+  it('blocks the start when the swap-rounds field is emptied', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    type(swapRoundsField(), '');
+
+    expect(reasonText()).toBe(
+      'Swap rounds needs a whole number. Enter 0 to end the draft with the last pick.',
+    );
+    expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('unblocks again the moment a whole number is typed back', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    type(swapBudgetField(), '');
+    expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
+
+    type(swapBudgetField(), '2');
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('warns without blocking when swap rounds run on an Exact pool (D-32)', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    type(swapRoundsField(), '2');
+
+    // The Exact preset is the default, so this is the ordinary configuration rather than an
+    // edge one — which is exactly why it warns instead of blocking. The sentence supersedes
+    // the plain exactly-minimum one because it carries the same number and says more.
+    expect(reasonText()).toBe(
+      'Warning — the pool is exactly 48, so it is empty when the last pick lands. The first player to swap can only take what someone else drops.',
+    );
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('says the ordinary thing again at a pool with a surplus', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+
+    type(swapRoundsField(), '2');
+    choosePreset('x1_5');
+
+    expect(reasonText()).toBe('8 players, 6 rounds, 72 Pokémon in the pool.');
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RULE-09 on screen — the blocker, with the arithmetic and the right list
+// ---------------------------------------------------------------------------
+
+describe('Mega-forme bans reaching the gate (RULE-09)', () => {
+  it('blocks the start with the arithmetic and both ban counts', () => {
+    mount();
+    nameEveryone(TWELVE_NAMES);
+    type(megasField(), '6');
+
+    // Passing before the bans: 12 x 6 = 72, and the snapshot carries more eligible species
+    // than that. Asserted, because a test that only checked the blocked state would pass
+    // against a screen that was blocked for some other reason all along.
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+
+    for (const victim of SINGLE_FORME_VICTIMS) {
+      const forme = victim.megaFormes[0];
+      if (forme !== undefined) banForme(forme.name);
+    }
+
+    expect(reasonText()).toBe(
+      `Not enough Pokémon can Mega. 12 players × 6 Mega rounds needs 72; ${
+        MEGA_ELIGIBLE_IDS.length - 3
+      } can still Mega after 0 species bans and 3 Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.`,
+    );
+    expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
+    // Blocked means no draw, so there is nothing on screen claiming a pool exists.
+    expect(readout()).toBeNull();
+  });
+
+  it('unblocks when one forme is unbanned again', () => {
+    mount();
+    nameEveryone(TWELVE_NAMES);
+    type(megasField(), '6');
+
+    for (const victim of SINGLE_FORME_VICTIMS) {
+      const forme = victim.megaFormes[0];
+      if (forme !== undefined) banForme(forme.name);
+    }
+    expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
+
+    // The cell toggles, so clicking it again is the unban the sentence names.
+    const first = SINGLE_FORME_VICTIMS[0]?.megaFormes[0];
+    if (first !== undefined) banForme(first.name);
+
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('leaves the gate alone at a Mega requirement of zero', () => {
+    mount();
+    nameEveryone(TWELVE_NAMES);
+
+    for (const victim of SINGLE_FORME_VICTIMS) {
+      const forme = victim.megaFormes[0];
+      if (forme !== undefined) banForme(forme.name);
+    }
+
+    // No Mega rounds, so no Mega arithmetic. The reason is the one the Exact preset always
+    // gives, unchanged — a forme ban is not a species ban and must not move the pool count.
+    expect(reasonText()).toBe(
+      'Warning — the pool is exactly 72. The last player to pick in Round 6 will have one Pokémon to choose from.',
+    );
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+    expect(readout()).toMatch(/^Pool: 72 Pokémon — \d+ Mega-capable$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The draw honours the same eligibility the gate measured
+// ---------------------------------------------------------------------------
+
+describe('a configuration that passes the gate', () => {
+  /** Ids that can still Mega once `SINGLE_FORME_VICTIMS` have lost their only forme. */
+  function stillEligible(): Set<string> {
+    const starved = new Set(SINGLE_FORME_VICTIMS.map((entry) => entry.id));
+    return new Set(MEGA_ELIGIBLE_IDS.filter((id) => !starved.has(id)));
+  }
+
+  function banTheVictims(): void {
+    for (const victim of SINGLE_FORME_VICTIMS) {
+      const forme = victim.megaFormes[0];
+      if (forme !== undefined) banForme(forme.name);
+    }
+  }
+
+  it('draws a pool that can fill every Mega round at eight players requiring four', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+    banTheVictims();
+    type(megasField(), '4');
+
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+    act(() => {
+      startButton()?.click();
+    });
+
+    const eligible = stillEligible();
+    const ids = getState()?.poolIds ?? [];
+
+    // The whole point of the partition change: the quota is drawn from species that can
+    // STILL Mega, so a pool that passed the gate cannot open a Mega round with nothing in
+    // it. Partitioning on the `megaCapable` flag satisfies the length assertion above and
+    // fails this one.
+    expect(ids).toHaveLength(48);
+    expect(ids.filter((id) => eligible.has(id)).length).toBeGreaterThanOrEqual(32);
+  });
+
+  it('draws a pool that can fill every Mega round at six players requiring six', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES.slice(0, 6));
+    banTheVictims();
+    type(megasField(), '6');
+
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+    act(() => {
+      startButton()?.click();
+    });
+
+    const eligible = stillEligible();
+    const ids = getState()?.poolIds ?? [];
+
+    // Exact and every round a Mega round: the entire pool has to be eligible.
+    expect(ids).toHaveLength(36);
+    expect(ids.filter((id) => eligible.has(id)).length).toBe(36);
+  });
+
+  it('keeps Re-roll pool available, and a re-roll does not move the verdict', () => {
+    mount();
+    nameEveryone(EIGHT_NAMES);
+    banTheVictims();
+    type(megasField(), '4');
+
+    // 03-RESEARCH Open Question 1, settled: the gate measures the CANDIDATE set, never the
+    // drawn pool, so a re-roll cannot change what it says. The control stays.
+    expect(buttonNamed('Re-roll pool')).not.toBeNull();
+    const before = reasonText();
+
+    act(() => {
+      buttonNamed('Re-roll pool')?.click();
+    });
+    const dialog = host.querySelector('[role="alertdialog"]');
+    const draw = Array.from(dialog?.querySelectorAll('button') ?? []).find(
+      (element) => element.textContent?.trim() === 'Draw a new pool',
+    );
+    act(() => {
+      draw?.click();
+    });
+
+    expect(buttonNamed('Re-roll pool')).not.toBeNull();
+    expect(reasonText()).toBe(before);
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+  });
+});

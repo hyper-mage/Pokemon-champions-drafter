@@ -729,7 +729,7 @@ describe('precedence', () => {
     ]);
   });
 
-  it('puts the Exact-pool swap warning last, below the pool warning it extends', () => {
+  it('puts the Exact-pool swap warning above the pool warning it supersedes', () => {
     const result = checkFeasibility(
       base({
         playerNames: manyPlayers(8),
@@ -740,10 +740,12 @@ describe('precedence', () => {
       }),
     );
 
+    // The swap sentence ABOVE the pool one: they always hold together, the bar renders
+    // only the first, and the swap sentence carries the pool size as well as its own point.
     expect(codes(result)).toEqual([
       'notEnoughMegas',
-      'poolExactlyMinimum',
       'swapRoundsOnExactPool',
+      'poolExactlyMinimum',
     ]);
   });
 

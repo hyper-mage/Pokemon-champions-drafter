@@ -191,8 +191,13 @@ const PRECEDENCE: readonly FeasibilityCode[] = [
   'poolTooLarge',
   'poolTooSmall',
   'notEnoughMegas',
-  'poolExactlyMinimum',
+  // ABOVE `poolExactlyMinimum`, not below it. The two hold together by construction — both
+  // fire on `poolSize === players × rounds` and nothing else — and the bar renders
+  // `problems[0]`, so ordering the swap sentence second would make it unrenderable. It is
+  // also the more informative of the two: it states the pool size the other one states AND
+  // what that costs the first swapper, so a host reading it needs no second sentence.
   'swapRoundsOnExactPool',
+  'poolExactlyMinimum',
 ];
 
 // ---------------------------------------------------------------------------
