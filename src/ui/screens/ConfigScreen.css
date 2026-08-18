@@ -59,6 +59,34 @@
 }
 
 /*
+ * A sub-section inside a group — currently only `Round schedule`, inside `Mega rules`.
+ *
+ * 03-UI-SPEC §1: sub-sections carry a --text-heading heading and sit --space-5 apart, "the
+ * same gap the form already uses between groups, one level in". The margin here is
+ * --space-3 rather than --space-5 because `.config-screen__group` is already a column with
+ * a --space-3 gap, and a flex gap and a margin ADD: --space-3 + --space-3 is exactly
+ * --space-5 of separation. That arithmetic is stated rather than left to be rediscovered,
+ * and it is the group's gap this depends on — change that and change this with it.
+ */
+.config-screen__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+}
+
+/*
+ * At --text-heading, which is the same size as the group's own <legend>. That is the type
+ * scale's doing rather than an oversight: it holds exactly four sizes and --text-heading is
+ * the only one below --text-display, so a sub-heading cannot be "a size down" without
+ * introducing a fifth. The --space-5 separation above is what carries the level instead.
+ */
+.config-screen__section-heading {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+/*
  * A label for a run of controls inside a group — currently only `Dual-Mega species`.
  *
  * A <p> rather than a heading or a nested <legend>: each row below it already carries a

@@ -64,7 +64,7 @@ import { selectStartingOrder } from '../../src/core/selectors';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import { getDoc, getState } from '../../src/store';
 import { FeasibilityBar } from '../../src/ui/components/FeasibilityBar';
-import { announce } from '../../src/ui/components/LiveRegion';
+import { announce, LiveRegion } from '../../src/ui/components/LiveRegion';
 import { NumericField, parseNumericField } from '../../src/ui/components/NumericField';
 import { ConfigScreen } from '../../src/ui/screens/ConfigScreen';
 
@@ -175,6 +175,38 @@ function mount(onStarted: () => void = () => undefined): void {
   });
 }
 
+/**
+ * The same screen with the app-root live region beside it.
+ *
+ * Separate from `mount` rather than folded into it: the region's text joins
+ * `host.textContent`, and half this file asserts on that string.
+ */
+function mountAnnouncing(): void {
+  act(() => {
+    render(
+      <>
+        <ConfigScreen
+          snapshot={SNAPSHOT}
+          entries={ENTRIES}
+          spriteMeta={SPRITE_META}
+          onStarted={() => undefined}
+        />
+        <LiveRegion />
+      </>,
+      host,
+    );
+  });
+}
+
+/**
+ * Three elements on this screen carry a status role — the feasibility reason, the
+ * typeahead's no-match line and this one — and only this one is the global region, so it
+ * is selected by `aria-live` rather than by the role they share.
+ */
+function liveRegionText(): string {
+  return host.querySelector('[aria-live="polite"]')?.textContent ?? '';
+}
+
 /** The same screen against the real committed roster rather than the 60-entry fixture. */
 function mountCommitted(onStarted: () => void = () => undefined): void {
   act(() => {
@@ -211,6 +243,23 @@ function buttonNamed(name: string): HTMLButtonElement | null {
       (element) => element.textContent?.trim() === name,
     ) ?? null
   );
+}
+
+/** The schedule preview's row texts, in document order. */
+function scheduleRows(): string[] {
+  return Array.from(host.querySelectorAll('.schedule-preview__round-label')).map(
+    (row) => row.textContent?.trim() ?? '',
+  );
+}
+
+/** The `Move up` / `Move down` button of round `round` (1-based). */
+function moveButton(round: number, direction: 'up' | 'down'): HTMLButtonElement {
+  const label = direction === 'up' ? 'Move up' : 'Move down';
+  const found = Array.from(host.querySelectorAll<HTMLButtonElement>('.schedule-preview__move'))
+    .filter((button) => button.textContent?.trim() === label)
+    .at(round - 1);
+  if (found === undefined) throw new Error(`no ${label} button on round ${round}`);
+  return found;
 }
 
 function removeButtons(): HTMLButtonElement[] {
@@ -520,9 +569,109 @@ describe('the Mega rules group', () => {
 
     // Four rows × 2 Megas. The number the host is reasoning about is the one in front of
     // them rather than a worked example.
+    //
+    // The string is 03-UI-SPEC's amended one. Its first clause is the phase's answer to the
+    // likeliest host confusion: what 0 DOES, rather than only that it is allowed.
     expect(host.textContent).toContain(
-      '0 means no Mega requirement. A requirement of 2 needs at least 8 Mega-capable Pokémon in the pool.',
+      '0 means no Mega requirement, and no slot is a Mega slot — nothing exports with a Mega Stone. A requirement of 2 makes 2 rounds Mega-only and needs at least 8 Pokémon that can still Mega.',
     );
+  });
+
+  it('shows the schedule the requirement compiles to, beneath the field', () => {
+    mount();
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    if (input !== null) type(input, '2');
+
+    expect(host.textContent).toContain('Round schedule');
+    expect(host.textContent).toContain(
+      'The draft runs these rounds in this order. Reorder them before you start; the schedule is fixed once the draft begins.',
+    );
+    expect(scheduleRows()).toEqual([
+      'Round 1 — Mega',
+      'Round 2 — Mega',
+      'Round 3 — Open',
+      'Round 4 — Open',
+      'Round 5 — Open',
+      'Round 6 — Open',
+    ]);
+  });
+
+  it('re-seeds the preview from the compiler when the requirement changes', () => {
+    mount();
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    if (input === null) return;
+
+    type(input, '2');
+    // A reorder first, so the re-seed has something to discard rather than merely
+    // reproducing a schedule that was already canonical.
+    act(() => {
+      moveButton(2, 'down').click();
+    });
+    expect(scheduleRows()[2]).toBe('Round 3 — Mega');
+
+    type(input, '3');
+
+    // Three LEADING Mega rounds — the requirement is the source, and the permutation is
+    // applied to what it produces rather than surviving it.
+    expect(scheduleRows()).toEqual([
+      'Round 1 — Mega',
+      'Round 2 — Mega',
+      'Round 3 — Mega',
+      'Round 4 — Open',
+      'Round 5 — Open',
+      'Round 6 — Open',
+    ]);
+  });
+
+  it('keeps the round numbers ascending after a move — the kinds move, the rows do not', () => {
+    mount();
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    if (input !== null) type(input, '2');
+
+    act(() => {
+      moveButton(2, 'down').click();
+    });
+    act(() => {
+      moveButton(3, 'down').click();
+    });
+
+    expect(scheduleRows()).toEqual([
+      'Round 1 — Mega',
+      'Round 2 — Open',
+      'Round 3 — Open',
+      'Round 4 — Mega',
+      'Round 5 — Open',
+      'Round 6 — Open',
+    ]);
+  });
+
+  it('announces which round became a Mega round and which became open', () => {
+    mountAnnouncing();
+
+    const input = fieldLabelled('Megas required per team');
+    expect(input).not.toBeNull();
+    if (input !== null) type(input, '2');
+
+    act(() => {
+      moveButton(2, 'down').click();
+    });
+
+    expect(liveRegionText()).toBe('Round 3 is now a Mega round. Round 2 is now open.');
+  });
+
+  it('says there is nothing to reorder at a requirement of 0', () => {
+    mount();
+
+    expect(host.textContent).toContain(
+      'Every round is open, so there is nothing to reorder.',
+    );
+    expect(host.querySelectorAll('.schedule-preview__move')).toHaveLength(0);
   });
 
   it('blocks Start when the requirement outruns a team of six', () => {
@@ -1081,6 +1230,59 @@ describe('Start draft on a satisfiable configuration', () => {
       'open',
     ]);
     expect(compiled.rounds.filter((spec) => spec.kind === 'mega')).toHaveLength(2);
+    expect(getState()?.schedule).toEqual(compiled.rounds);
+  });
+
+  it('starts the draft with the schedule the host reordered, not a recompiled one — RULE-06', () => {
+    mount();
+    nameEveryone(SIX_NAMES);
+
+    const megas = fieldLabelled('Megas required per team');
+    expect(megas).not.toBeNull();
+    if (megas !== null) type(megas, '2');
+
+    // Walk both Mega rounds to the bottom. Eight presses, because a move only lands when
+    // the neighbour holds the OTHER kind — which is exactly what the inert buttons say.
+    const walk: readonly number[] = [2, 3, 4, 5, 1, 2, 3, 4];
+    for (const round of walk) {
+      act(() => {
+        moveButton(round, 'down').click();
+      });
+    }
+
+    expect(scheduleRows()).toEqual([
+      'Round 1 — Open',
+      'Round 2 — Open',
+      'Round 3 — Open',
+      'Round 4 — Open',
+      'Round 5 — Mega',
+      'Round 6 — Mega',
+    ]);
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    // The one assertion a recompile-at-Start implementation fails. Every other assertion
+    // in this file passes either way, because the canonical order is a valid schedule and
+    // the config it was compiled from is unchanged — the reorder is the only evidence.
+    const compiled = getDoc()?.log[1];
+    expect(compiled).toBeDefined();
+    if (compiled === undefined || !isScheduleCompiledAction(compiled)) return;
+
+    expect(compiled.rounds.map((spec) => spec.kind)).toEqual([
+      'open',
+      'open',
+      'open',
+      'open',
+      'mega',
+      'mega',
+    ]);
+    // Still contiguous from 1: the kinds moved between fixed round numbers, so the
+    // structural guard's `rounds[i].index === i + 1` holds through eight swaps.
+    expect(compiled.rounds.map((spec) => spec.index)).toEqual([1, 2, 3, 4, 5, 6]);
+    // The requirement itself is untouched by a reorder — two Mega rounds either way.
+    expect(getDoc()?.config.megasRequiredPerTeam).toBe(2);
     expect(getState()?.schedule).toEqual(compiled.rounds);
   });
 

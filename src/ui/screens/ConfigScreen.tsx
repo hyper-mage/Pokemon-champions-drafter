@@ -10,8 +10,10 @@ import {
   poolSizeForPreset,
   type PoolPreset,
 } from '../../core/feasibility';
+import type { RoundSpec } from '../../core/actions';
 import type {
   BanMode,
+  CompositionRule,
   DualMegaChoice,
   DualMegaForme,
   TournamentConfig,
@@ -33,6 +35,7 @@ import { announce } from '../components/LiveRegion';
 import { NumericField, parseNumericField } from '../components/NumericField';
 import { PlayerList, type PlayerDraft } from '../components/PlayerList';
 import { PoolGrid } from '../components/PoolGrid';
+import { SchedulePreview, type MoveDirection } from '../components/SchedulePreview';
 import { SegmentedControl, type SegmentedOption } from '../components/SegmentedControl';
 import { TypeaheadField } from '../components/TypeaheadField';
 
@@ -78,12 +81,25 @@ import './ConfigScreen.css';
  * decision. D-32 couples the swap-round count to the pool size — a swap round over a pool
  * that is exactly its minimum is a round in which nothing is left to take — so the host has
  * to have answered both swap questions before the pool readout below them means anything.
+ *
+ * `Mega rules` is the one group with SUB-SECTIONS, and their order is the 03-UI-SPEC §1
+ * table's: `Megas required per team`, then `Round schedule`, then the dual-Mega rows. The
+ * schedule sits directly under the field because it is that field's visible consequence —
+ * a host who types 2 sees which two rounds it made, in the same glance.
  */
 
 /**
- * Six rounds, six picks, one team of six. Phase 3 makes the round count a host decision;
- * until then it is a constant in one place rather than a `6` scattered through the four
- * derivations that read it.
+ * Six rounds, six picks, one team of six — DRFT-04, and D-06 declines to make it a host
+ * decision.
+ *
+ * "Compiled" in RULE-02 means the rounds get TYPED, not that there is a different number
+ * of them: a shorter team exports a paste Showdown accepts and a Champions match does not.
+ * So this stays one constant in one place rather than a `6` scattered through the
+ * derivations that read it — the schedule's length, the card count and the slot-array
+ * length all read `config.rounds`, and no derivation anywhere may hardcode the literal.
+ *
+ * Host-selectable team size is DEFERRED rather than forgotten (03-CONTEXT `<deferred>`);
+ * it is worth revisiting only if a group actually asks for quick three-pick drafts.
  */
 const ROUNDS = 6;
 
@@ -123,14 +139,42 @@ const DUAL_MEGA_OPTIONS: readonly SegmentedOption<DualMegaForme>[] = [
 const DUAL_MEGA_HEADING = 'Dual-Mega species';
 
 /**
+ * The `Round schedule` sub-section — verbatim from 03-UI-SPEC §Copywriting Contract.
+ *
+ * The helper states the freeze in the same breath as the invitation, because D-13 makes
+ * config time the ONLY time this is editable: there is no `schedule/reordered` action and
+ * no mid-draft reorder surface, so a host who assumes they can fix it later has assumed
+ * wrong and this line is where they find out.
+ */
+const SCHEDULE_HEADING = 'Round schedule';
+const SCHEDULE_HELPER =
+  'The draft runs these rounds in this order. Reorder them before you start; the schedule is fixed once the draft begins.';
+
+/**
+ * Verbatim from 03-UI-SPEC §Live-region announcements.
+ *
+ * A move exchanges two kinds, so exactly one round becomes a Mega round and exactly one
+ * becomes open — the two sentences are the whole of what changed, not a summary of it.
+ */
+function reorderAnnouncement(megaRound: number, openRound: number): string {
+  return `Round ${megaRound} is now a Mega round. Round ${openRound} is now open.`;
+}
+
+/**
  * Interpolated from the player count and the value ON SCREEN, so the number the host is
  * reasoning about is the one in front of them rather than a worked example.
  *
  * An unparseable field reads as `0` here rather than as `NaN`. The gate says what is wrong
  * with the field; a helper line repeating it in arithmetic would be a second voice.
+ *
+ * AMENDED by 03-UI-SPEC §Copywriting Contract, and the first clause is the amendment. It
+ * answers the likeliest confusion in this phase (03-RESEARCH stress-test case 3): a host
+ * who wants a Mega-less night otherwise reaches for 76 forme bans instead of typing `0`.
+ * Saying what 0 DOES — no slot is a Mega slot, nothing exports with a stone — is the
+ * difference between a field that states a number and one that states a rule set.
  */
 function megasRequiredHelper(players: number, megasPerTeam: number): string {
-  return `0 means no Mega requirement. A requirement of ${megasPerTeam} needs at least ${players * megasPerTeam} Mega-capable Pokémon in the pool.`;
+  return `0 means no Mega requirement, and no slot is a Mega slot — nothing exports with a Mega Stone. A requirement of ${megasPerTeam} makes ${megasPerTeam} rounds Mega-only and needs at least ${players * megasPerTeam} Pokémon that can still Mega.`;
 }
 
 /** Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen — BAN-02. */
@@ -285,6 +329,24 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
   const [megasRequiredRaw, setMegasRequiredRaw] = useState('0');
 
   /**
+   * The host's permutation of the compiled schedule, or `null` for "not reordered" —
+   * RULE-06, D-13.
+   *
+   * Two states rather than one, on the same construction as `poolOverride` below and for
+   * the same reason: "the host has not reordered anything" and "the host has reordered it
+   * back into the canonical order" are different answers, and only the first should follow
+   * the requirement when the requirement moves.
+   *
+   * A reorder writes NO action — see the module block above, which states the rule for the
+   * whole screen. This is pre-document form state that resolves into the single
+   * `schedule/compiled` action at Start, exactly as the banlist resolves into `pool/built`.
+   * There is no `schedule/reordered` member in `actions.ts` and D-13 is why: a mid-draft
+   * reorder would retype slots players have already filled, with no validator left to
+   * catch the resulting violation.
+   */
+  const [reorderedSchedule, setReorderedSchedule] = useState<RoundSpec[] | null>(null);
+
+  /**
    * The RAW text of the two swap fields — SWAP-01, SWAP-03, D-30.
    *
    * Same construction as `megasRequiredRaw` above and for the same reason: the string is
@@ -391,6 +453,83 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
   const megasRequiredPerTeam = useMemo(
     () => parseNumericField(megasRequiredRaw),
     [megasRequiredRaw],
+  );
+
+  /**
+   * The scalar the host typed, as the rule list the document records and the compiler
+   * reads — one construction with two consumers rather than two that could disagree.
+   *
+   * The same wrap `migrateV2ToV3` and `import-guard.buildConfig` perform, so a tournament
+   * created here and one recovered from a Phase 2 save describe their Mega requirement
+   * identically. `?? 0` is unreachable at Start — `feasibility.blocked` is false there and
+   * a null field is itself a blocker — but it is reachable HERE, because this runs on every
+   * keystroke including the one that empties the field. An empty field compiles to an
+   * all-open schedule and the gate goes on blocking Start.
+   */
+  const rules = useMemo<CompositionRule[]>(
+    () => [{ kind: 'mega', count: megasRequiredPerTeam ?? 0 }],
+    [megasRequiredPerTeam],
+  );
+
+  /** What the requirement compiles to before the host touches it — RULE-02. */
+  const canonicalSchedule = useMemo(() => compile(rules, ROUNDS), [rules]);
+
+  /** What is on screen, and — at Start — what reaches the log. */
+  const schedule = reorderedSchedule ?? canonicalSchedule;
+
+  /**
+   * A NEW requirement re-seeds from the compiler and drops the old permutation.
+   *
+   * The requirement is the source and the permutation is applied to what it produces, so a
+   * host who raises `Megas required per team` from 2 to 3 gets three leading Mega rounds
+   * rather than their old arrangement with one appended. Compared on the PARSED value, so
+   * `0` → `00` is not a new requirement and does not discard a reorder the host is still
+   * looking at.
+   */
+  const handleMegasRequiredInput = useCallback(
+    (raw: string) => {
+      setMegasRequiredRaw(raw);
+      if (parseNumericField(raw) !== megasRequiredPerTeam) setReorderedSchedule(null);
+    },
+    [megasRequiredPerTeam],
+  );
+
+  /**
+   * RULE-06's write path — a swap of two adjacent KINDS, never of two rows.
+   *
+   * The index is the round NUMBER, not the kind's identity, so every spec is re-indexed
+   * from its position afterwards. Carrying the index along with the kind instead produces
+   * rows reading `Round 3` above `Round 2`, which folds into a log the structural guard
+   * refuses (`isScheduleCompiledAction` pins `rounds[i].index === i + 1`).
+   *
+   * The early returns are the same refusal `SchedulePreview` makes in its click handler,
+   * one layer up: a move off the end or into a neighbour of the same kind changes nothing,
+   * and a caller that asked for one anyway should not get a re-render and an announcement
+   * saying something happened.
+   */
+  const handleMoveRound = useCallback(
+    (position: number, direction: MoveDirection) => {
+      const target = position + (direction === 'up' ? -1 : 1);
+      const moved = schedule[position];
+      const displaced = schedule[target];
+      if (moved === undefined || displaced === undefined) return;
+      if (moved.kind === displaced.kind) return;
+
+      setReorderedSchedule(
+        schedule.map((spec, index) => ({
+          index: index + 1,
+          kind:
+            index === position ? displaced.kind : index === target ? moved.kind : spec.kind,
+        })),
+      );
+
+      // Exactly one round became a Mega round and exactly one became open, because the two
+      // kinds differ — checked above rather than assumed.
+      const megaRound = moved.kind === 'mega' ? target + 1 : position + 1;
+      const openRound = moved.kind === 'mega' ? position + 1 : target + 1;
+      announce(reorderAnnouncement(megaRound, openRound));
+    },
+    [schedule],
   );
 
   /**
@@ -751,10 +890,9 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       // saved tournament needs migrating for it later.
       dualMegaChoices: dualMegaChoicesForConfig,
       depth,
-      // The same wrap `migrateV2ToV3` and `import-guard.buildConfig` perform, so a
-      // tournament created here and one recovered from a Phase 2 save describe their Mega
-      // requirement identically. A fresh array, never one shared with this screen.
-      rules: [{ kind: 'mega', count: megasRequiredPerTeam ?? 0 }],
+      // A fresh array of fresh rules, never one shared with this screen's memo — the same
+      // guarantee `[...bans]` above gives. `rules` itself is documented where it is built.
+      rules: rules.map((rule) => ({ ...rule })),
       megaFormeBans: [],
       // The same `?? 0` construction and the same reasoning as `megasRequiredPerTeam`
       // above: unreachable while `feasibility.blocked` is false, present because the
@@ -776,12 +914,11 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       megaCapableCount: draw.megaCapableCount,
       order,
       orderSeed,
-      // TEMPORARY SHAPE. 03-03 replaces this call with the host's reordered preview state
-      // — this exact line is what that plan edits. Until the reorder control exists there
-      // is nothing to permute, so the canonical order IS the approved schedule, and
-      // compiling it here keeps the config the document records and the schedule it
-      // records describing one tournament.
-      schedule: compile(config.rules, ROUNDS),
+      // The schedule the host was LOOKING AT, not one recompiled here — RULE-06, D-13.
+      // Recompiling at this line would discard the reorder silently and every other
+      // assertion in the file would still pass, which is why this is the whole of why
+      // `schedule/compiled` is materialized into the log rather than derived on load.
+      schedule,
     });
 
     // A refused creation leaves the host on this screen with their answers intact, which
@@ -799,6 +936,8 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     bans,
     banMode,
     megasRequiredPerTeam,
+    rules,
+    schedule,
     dualMegaChoicesForConfig,
     depth,
     swapBudget,
@@ -863,11 +1002,25 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
         <NumericField
           label="Megas required per team"
           value={megasRequiredRaw}
-          onInput={setMegasRequiredRaw}
+          onInput={handleMegasRequiredInput}
           helper={megasRequiredHelper(players.length, megasRequiredPerTeam ?? 0)}
           min={0}
           max={ROUNDS}
         />
+
+        {/*
+          Directly beneath the field, per 03-UI-SPEC §1: the schedule is that field's
+          visible consequence, and putting it anywhere else makes the host hunt for what
+          their number did. A real <h2>, matching `Starting order` inside the `Players`
+          group — this sub-section holds a list and a rule line, which is a level the form
+          genuinely has.
+        */}
+        <div class="config-screen__section">
+          <h2 class="config-screen__section-heading">{SCHEDULE_HEADING}</h2>
+          <p class="config-screen__note">{SCHEDULE_HELPER}</p>
+
+          <SchedulePreview schedule={schedule} onMove={handleMoveRound} />
+        </div>
 
         {/*
           The heading and the rows appear together or not at all. A regulation with no
