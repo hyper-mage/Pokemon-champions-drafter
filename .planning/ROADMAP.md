@@ -178,7 +178,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-02-PLAN.md — compile(), the schedule/compiled action, the schedule selectors, and typed board round headers (RULE-02, CARD-02)
+- [x] 03-02-PLAN.md — compile(), the schedule/compiled action, the schedule selectors, and typed board round headers (RULE-02, CARD-02)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -267,7 +267,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
-| 3. Compiled Rules, Priority Cards, Swaps | 1/12 | In Progress|  |
+| 3. Compiled Rules, Priority Cards, Swaps | 2/12 | In Progress|  |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 

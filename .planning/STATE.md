@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01 — schema 3 and the Swaps config group
-last_updated: "2026-08-18T02:41:00.595Z"
-last_activity: 2026-08-18 -- Phase 03 plan 01 complete
+stopped_at: Completed 03-02 — the compiled schedule, in the log and on the board
+last_updated: "2026-08-18T03:29:15.738Z"
+last_activity: 2026-08-18 -- Phase 03 plan 02 complete
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 36
-  completed_plans: 25
-  percent: 69
+  completed_plans: 26
+  percent: 72
 ---
 
 # Project State
@@ -26,18 +26,18 @@ See: .planning/PROJECT.md (updated 2026-08-03)
 ## Current Position
 
 Phase: 03 (compiled-rules-priority-cards-swaps) — EXECUTING
-Plan: 2 of 12
+Plan: 3 of 12
 Plans: 8 of 8 written, 6 waves
-Status: Executing Phase 03 — 03-01 complete, 03-02 next
-Last activity: 2026-08-18 -- Phase 03 plan 01 complete
+Status: Executing Phase 03 — 03-02 complete, 03-03 next
+Last activity: 2026-08-18 -- Phase 03 plan 02 complete
 
-Progress: [███████░░░] 69%
+Progress: [███████░░░] 72%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 32
+- Total plans completed: 33
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -47,13 +47,14 @@ Progress: [███████░░░] 69%
 |-------|-------|-------|----------|
 | 01 | 11 | - | - |
 | 02 | 13 | - | - |
-| 03 | 1 | 42min | 42min |
+| 03 | 2 | 70min | 35min |
 
 **Per-plan:**
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 03 P01 | 42min | 3 tasks | 24 files |
+| Phase 03 P02 | 28min | 3 tasks | 18 files |
 
 **Recent Trend:**
 
@@ -61,6 +62,7 @@ Progress: [███████░░░] 69%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 03 P02 | 28min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -77,6 +79,10 @@ Recent decisions affecting current work:
 - [Phase 03]: rules is derived from megasRequiredPerTeam in both migrate and the import guard, never defaulted — the document holds the true answer
 - [Phase 03]: Migration arms are typed with Omit-derived V2Config/V2Doc rather than an as-cast, so each arm stays strictly checked against what it produces
 - [Phase 03]: The Swaps config group adds no feasibility code — 03-05 owns what is satisfiable, and a second authority would be free to disagree with it
+- [Phase 03]: canApply does not recheck index contiguity — the structural guard already pins it, so a second check would be unreachable code reading as a second authority
+- [Phase 03]: compile() clamps for layout only and never repairs the config — the feasibility gate stays the only authority on satisfiability
+- [Phase 03]: The schedule is materialized into the log because it carries a host reorder compile() cannot reproduce — origination is guarded by canApply, replay deliberately is not
+- [Phase 03]: Reserved chrome is one element with a modifier class — an open round renders the same marker span with no text, so reordering never shifts the board grid
 
 ### Pending Todos
 
@@ -111,8 +117,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-18T02:37:40.781Z
-Stopped at: Phase 3 UI-SPEC approved
+Last session: 2026-08-18T03:28:50.907Z
+Stopped at: Completed 03-02 — the compiled schedule, in the log and on the board
 Resume file: None
 
 ### Phase 2 planning is complete

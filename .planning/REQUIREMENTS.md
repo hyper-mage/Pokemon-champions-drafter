@@ -66,7 +66,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Priority Cards
 
 - [ ] **CARD-01**: Each player holds priority cards numbered `1..R`, where R is the compiled pick-round count
-- [ ] **CARD-02**: The full round schedule, including which rounds are Mega rounds, is visible before the first card is played
+- [x] **CARD-02**: The full round schedule, including which rounds are Mega rounds, is visible before the first card is played
 - [ ] **CARD-03**: Cards are played open and sequentially in a rotating order, so later players see what has already been played
 - [ ] **CARD-04**: When players are fewer than or equal to rounds, a value already played this round cannot be played again
 - [ ] **CARD-05**: When players outnumber rounds, ties resolve by an explicit, visible, deterministic rule — never a silent sort
@@ -77,7 +77,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Composition Rules
 
 - [ ] **RULE-01**: Host defines composition requirements as a rule set at config time
-- [ ] **RULE-02**: Composition requirements compile into a round schedule before the draft starts, rather than validating picks afterward
+- [x] **RULE-02**: Composition requirements compile into a round schedule before the draft starts, rather than validating picks afterward
 - [ ] **RULE-03**: A requirement of N Mega Evolutions produces N Mega-only rounds where the pool is filtered to Mega-capable Pokémon
 - [ ] **RULE-04**: Host maintains a Mega-ban list of Mega-capable Pokémon not permitted to Mega this tournament
 - [ ] **RULE-05**: Compiled rounds type the resulting team slots, so a slot's constraint survives swaps
@@ -233,7 +233,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DRFT-15 | Phase 2 | Complete |
 | DRFT-16 | Phase 2 | Complete |
 | CARD-01 | Phase 3 | Pending |
-| CARD-02 | Phase 3 | Pending |
+| CARD-02 | Phase 3 | Complete |
 | CARD-03 | Phase 3 | Pending |
 | CARD-04 | Phase 3 | Pending |
 | CARD-05 | Phase 3 | Pending |
@@ -241,7 +241,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CARD-07 | Phase 3 | Pending |
 | CARD-08 | Phase 3 | Pending |
 | RULE-01 | Phase 3 | Pending |
-| RULE-02 | Phase 3 | Pending |
+| RULE-02 | Phase 3 | Complete |
 | RULE-03 | Phase 3 | Pending |
 | RULE-04 | Phase 3 | Pending |
 | RULE-05 | Phase 3 | Pending |
