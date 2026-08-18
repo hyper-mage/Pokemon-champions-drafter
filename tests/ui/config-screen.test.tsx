@@ -634,6 +634,77 @@ describe('the Mega rules group', () => {
 
 });
 
+describe('the Swaps group', () => {
+  /** Every `<legend>` on the screen, in document order. */
+  function legends(): string[] {
+    return Array.from(host.querySelectorAll('.config-screen__legend')).map(
+      (element) => element.textContent?.trim() ?? '',
+    );
+  }
+
+  it('renders between Bans and Pool — 03-UI-SPEC §1', () => {
+    mount();
+
+    const order = legends();
+    const swaps = order.indexOf('Swaps');
+    const bans = order.indexOf('Bans');
+    const pool = order.indexOf('Pool');
+
+    expect(swaps).toBeGreaterThan(-1);
+    // Pool stays last, because its readout is the only one that reflects every group
+    // above it — including this one, which D-32 couples to the pool size.
+    expect(swaps).toBeGreaterThan(bans);
+    expect(swaps).toBeLessThan(pool);
+    expect(pool).toBe(order.length - 1);
+  });
+
+  it('starts both fields at 0', () => {
+    mount();
+
+    expect(fieldLabelled('Swap budget per player')?.value).toBe('0');
+    expect(fieldLabelled('Swap rounds after the draft')?.value).toBe('0');
+  });
+
+  it('carries both helper strings verbatim', () => {
+    mount();
+
+    expect(host.textContent).toContain(
+      'Each player may swap this many times in total, mid-draft or in a swap round. 0 means no swaps.',
+    );
+    expect(host.textContent).toContain(
+      'Each swap round gives every player one chance to swap or pass. 0 means the draft ends with the last pick.',
+    );
+  });
+
+  it('leaves an emptied field empty rather than coercing it back to 0', () => {
+    mount();
+    nameEveryone(SIX_NAMES);
+
+    const budget = fieldLabelled('Swap budget per player');
+    expect(budget).not.toBeNull();
+    if (budget !== null) type(budget, '');
+
+    // The control neither rewrites the field nor decides anything about it. D-30 puts the
+    // judgement in the feasibility gate, and 03-05 is the plan that adds the blocking
+    // reason — until then an empty budget is simply not a blocker on this screen.
+    expect(fieldLabelled('Swap budget per player')?.value).toBe('');
+    expect(parseNumericField(fieldLabelled('Swap budget per player')?.value ?? '')).toBeNull();
+    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('does not clamp a value above the field affordance', () => {
+    mount();
+
+    const budget = fieldLabelled('Swap budget per player');
+    expect(budget).not.toBeNull();
+    if (budget !== null) type(budget, '99');
+
+    // `min` is an affordance for the native stepper, never enforcement.
+    expect(fieldLabelled('Swap budget per player')?.value).toBe('99');
+    expect(fieldLabelled('Swap budget per player')?.getAttribute('min')).toBe('0');
+  });
+});
+
 describe('the Tournament group', () => {
   it('prefills the format label from the loaded regulation', () => {
     mount();
@@ -924,6 +995,55 @@ describe('Start draft on a satisfiable configuration', () => {
     const state = getState();
 
     expect(state?.order.map((id) => byId.get(id))).toEqual(shown);
+  });
+
+  it('carries the swap budget and the swap-round count into the document', () => {
+    mount();
+    nameEveryone(SIX_NAMES);
+
+    const budget = fieldLabelled('Swap budget per player');
+    const rounds = fieldLabelled('Swap rounds after the draft');
+    expect(budget).not.toBeNull();
+    expect(rounds).not.toBeNull();
+    if (budget !== null) type(budget, '3');
+    if (rounds !== null) type(rounds, '2');
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    expect(getDoc()?.config.swapBudget).toBe(3);
+    expect(getDoc()?.config.swapRounds).toBe(2);
+  });
+
+  it('records the swap defaults when the host never touches the group', () => {
+    mount();
+    nameEveryone(SIX_NAMES);
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    expect(getDoc()?.config.swapBudget).toBe(0);
+    expect(getDoc()?.config.swapRounds).toBe(0);
+  });
+
+  it('wraps the Megas required as the rule list the compiler reads', () => {
+    mount();
+    nameEveryone(SIX_NAMES);
+
+    const megas = fieldLabelled('Megas required per team');
+    expect(megas).not.toBeNull();
+    if (megas !== null) type(megas, '2');
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    // One fact in two shapes — the scalar the host typed and the list the compiler reads.
+    expect(getDoc()?.config.megasRequiredPerTeam).toBe(2);
+    expect(getDoc()?.config.rules).toEqual([{ kind: 'mega', count: 2 }]);
+    expect(getDoc()?.config.megaFormeBans).toEqual([]);
   });
 
   it('stores the Megas required and only the dual-Mega rows the host changed', () => {

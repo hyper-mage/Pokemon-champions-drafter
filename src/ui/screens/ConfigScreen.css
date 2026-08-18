@@ -112,6 +112,18 @@
  */
 
 /*
+ * The `Swaps` group needs no geometry of its own either, for the same reason the `Bans`
+ * group does not: `.config-screen__group` is already a column with --space-3 between its
+ * children, and that is exactly the separation two sibling numeric fields want.
+ *
+ * --space-5 is the sub-section gap (03-UI-SPEC §Spacing Scale) and is deliberately NOT
+ * used here. `Swap budget per player` and `Swap rounds after the draft` are two fields at
+ * one level, not two sub-sections; spacing them apart would claim a structure the group
+ * does not have. `Mega rules` is where --space-5 belongs, because that group really does
+ * hold sub-sections.
+ */
+
+/*
  * The note under a group. Muted and at --text-label, so it reads as an aside about the
  * control above it rather than as a second field.
  */

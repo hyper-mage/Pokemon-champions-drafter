@@ -68,10 +68,15 @@ import './ConfigScreen.css';
  *
  * ## Group order
  *
- * Groups 1 (`Players`), 2 (`Tournament`), 3 (`Mega rules`), 4 (`Bans`) and 5 (`Pool`) — each
- * at its declared position in the 02-UI-SPEC table rather than appended, because the table's
- * order is the reason the pool readout is last: it is the only group whose readout reflects
- * every group above it.
+ * Groups 1 (`Players`), 2 (`Tournament`), 3 (`Mega rules`), 4 (`Bans`), 5 (`Swaps`) and
+ * 6 (`Pool`) — each at its declared position in the 03-UI-SPEC §1 table rather than
+ * appended, because the table's order is the reason the pool readout is last: it is the
+ * only group whose readout reflects every group above it.
+ *
+ * `Swaps` is inserted at 5 rather than added at the end, and the insertion point is the
+ * decision. D-32 couples the swap-round count to the pool size — a swap round over a pool
+ * that is exactly its minimum is a round in which nothing is left to take — so the host has
+ * to have answered both swap questions before the pool readout below them means anything.
  */
 
 /**
@@ -130,6 +135,21 @@ function megasRequiredHelper(players: number, megasPerTeam: number): string {
 /** Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen — BAN-02. */
 const BAN_FIELD_LABEL = 'Ban a Pokémon by name';
 const BAN_FIELD_PLACEHOLDER = 'Name';
+
+/**
+ * Verbatim from 03-UI-SPEC §Copywriting Contract → Config screen — SWAP-01, SWAP-03.
+ *
+ * Module constants rather than inline JSX text, because JSX collapses whitespace between
+ * text lines and these are contracts asserted on exact equality. The budget's helper
+ * states D-29's one-budget-two-moments rule in one sentence so the host does not go
+ * looking for a second allowance they never got.
+ */
+const SWAP_BUDGET_LABEL = 'Swap budget per player';
+const SWAP_BUDGET_HELPER =
+  'Each player may swap this many times in total, mid-draft or in a swap round. 0 means no swaps.';
+const SWAP_ROUNDS_LABEL = 'Swap rounds after the draft';
+const SWAP_ROUNDS_HELPER =
+  'Each swap round gives every player one chance to swap or pass. 0 means the draft ends with the last pick.';
 
 /**
  * The three ban modes — BAN-01, D-12. All three render; two are refused.
@@ -264,6 +284,22 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
   const [megasRequiredRaw, setMegasRequiredRaw] = useState('0');
 
   /**
+   * The RAW text of the two swap fields — SWAP-01, SWAP-03, D-30.
+   *
+   * Same construction as `megasRequiredRaw` above and for the same reason: the string is
+   * the state and the parsed value is a derivation of it, so what is on screen and what
+   * the gate is judging cannot become two facts that disagree. `'0'` rather than `''` is
+   * the default because no swaps is a real answer — and at `swapBudget: 0` nothing about
+   * Phase 2's shipped behaviour changes, which is what makes 0 the honest default rather
+   * than merely the safe one.
+   *
+   * Neither field is clamped here. `min={0}` is an affordance for the native stepper, not
+   * enforcement, and D-30 puts the judgement in the feasibility gate.
+   */
+  const [swapBudgetRaw, setSwapBudgetRaw] = useState('0');
+  const [swapRoundsRaw, setSwapRoundsRaw] = useState('0');
+
+  /**
    * Only the rows the host actually changed — D-03.
    *
    * An absent entry means `'either'` (see `DualMegaChoice`), so choosing `Either` REMOVES
@@ -355,6 +391,16 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     () => parseNumericField(megasRequiredRaw),
     [megasRequiredRaw],
   );
+
+  /**
+   * `null` when either swap field is empty or unparseable, on the same terms.
+   *
+   * Nothing here coerces `null` to 0. An emptied field is the host having deleted their
+   * answer, which is a different state from having answered 0, and collapsing the two
+   * would hide it from the gate that is supposed to notice.
+   */
+  const swapBudget = useMemo(() => parseNumericField(swapBudgetRaw), [swapBudgetRaw]);
+  const swapRounds = useMemo(() => parseNumericField(swapRoundsRaw), [swapRoundsRaw]);
 
   /**
    * One row per species carrying more than one Mega forme — D-03.
@@ -709,8 +755,11 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       // requirement identically. A fresh array, never one shared with this screen.
       rules: [{ kind: 'mega', count: megasRequiredPerTeam ?? 0 }],
       megaFormeBans: [],
-      swapBudget: 0,
-      swapRounds: 0,
+      // The same `?? 0` construction and the same reasoning as `megasRequiredPerTeam`
+      // above: unreachable while `feasibility.blocked` is false, present because the
+      // compiler cannot see that, and 0 rather than an invented number.
+      swapBudget: swapBudget ?? 0,
+      swapRounds: swapRounds ?? 0,
     };
 
     const created = createTournament({
@@ -745,6 +794,8 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     megasRequiredPerTeam,
     dualMegaChoicesForConfig,
     depth,
+    swapBudget,
+    swapRounds,
     poolSeed,
     order,
     orderSeed,
@@ -905,8 +956,38 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       </fieldset>
 
       {/*
+        Group 5, between `Bans` and `Pool` — 03-UI-SPEC §1's declared order.
+
+        Two free numeric fields and nothing else. There is deliberately NO blocking reason
+        attached here for an emptied field: `swapBudgetNotAnInteger` and
+        `swapRoundsNotAnInteger` belong to `feasibility.ts`, which its own doc block names
+        as the single authority on what is satisfiable. A second authority in this file
+        would be free to disagree with it, and the host would be arguing with an input box
+        about a rule neither of them stated.
+      */}
+      <fieldset class="config-screen__group">
+        <legend class="config-screen__legend">Swaps</legend>
+
+        <NumericField
+          label={SWAP_BUDGET_LABEL}
+          value={swapBudgetRaw}
+          onInput={setSwapBudgetRaw}
+          helper={SWAP_BUDGET_HELPER}
+          min={0}
+        />
+
+        <NumericField
+          label={SWAP_ROUNDS_LABEL}
+          value={swapRoundsRaw}
+          onInput={setSwapRoundsRaw}
+          helper={SWAP_ROUNDS_HELPER}
+          min={0}
+        />
+      </fieldset>
+
+      {/*
         LAST, and the position is load-bearing rather than tidy: this is the only group
-        whose readout reflects every group above it (02-UI-SPEC §2).
+        whose readout reflects every group above it (02-UI-SPEC §2, 03-UI-SPEC §1).
       */}
       <fieldset class="config-screen__group">
         <legend class="config-screen__legend">Pool</legend>
