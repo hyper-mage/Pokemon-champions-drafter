@@ -837,9 +837,33 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
         // already carries `poolTooLarge`, `tooManyPlayersForRoster` and `notEnoughMegas` with
         // the ban figures interpolated. One predicate, two consumers.
         bannedIds: bans,
+        // RULE-09's right-hand side is measured from THESE, not from the `megaCapable` flag:
+        // after D-09/D-10 a species can be Mega-capable and have no legal forme left. The
+        // pins go with them because a pin can exclude the one forme a ban left standing.
+        megaFormeBans,
+        // The RAW state rather than `dualMegaChoicesForConfig`, which is declared further
+        // down: the ordered copy exists so two hosts who made the same rulings write
+        // byte-identical DOCUMENTS, and `choiceFor` looks a species up rather than
+        // iterating, so the gate cannot tell the two apart.
+        dualMegaChoices,
+        // The parsed values, `null` and all. Coercing an emptied field to 0 here would hide
+        // it from the one module that is supposed to notice — the same argument the
+        // `Swaps` group's own comment makes about not attaching a reason to the field.
+        swapBudget,
+        swapRounds,
         entries,
       }),
-    [players, poolSize, megasRequiredPerTeam, bans, entries],
+    [
+      players,
+      poolSize,
+      megasRequiredPerTeam,
+      bans,
+      megaFormeBans,
+      dualMegaChoices,
+      swapBudget,
+      swapRounds,
+      entries,
+    ],
   );
 
   /**

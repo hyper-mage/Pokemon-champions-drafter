@@ -558,6 +558,15 @@ export function App() {
       poolSize: state.poolIds.length,
       megasRequiredPerTeam: state.config.megasRequiredPerTeam,
       bannedIds: state.config.bans,
+      // Read from the adopted document's OWN config, never from anything this session
+      // configured. The notice is about whether THAT tournament's rules still hold against
+      // today's roster, and it stays a notice: a bound is not an integrity check, so a
+      // document that disagrees with today's arithmetic is reported, never repaired or
+      // refused (Phase 2 decision 5, unchanged).
+      megaFormeBans: state.config.megaFormeBans,
+      dualMegaChoices: state.config.dualMegaChoices,
+      swapBudget: state.config.swapBudget,
+      swapRounds: state.config.swapRounds,
       entries,
     });
 

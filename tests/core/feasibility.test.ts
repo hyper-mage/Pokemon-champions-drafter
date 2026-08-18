@@ -29,6 +29,7 @@ import {
   type FeasibilityInput,
   type FeasibilityResult,
 } from '../../src/core/feasibility';
+import { MAX_SWAP_BUDGET, MAX_SWAP_ROUNDS } from '../../src/core/import-guard';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 
 const snapshot = committedSnapshot as unknown as RosterSnapshot;
@@ -39,6 +40,18 @@ const ROSTER_SIZE = ENTRIES.length;
 const MEGA_CAPABLE_IDS: readonly string[] = ENTRIES.filter((entry) => entry.megaCapable).map(
   (entry) => entry.id,
 );
+
+/**
+ * The stratum RULE-09 actually measures — species carrying at least one Mega forme.
+ *
+ * Reached by a different route from `MEGA_CAPABLE_IDS` on purpose. The two counts are equal
+ * on today's snapshot and `tests/core/roster/fixtures.test.ts` pins that, but they answer
+ * different questions the moment a forme ban exists, which is the whole of this plan.
+ */
+const MEGA_ELIGIBLE_ENTRIES: readonly RosterEntry[] = ENTRIES.filter(
+  (entry) => entry.megaFormes.length > 0,
+);
+const MEGA_ELIGIBLE_TOTAL = MEGA_ELIGIBLE_ENTRIES.length;
 
 /**
  * A satisfiable two-player configuration, overridden one field at a time.
@@ -53,6 +66,10 @@ function base(overrides: Partial<FeasibilityInput> = {}): FeasibilityInput {
     poolSize: 12,
     megasRequiredPerTeam: 0,
     bannedIds: [],
+    megaFormeBans: [],
+    dualMegaChoices: [],
+    swapBudget: 0,
+    swapRounds: 0,
     entries: ENTRIES,
     ...overrides,
   };
@@ -69,6 +86,29 @@ function messageFor(result: FeasibilityResult, code: FeasibilityCode): string | 
 /** `count` real Mega-capable ids, so a Mega-starvation test starves the right stratum. */
 function megaBans(count: number): string[] {
   return MEGA_CAPABLE_IDS.slice(0, count);
+}
+
+/**
+ * Every Mega forme of the first `count` species that have one, READ from the snapshot.
+ *
+ * Banning an entry's whole `megaFormes` array is the only ban that makes a species
+ * ineligible regardless of its X/Y pin, so this is the lever that moves
+ * `megaEligibleLegalCount` by exactly `count`. Ids are read, never constructed: a
+ * `${name}-Mega` template is wrong for `Meowstic-M-Mega` in one direction and matches
+ * Meganium in the other.
+ */
+function formeBansForFirst(count: number): string[] {
+  return MEGA_ELIGIBLE_ENTRIES.slice(0, count).flatMap((entry) =>
+    entry.megaFormes.map((forme) => forme.id),
+  );
+}
+
+/** One forme id of one species, looked up by its `forme` FIELD — never by its name. */
+function formeIdOf(speciesId: string, forme: string): string {
+  const entry = ENTRIES.find((candidate) => candidate.id === speciesId);
+  const match = entry?.megaFormes.find((candidate) => candidate.forme === forme);
+  if (match === undefined) throw new Error(`no ${forme} forme for ${speciesId}`);
+  return match.id;
 }
 
 /** `count` player names, with `blankAt` / `duplicateAt` positions poisoned on request. */
@@ -376,6 +416,266 @@ describe('Mega arithmetic', () => {
 });
 
 // ---------------------------------------------------------------------------
+// RULE-09, re-measured over the species that can STILL Mega
+// ---------------------------------------------------------------------------
+
+describe('the Mega-round gate (RULE-09)', () => {
+  it('passes eight players at three Mega rounds with nothing banned', () => {
+    // The pre-ban headroom this gate lives inside: 8 x 3 = 24, and the snapshot carries
+    // far more than that. No value of k from 0 to 6 blocks at 4-8 players before a ban,
+    // which is why the sentence below has to name the Mega-forme list.
+    const result = checkFeasibility(
+      base({ playerNames: manyPlayers(8), poolSize: 48, megasRequiredPerTeam: 3 }),
+    );
+
+    expect(8 * 3).toBeLessThanOrEqual(MEGA_ELIGIBLE_TOTAL);
+    expect(codes(result)).not.toContain('notEnoughMegas');
+    expect(result.blocked).toBe(false);
+  });
+
+  it('blocks when Mega-forme bans leave fewer eligible species than the rounds need', () => {
+    // 8 x 3 needs 24; banning every forme of 51 species leaves MEGA_ELIGIBLE_TOTAL - 51.
+    const formeBans = formeBansForFirst(51);
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 3,
+        megaFormeBans: formeBans,
+      }),
+    );
+
+    expect(result.megaEligibleLegalCount).toBe(MEGA_ELIGIBLE_TOTAL - 51);
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('notEnoughMegas');
+  });
+
+  it('names both ban lists with their own counts, and the action that moves the number', () => {
+    const formeBans = formeBansForFirst(51);
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 3,
+        megaFormeBans: formeBans,
+      }),
+    );
+
+    expect(messageFor(result, 'notEnoughMegas')).toBe(
+      `Not enough Pokémon can Mega. 8 players × 3 Mega rounds needs 24; ${
+        MEGA_ELIGIBLE_TOTAL - 51
+      } can still Mega after 0 species bans and ${
+        formeBans.length
+      } Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.`,
+    );
+  });
+
+  it('keeps the Mega-capable count beside the eligible one, as two different numbers', () => {
+    const formeBans = formeBansForFirst(10);
+    const result = checkFeasibility(base({ megaFormeBans: formeBans }));
+
+    // The older field is unmoved by a forme ban - it counts the `megaCapable` FLAG, which
+    // is what makes it a pre-ban upper bound and a post-rotation cross-check (D-11).
+    expect(result.megaCapableLegalCount).toBe(MEGA_CAPABLE_IDS.length);
+    expect(result.megaEligibleLegalCount).toBe(MEGA_ELIGIBLE_TOTAL - 10);
+    expect(result.megaEligibleLegalCount).not.toBe(result.megaCapableLegalCount);
+  });
+
+  it('drops a dual-Mega species only when the ban and the pin between them leave nothing', () => {
+    const x = formeIdOf('charizard', 'Mega-X');
+    const y = formeIdOf('charizard', 'Mega-Y');
+
+    expect(checkFeasibility(base({ megaFormeBans: [x, y] })).megaEligibleLegalCount).toBe(
+      MEGA_ELIGIBLE_TOTAL - 1,
+    );
+
+    // D-10, and it is behaviour rather than an error: Charizard leaves the Mega rounds
+    // and stays draftable in an open one.
+    expect(
+      checkFeasibility(
+        base({
+          megaFormeBans: [x],
+          dualMegaChoices: [{ speciesId: 'charizard', forme: 'x' }],
+        }),
+      ).megaEligibleLegalCount,
+    ).toBe(MEGA_ELIGIBLE_TOTAL - 1);
+
+    // One forme banned, no pin - the other forme is still legal, so the species still
+    // counts. A species-level ban implementation fails exactly here.
+    expect(checkFeasibility(base({ megaFormeBans: [x] })).megaEligibleLegalCount).toBe(
+      MEGA_ELIGIBLE_TOTAL,
+    );
+  });
+
+  it('counts a duplicated Mega-forme ban once and a stranger id zero (T-03-19)', () => {
+    const x = formeIdOf('charizard', 'Mega-X');
+
+    const once = checkFeasibility(base({ megaFormeBans: [x] }));
+    const twice = checkFeasibility(base({ megaFormeBans: [x, x] }));
+    const stranger = checkFeasibility(base({ megaFormeBans: ['not-a-real-forme'] }));
+
+    expect(twice.megaEligibleLegalCount).toBe(once.megaEligibleLegalCount);
+    expect(stranger.megaEligibleLegalCount).toBe(MEGA_ELIGIBLE_TOTAL);
+  });
+
+  it('quotes the forme bans that HIT the roster, never the raw list length', () => {
+    const x = formeIdOf('charizard', 'Mega-X');
+    const y = formeIdOf('charizard', 'Mega-Y');
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(39),
+        poolSize: 234,
+        megasRequiredPerTeam: 6,
+        megaFormeBans: [x, x, y, 'not-a-real-forme'],
+      }),
+    );
+
+    // Four entries in the list; two of them are one id, and one hits nothing.
+    expect(messageFor(result, 'notEnoughMegas')).toBe(
+      `Not enough Pokémon can Mega. 39 players × 6 Mega rounds needs 234; ${
+        MEGA_ELIGIBLE_TOTAL - 1
+      } can still Mega after 0 species bans and 2 Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.`,
+    );
+  });
+
+  it('adds species bans and Mega-forme bans into one eligible count', () => {
+    const speciesBanned = MEGA_ELIGIBLE_ENTRIES[0];
+    if (speciesBanned === undefined) throw new Error('no Mega-capable entry on the snapshot');
+
+    const formeBans = MEGA_ELIGIBLE_ENTRIES.slice(1, 4).flatMap((entry) =>
+      entry.megaFormes.map((forme) => forme.id),
+    );
+
+    const result = checkFeasibility(
+      base({ bannedIds: [speciesBanned.id], megaFormeBans: formeBans }),
+    );
+
+    expect(result.megaEligibleLegalCount).toBe(MEGA_ELIGIBLE_TOTAL - 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The two swap fields - the NaN rule, inherited
+// ---------------------------------------------------------------------------
+
+describe('swapBudgetNotAnInteger', () => {
+  it('blocks an empty field rather than reading it as no swaps', () => {
+    const result = checkFeasibility(base({ swapBudget: null }));
+
+    expect(result.blocked).toBe(true);
+    expect(result.problems[0]?.code).toBe('swapBudgetNotAnInteger');
+  });
+
+  it('blocks NaN, a negative and a fraction on the same terms', () => {
+    // The load-bearing case, one control along from the pool-size field: every relational
+    // comparison with NaN is false, so a gate that merely compared would report all-clear.
+    expect(codes(checkFeasibility(base({ swapBudget: Number.NaN })))).toContain(
+      'swapBudgetNotAnInteger',
+    );
+    expect(codes(checkFeasibility(base({ swapBudget: -1 })))).toContain(
+      'swapBudgetNotAnInteger',
+    );
+    expect(codes(checkFeasibility(base({ swapBudget: 2.5 })))).toContain(
+      'swapBudgetNotAnInteger',
+    );
+    expect(codes(checkFeasibility(base({ swapBudget: Number.POSITIVE_INFINITY })))).toContain(
+      'swapBudgetNotAnInteger',
+    );
+  });
+
+  it('says nothing about a usable budget', () => {
+    expect(codes(checkFeasibility(base({ swapBudget: 0 })))).not.toContain(
+      'swapBudgetNotAnInteger',
+    );
+    expect(codes(checkFeasibility(base({ swapBudget: MAX_SWAP_BUDGET })))).toEqual([
+      'poolExactlyMinimum',
+    ]);
+  });
+
+  it('refuses a budget past the bound the import guard enforces (T-03-17)', () => {
+    // 4e9 IS a safe integer, so `Number.isSafeInteger` alone lets it through - and the
+    // document this screen would then create is one `isValidTournament` refuses to
+    // re-open, so the host loses the tournament on the next resume.
+    const result = checkFeasibility(base({ swapBudget: 4e9 }));
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('swapBudgetTooLarge');
+    expect(codes(result)).not.toContain('swapBudgetNotAnInteger');
+    expect(codes(checkFeasibility(base({ swapBudget: MAX_SWAP_BUDGET + 1 })))).toContain(
+      'swapBudgetTooLarge',
+    );
+  });
+});
+
+describe('swapRoundsNotAnInteger', () => {
+  it('blocks an empty field rather than reading it as no swap rounds', () => {
+    const result = checkFeasibility(base({ swapRounds: null }));
+
+    expect(result.blocked).toBe(true);
+    expect(result.problems[0]?.code).toBe('swapRoundsNotAnInteger');
+  });
+
+  it('blocks NaN, a negative and a fraction on the same terms', () => {
+    expect(codes(checkFeasibility(base({ swapRounds: Number.NaN })))).toContain(
+      'swapRoundsNotAnInteger',
+    );
+    expect(codes(checkFeasibility(base({ swapRounds: -1 })))).toContain(
+      'swapRoundsNotAnInteger',
+    );
+    expect(codes(checkFeasibility(base({ swapRounds: 2.5 })))).toContain(
+      'swapRoundsNotAnInteger',
+    );
+  });
+
+  it('refuses a round count past the bound the import guard enforces (T-03-17)', () => {
+    const result = checkFeasibility(base({ swapRounds: 4e9 }));
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('swapRoundsTooLarge');
+    expect(codes(checkFeasibility(base({ swapRounds: MAX_SWAP_ROUNDS + 1 })))).toContain(
+      'swapRoundsTooLarge',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-32 - degenerate but satisfiable, so it warns and never blocks
+// ---------------------------------------------------------------------------
+
+describe('swapRoundsOnExactPool (D-32)', () => {
+  it('warns without blocking when swap rounds run on an exactly-minimum pool', () => {
+    const result = checkFeasibility(
+      base({ playerNames: manyPlayers(8), poolSize: 48, swapRounds: 2 }),
+    );
+
+    expect(result.blocked).toBe(false);
+    expect(codes(result)).toContain('swapRoundsOnExactPool');
+    expect(
+      result.problems.find((problem) => problem.code === 'swapRoundsOnExactPool')?.severity,
+    ).toBe('warning');
+    expect(messageFor(result, 'swapRoundsOnExactPool')).toBe(
+      'Warning — the pool is exactly 48, so it is empty when the last pick lands. The first player to swap can only take what someone else drops.',
+    );
+  });
+
+  it('says nothing extra at zero swap rounds, exactly as before', () => {
+    const result = checkFeasibility(
+      base({ playerNames: manyPlayers(8), poolSize: 48, swapRounds: 0 }),
+    );
+
+    expect(codes(result)).toEqual(['poolExactlyMinimum']);
+  });
+
+  it('says nothing at all when the pool carries a surplus', () => {
+    const result = checkFeasibility(
+      base({ playerNames: manyPlayers(8), poolSize: 72, swapRounds: 2 }),
+    );
+
+    expect(result.problems).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Precedence
 // ---------------------------------------------------------------------------
 
@@ -413,6 +713,37 @@ describe('precedence', () => {
       'blankPlayerName',
       'poolSizeNotAnInteger',
       'megasRequiredNotAnInteger',
+    ]);
+  });
+
+  it('reports every malformed numeric field together, above the arithmetic', () => {
+    const result = checkFeasibility(
+      base({ poolSize: null, megasRequiredPerTeam: null, swapBudget: null, swapRounds: null }),
+    );
+
+    expect(codes(result)).toEqual([
+      'poolSizeNotAnInteger',
+      'megasRequiredNotAnInteger',
+      'swapBudgetNotAnInteger',
+      'swapRoundsNotAnInteger',
+    ]);
+  });
+
+  it('puts the Exact-pool swap warning last, below the pool warning it extends', () => {
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 6,
+        megaFormeBans: formeBansForFirst(51),
+        swapRounds: 1,
+      }),
+    );
+
+    expect(codes(result)).toEqual([
+      'notEnoughMegas',
+      'poolExactlyMinimum',
+      'swapRoundsOnExactPool',
     ]);
   });
 
@@ -484,10 +815,20 @@ describe('copy', () => {
         'notEnoughMegas',
       ),
     ).toBe(
-      `Not enough Mega-capable Pokémon. 8 players × 6 Megas needs 48; ${
-        MEGA_CAPABLE_IDS.length - 27
-      } are draftable after 27 bans.`,
+      `Not enough Pokémon can Mega. 8 players × 6 Mega rounds needs 48; ${
+        MEGA_ELIGIBLE_TOTAL - 27
+      } can still Mega after 27 species bans and 0 Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.`,
     );
+  });
+
+  it('renders both new blocking sentences exactly as the copywriting contract gives them', () => {
+    expect(
+      messageFor(checkFeasibility(base({ swapBudget: null })), 'swapBudgetNotAnInteger'),
+    ).toBe('Swap budget needs a whole number. Enter 0 for no swaps.');
+
+    expect(
+      messageFor(checkFeasibility(base({ swapRounds: null })), 'swapRoundsNotAnInteger'),
+    ).toBe('Swap rounds needs a whole number. Enter 0 to end the draft with the last pick.');
   });
 
   it('quotes the ban count that hit the roster, never the raw banlist length', () => {

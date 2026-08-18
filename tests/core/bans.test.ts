@@ -90,6 +90,10 @@ describe('bannedEntries', () => {
       poolSize: 12,
       megasRequiredPerTeam: 0,
       bannedIds: bans,
+      megaFormeBans: [],
+      dualMegaChoices: [],
+      swapBudget: 0,
+      swapRounds: 0,
       entries: ENTRIES,
     });
 
@@ -106,6 +110,10 @@ describe('bannedEntries', () => {
       poolSize: 12,
       megasRequiredPerTeam: 0,
       bannedIds: bans,
+      megaFormeBans: [],
+      dualMegaChoices: [],
+      swapBudget: 0,
+      swapRounds: 0,
       entries: ENTRIES,
     });
 

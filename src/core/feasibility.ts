@@ -43,6 +43,27 @@
  * with `canApply` in `reduce.ts` — that returns the first failure, because a rejected action
  * needs one reason. This gate renders the first plus a count of the rest, so it needs them all.
  *
+ * ## Two Mega counts, and why both are returned
+ *
+ * `megaCapableLegalCount` counts the `megaCapable` FLAG. `megaEligibleLegalCount` counts the
+ * species that can STILL Mega once Mega-forme bans and the X/Y pin have been applied, which
+ * after D-09/D-10 is a different and smaller number: a species can carry the flag and have no
+ * legal forme left. RULE-09 is measured against the second, because the first would let a host
+ * ban every forme of fifty species and still be told the Mega rounds are satisfiable.
+ *
+ * The first is kept rather than replaced. D-11 calls it the pre-ban upper bound and the
+ * post-rotation cross-check, `draw.ts` records it into `pool/built`, and `:129` below already
+ * argues that a derivable-looking pair must be two fields.
+ *
+ * ## The two swap fields are bounded here as well as at the import boundary
+ *
+ * `MAX_SWAP_BUDGET` and `MAX_SWAP_ROUNDS` are imported from `import-guard.ts` rather than
+ * restated. They have to be the SAME two numbers: `handleStart` writes whatever this gate
+ * accepted into `config`, `persistence.load` runs the result back through
+ * `isValidTournament`, and a value this gate allowed but that guard refuses is a tournament
+ * the host cannot resume. One number, two readers — the alternative is a build that creates
+ * documents it will not re-open.
+ *
  * ## A known wart, stated rather than fixed
  *
  * The interpolated sentences are verbatim from 02-UI-SPEC §Copywriting Contract, including
@@ -54,6 +75,9 @@
  * below are computation-local and are never returned or stored (CLAUDE.md §Serializability).
  */
 
+import { MAX_SWAP_BUDGET, MAX_SWAP_ROUNDS } from './import-guard';
+import { choiceFor, isMegaEligible } from './mega';
+import type { DualMegaChoice } from './model';
 import type { RosterEntry } from './roster/types';
 
 /**
@@ -79,10 +103,20 @@ export type FeasibilityCode =
   | 'poolTooLarge'
   /** The requested pool cannot fill every player's team. */
   | 'poolTooSmall'
-  /** The Mega requirement outruns the post-ban Mega-capable count. */
+  /** The Mega requirement outruns the species that can still Mega — RULE-09, D-11. */
   | 'notEnoughMegas'
+  /** The swap-budget field is empty, fractional, unsafe, or negative. */
+  | 'swapBudgetNotAnInteger'
+  /** The swap-budget field holds a usable number past the bound the import guard enforces. */
+  | 'swapBudgetTooLarge'
+  /** The swap-rounds field is empty, fractional, unsafe, or negative. */
+  | 'swapRoundsNotAnInteger'
+  /** The swap-rounds field holds a usable number past the bound the import guard enforces. */
+  | 'swapRoundsTooLarge'
   /** Satisfiable but degenerate: the last picker of the last round has one option. */
-  | 'poolExactlyMinimum';
+  | 'poolExactlyMinimum'
+  /** Satisfiable but degenerate: swap rounds open on a pool the last pick emptied — D-32. */
+  | 'swapRoundsOnExactPool';
 
 export interface FeasibilityProblem {
   code: FeasibilityCode;
@@ -99,6 +133,14 @@ export interface FeasibilityInput {
   /** `null` when the numeric field is empty or unparseable. */
   megasRequiredPerTeam: number | null;
   bannedIds: readonly string[];
+  /** Banned `megaFormes[].id` values — D-09. Per FORME, never per species. */
+  megaFormeBans: readonly string[];
+  /** The host's X/Y pins — D-10. An absent species means `'either'`. */
+  dualMegaChoices: readonly DualMegaChoice[];
+  /** `null` when the numeric field is empty or unparseable. */
+  swapBudget: number | null;
+  /** `null` when the numeric field is empty or unparseable. */
+  swapRounds: number | null;
   entries: readonly RosterEntry[];
 }
 
@@ -108,8 +150,18 @@ export interface FeasibilityResult {
   problems: readonly FeasibilityProblem[];
   /** Roster entries surviving the banlist. */
   legalCount: number;
-  /** Mega-capable roster entries surviving the banlist. Not derivable from `legalCount`. */
+  /**
+   * Mega-capable roster entries surviving the species banlist. Not derivable from
+   * `legalCount`. Counts the `megaCapable` FLAG, so a Mega-forme ban does not move it — that
+   * is what makes it the pre-ban upper bound and the post-rotation cross-check D-11 wants,
+   * and it is NOT what RULE-09 is measured against.
+   */
   megaCapableLegalCount: number;
+  /**
+   * Roster entries that can STILL Mega: unbanned, and carrying at least one Mega forme that
+   * is neither banned nor excluded by the host's X/Y pin. This is RULE-09's right-hand side.
+   */
+  megaEligibleLegalCount: number;
   /** Bans that HIT the roster. Never the raw length of the banlist — see the doc block. */
   banCount: number;
 }
@@ -130,12 +182,17 @@ const PRECEDENCE: readonly FeasibilityCode[] = [
   'duplicatePlayerName',
   'poolSizeNotAnInteger',
   'megasRequiredNotAnInteger',
+  'swapBudgetNotAnInteger',
+  'swapRoundsNotAnInteger',
   'megasExceedRounds',
+  'swapBudgetTooLarge',
+  'swapRoundsTooLarge',
   'tooManyPlayersForRoster',
   'poolTooLarge',
   'poolTooSmall',
   'notEnoughMegas',
   'poolExactlyMinimum',
+  'swapRoundsOnExactPool',
 ];
 
 // ---------------------------------------------------------------------------
@@ -165,6 +222,15 @@ const POOL_SIZE_NOT_AN_INTEGER =
  */
 const MEGAS_REQUIRED_NOT_AN_INTEGER =
   'Megas required per team needs a whole number. Enter 0 for no Mega requirement.';
+
+/**
+ * The two swap fields inherit the `number | null` rule the header states, and their sentences
+ * follow the pool-size row's shape: name the field, name what it needs, name the keystroke
+ * that supplies it. Verbatim from 03-UI-SPEC §5.
+ */
+const SWAP_BUDGET_NOT_AN_INTEGER = 'Swap budget needs a whole number. Enter 0 for no swaps.';
+const SWAP_ROUNDS_NOT_AN_INTEGER =
+  'Swap rounds needs a whole number. Enter 0 to end the draft with the last pick.';
 
 function blankPlayerNameMessage(position: number): string {
   return `Every player needs a name. Player ${position} is blank.`;
@@ -202,18 +268,62 @@ function poolTooSmallMessage(
   return `Pool is too small. ${players} players × ${rounds} rounds needs ${needed} Pokémon; the pool is ${poolSize} after ${bans} bans.`;
 }
 
+/**
+ * Not in the 02-UI-SPEC table either — it supersedes that table's row. Verbatim from
+ * 03-UI-SPEC §5, and three things in it are load-bearing rather than stylistic:
+ *
+ *   1. **"can Mega", not "Mega-capable".** After D-09/D-10 a species can carry the
+ *      `megaCapable` flag and have no legal forme left, so the old wording named a count
+ *      this sentence no longer reports.
+ *   2. **Both ban lists, with their own counts.** 03-RESEARCH proves this gate can only fire
+ *      because of Mega-forme bans at 4–8 players — `8 × 6 = 48` sits under the pre-ban
+ *      eligible count — so a host sent to the species banlist is sent to the wrong screen.
+ *      The species figure stays because a large party can reach the gate through it.
+ *   3. **"Mega rounds", not "Megas".** The compiler has made them the same thing, and the
+ *      schedule preview two sub-sections above already calls them rounds.
+ *
+ * One code rather than two: `:29-34`'s test for splitting is that each condition names its
+ * own next action, and both conditions here resolve to "lower the requirement or unban
+ * something". Naming both lists in one sentence is cheaper than a second precedence row.
+ */
 function notEnoughMegasMessage(
   players: number,
-  megasPerTeam: number,
+  megaRounds: number,
   needed: number,
   available: number,
-  bans: number,
+  speciesBans: number,
+  formeBans: number,
 ): string {
-  return `Not enough Mega-capable Pokémon. ${players} players × ${megasPerTeam} Megas needs ${needed}; ${available} are draftable after ${bans} bans.`;
+  return `Not enough Pokémon can Mega. ${players} players × ${megaRounds} Mega rounds needs ${needed}; ${available} can still Mega after ${speciesBans} species bans and ${formeBans} Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.`;
+}
+
+/**
+ * The two bound sentences. Each names the bound and the field to change, because "needs a
+ * whole number" is false about a value that is one — the same reason `megasExceedRounds` is
+ * separate from `megasRequiredNotAnInteger` one field along.
+ */
+function swapBudgetTooLargeMessage(maximum: number): string {
+  return `Swap budget is too high. A player can be given at most ${maximum} swaps. Lower the swap budget.`;
+}
+
+function swapRoundsTooLargeMessage(maximum: number): string {
+  return `Too many swap rounds. A draft can be followed by at most ${maximum} swap rounds. Lower the swap rounds.`;
 }
 
 function poolExactlyMinimumMessage(poolSize: number, rounds: number): string {
   return `Warning — the pool is exactly ${poolSize}. The last player to pick in Round ${rounds} will have one Pokémon to choose from.`;
+}
+
+/**
+ * D-32, and it is a WARNING for the reason this module has a second severity at all.
+ *
+ * The Exact preset is the default and passes every blocking check, so blocking here would
+ * refuse the shipped configuration. Nothing about it is unsatisfiable: the pool is empty when
+ * the last pick lands, so the FIRST swapper can only take what someone else drops — and the
+ * second and later swappers do have that first swapper's drop. Degenerate, not impossible.
+ */
+function swapRoundsOnExactPoolMessage(poolSize: number): string {
+  return `Warning — the pool is exactly ${poolSize}, so it is empty when the last pick lands. The first player to swap can only take what someone else drops.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +393,29 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
     (total, entry) => (entry.megaCapable && !banned.has(entry.id) ? total + 1 : total),
     0,
   );
+
+  // RULE-09's right-hand side. Set membership again, never the RAW LENGTH of the forme
+  // banlist, which is a different number for two reasons: two surfaces write one forme
+  // banlist so a duplicate is reachable, and an imported file can carry forme ids this
+  // regulation dropped. Either would make the pool look smaller than it is and block a
+  // configuration that is satisfiable (T-03-19).
+  const bannedFormes = new Set(input.megaFormeBans);
+  const megaEligibleLegalCount = entries.reduce(
+    (total, entry) =>
+      !banned.has(entry.id) &&
+      isMegaEligible(entry, bannedFormes, choiceFor(input.dualMegaChoices, entry.id))
+        ? total + 1
+        : total,
+    0,
+  );
+  // The forme bans that HIT the roster, counted the same way for the same reason.
+  const megaFormeBanCount = entries.reduce(
+    (total, entry) =>
+      total +
+      entry.megaFormes.reduce((hits, forme) => (bannedFormes.has(forme.id) ? hits + 1 : hits), 0),
+    0,
+  );
+
   // The bans that HIT the roster, which is the figure every message quotes.
   const banCount = entries.length - legalCount;
 
@@ -303,6 +436,21 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
   const megasPerTeam = megasRequiredMalformed
     ? null
     : asSafeInteger(input.megasRequiredPerTeam, 0, rounds);
+
+  // The two swap fields, asked the same two questions for the same reason. An emptied field
+  // is `null` and every relational comparison with `NaN` is false, so a gate that merely
+  // compared would report all-clear on a configuration the host has not finished stating.
+  const swapBudgetMalformed =
+    asSafeInteger(input.swapBudget, 0, Number.MAX_SAFE_INTEGER) === null;
+  const swapBudget = swapBudgetMalformed
+    ? null
+    : asSafeInteger(input.swapBudget, 0, MAX_SWAP_BUDGET);
+
+  const swapRoundsMalformed =
+    asSafeInteger(input.swapRounds, 0, Number.MAX_SAFE_INTEGER) === null;
+  const swapRounds = swapRoundsMalformed
+    ? null
+    : asSafeInteger(input.swapRounds, 0, MAX_SWAP_ROUNDS);
 
   // Checks are grouped by the field the host would change, then sorted by PRECEDENCE. The
   // grouping is for the reader; the order the host sees is the declared one.
@@ -352,6 +500,29 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
     problems.push(warning('poolExactlyMinimum', poolExactlyMinimumMessage(poolSize, rounds)));
   }
 
+  // — the two swap fields —
+  if (swapBudgetMalformed) {
+    problems.push(blocking('swapBudgetNotAnInteger', SWAP_BUDGET_NOT_AN_INTEGER));
+  } else if (swapBudget === null) {
+    problems.push(
+      blocking('swapBudgetTooLarge', swapBudgetTooLargeMessage(MAX_SWAP_BUDGET)),
+    );
+  }
+
+  if (swapRoundsMalformed) {
+    problems.push(blocking('swapRoundsNotAnInteger', SWAP_ROUNDS_NOT_AN_INTEGER));
+  } else if (swapRounds === null) {
+    problems.push(
+      blocking('swapRoundsTooLarge', swapRoundsTooLargeMessage(MAX_SWAP_ROUNDS)),
+    );
+  }
+
+  if (poolSize !== null && poolSize === needed && swapRounds !== null && swapRounds > 0) {
+    problems.push(
+      warning('swapRoundsOnExactPool', swapRoundsOnExactPoolMessage(poolSize)),
+    );
+  }
+
   // — the Megas-per-team field —
   if (megasRequiredMalformed) {
     problems.push(
@@ -363,7 +534,15 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
     problems.push(blocking('megasExceedRounds', megasExceedRoundsMessage(rounds)));
   }
 
-  if (megasPerTeam !== null && players * megasPerTeam > megaCapableLegalCount) {
+  // RULE-09, measured over the species that can STILL Mega. The compiler has made
+  // `megasRequiredPerTeam` and the Mega-round count the same number, so `megasPerTeam` IS the
+  // Mega-round count the sentence names.
+  //
+  // Measured over the CANDIDATE SET rather than over the drawn pool, and that is structural
+  // rather than a shortcut: `ConfigScreen` guards the draw on `blocked`, so the draw is `null`
+  // whenever this gate has anything to say. `drawPool`'s stage 2 carries the count into the
+  // pool by construction, which is what makes D-11's wording reachable from here.
+  if (megasPerTeam !== null && players * megasPerTeam > megaEligibleLegalCount) {
     problems.push(
       blocking(
         'notEnoughMegas',
@@ -371,8 +550,9 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
           players,
           megasPerTeam,
           players * megasPerTeam,
-          megaCapableLegalCount,
+          megaEligibleLegalCount,
           banCount,
+          megaFormeBanCount,
         ),
       ),
     );
@@ -385,6 +565,7 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
     problems,
     legalCount,
     megaCapableLegalCount,
+    megaEligibleLegalCount,
     banCount,
   };
 }

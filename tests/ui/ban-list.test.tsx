@@ -462,12 +462,17 @@ describe('bans reaching the feasibility gate', () => {
     const victims = MEGA_CAPABLE.slice(0, 27);
     for (const entry of victims.slice(0, 26)) banByName(entry.name);
 
-    expect(reasonText()).not.toContain('Not enough Mega-capable Pokémon.');
+    // Since 03-05 the sentence names the count RULE-09 actually measures — the species
+    // that can still Mega — and both ban lists, because a forme ban is the only way an
+    // ordinary 4-8 player party reaches this gate.
+    expect(reasonText()).not.toContain('Not enough Pokémon can Mega.');
 
     const last = victims[26];
     if (last !== undefined) banByName(last.name);
 
-    expect(reasonText()).toContain('Not enough Mega-capable Pokémon.');
+    expect(reasonText()).toBe(
+      'Not enough Pokémon can Mega. 8 players × 6 Mega rounds needs 48; 47 can still Mega after 27 species bans and 0 Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.',
+    );
     expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
   });
 });

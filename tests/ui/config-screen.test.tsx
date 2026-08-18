@@ -81,7 +81,24 @@ const ENTRIES = Array.from({ length: 60 }, (_, index) => ({
   baseSpeciesId: `mon-${index}`,
   forme: null,
   megaCapable: index % 4 === 0,
-  megaFormes: [],
+  // A Mega-capable row carries a forme, because on the real snapshot the flag and the
+  // array agree — `fixtures.test.ts` pins that. Since 03-05 the RULE-09 gate counts the
+  // species that can STILL Mega, so a fixture with the flag set and no forme would model
+  // a roster that cannot exist and would report every Mega requirement as unsatisfiable.
+  megaFormes:
+    index % 4 === 0
+      ? [
+          {
+            id: `mon-${index}mega`,
+            name: `Mon ${index}-Mega`,
+            forme: 'Mega',
+            requiredItem: 'Monite',
+            spriteId: null,
+            types: ['Normal'],
+            baseStats: { hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1 },
+          },
+        ]
+      : [],
   spriteId: `mon-${index}`,
   spriteMissing: true,
 }));
@@ -719,7 +736,7 @@ describe('the Mega rules group', () => {
 
     // The fixture carries 15 Mega-capable entries in 60, so 8 × 6 cannot be met.
     expect(reasonElement()?.textContent).toBe(
-      'Not enough Mega-capable Pokémon. 8 players × 6 Megas needs 48; 15 are draftable after 0 bans.',
+      'Not enough Pokémon can Mega. 8 players × 6 Mega rounds needs 48; 15 can still Mega after 0 species bans and 0 Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.',
     );
   });
 
@@ -847,12 +864,16 @@ describe('the Swaps group', () => {
     expect(budget).not.toBeNull();
     if (budget !== null) type(budget, '');
 
-    // The control neither rewrites the field nor decides anything about it. D-30 puts the
-    // judgement in the feasibility gate, and 03-05 is the plan that adds the blocking
-    // reason — until then an empty budget is simply not a blocker on this screen.
+    // The control still neither rewrites the field nor decides anything about it — D-30
+    // puts the judgement in the feasibility gate, and since 03-05 that gate has the
+    // blocking reason. So the field keeps the host's empty string and the BAR is what
+    // refuses, which is the split this screen has had since 02-05.
     expect(fieldLabelled('Swap budget per player')?.value).toBe('');
     expect(parseNumericField(fieldLabelled('Swap budget per player')?.value ?? '')).toBeNull();
-    expect(startButton()?.hasAttribute('aria-disabled')).toBe(false);
+    expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
+    expect(reasonElement()?.textContent).toBe(
+      'Swap budget needs a whole number. Enter 0 for no swaps.',
+    );
   });
 
   it('does not clamp a value above the field affordance', () => {
@@ -1003,6 +1024,7 @@ describe('the feasibility bar rendering a result it did not compute', () => {
       problems: [],
       legalCount: 235,
       megaCapableLegalCount: 74,
+      megaEligibleLegalCount: 74,
       banCount: 0,
     };
   }
@@ -1038,6 +1060,7 @@ describe('the feasibility bar rendering a result it did not compute', () => {
       ],
       legalCount: 235,
       megaCapableLegalCount: 74,
+      megaEligibleLegalCount: 74,
       banCount: 0,
     };
 
