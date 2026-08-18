@@ -27,7 +27,9 @@ import {
   isPickMadeAction,
   isPickUndoneAction,
   isPoolBuiltAction,
+  isScheduleCompiledAction,
   POOL_BUILT,
+  SCHEDULE_COMPILED,
   type AnyAction,
 } from './actions';
 import { initialState, type DraftState, type TournamentDoc } from './model';
@@ -43,6 +45,10 @@ export type RejectionReason =
   | 'malformedPayload'
   | 'poolAlreadyBuilt'
   | 'poolNotBuilt'
+  | 'scheduleAlreadyCompiled'
+  | 'scheduleNotCompiled'
+  /** Wrong length for this document's round count, or indices not contiguous from 1. */
+  | 'malformedSchedule'
   | 'emptyPool'
   | 'duplicatePoolIds'
   | 'draftAlreadyStarted'
@@ -75,6 +81,16 @@ export function apply(state: DraftState, action: AnyAction): DraftState {
         poolIds: [...action.ids],
         rosterVersion: action.rosterVersion,
         rosterChecksum: action.checksum,
+      };
+    }
+
+    case SCHEDULE_COMPILED: {
+      if (!isScheduleCompiledAction(action)) return state;
+      // Element by element, so the folded state never shares an array with the log entry
+      // it was folded from — the same rule `copyConfig` states, for the same reason.
+      return {
+        ...state,
+        schedule: action.rounds.map((spec) => ({ index: spec.index, kind: spec.kind })),
       };
     }
 
@@ -138,9 +154,35 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
       return OK;
     }
 
+    case SCHEDULE_COMPILED: {
+      if (!isScheduleCompiledAction(action)) return reject('malformedPayload');
+      // After the pool, because a schedule is only meaningful against one, and before the
+      // draft, because `DRAFT_STARTED` below now requires it.
+      if (state.poolIds.length === 0) return reject('poolNotBuilt');
+      if (state.schedule.length > 0) return reject('scheduleAlreadyCompiled');
+      if (state.order.length > 0) return reject('draftAlreadyStarted');
+
+      // Length against THIS document's round count — the one schedule question `canApply`
+      // is the right place for. Contiguity is deliberately NOT rechecked here:
+      // `isScheduleCompiledAction` already pins `rounds[i].index === i + 1`, so a
+      // non-contiguous schedule is refused as `malformedPayload` two lines above and never
+      // reaches this point. Repeating the check would be unreachable code that reads like a
+      // second authority. The split is the same one the whole file runs on — the structural
+      // guard types an action in ISOLATION, which is why it cannot ask this question, and
+      // `canApply` sees the state, which is why it can.
+      if (action.rounds.length !== state.config.rounds) return reject('malformedSchedule');
+      return OK;
+    }
+
     case DRAFT_STARTED: {
       if (!isDraftStartedAction(action)) return reject('malformedPayload');
       if (state.poolIds.length === 0) return reject('poolNotBuilt');
+      // Origination is guarded; replay deliberately is not. `fold` does not run `canApply`
+      // (see the bottom of this file), so a migrated schema-2 document — whose log has no
+      // `schedule/compiled` in it, because `migrateV2ToV3` performs no log surgery — still
+      // opens. What this refuses is a NEW draft with no schedule, which is the only case
+      // this build can create and therefore the only one worth refusing.
+      if (state.schedule.length === 0) return reject('scheduleNotCompiled');
       if (state.order.length > 0) return reject('draftAlreadyStarted');
 
       const known = new Set(state.config.players.map((player) => player.id));

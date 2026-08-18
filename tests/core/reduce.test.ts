@@ -575,10 +575,16 @@ describe('apply schedule/compiled', () => {
 
   it('writes a fresh copy, so the action’s array is never shared with state', () => {
     const action = stamp(scheduleCompiled(MEGA_FIRST_SCHEDULE), 1);
+    expect(isScheduleCompiledAction(action)).toBe(true);
+    if (!isScheduleCompiledAction(action)) return;
+
     const state = apply(pooledState(), action);
 
     expect(state.schedule).not.toBe(action.rounds);
     expect(state.schedule[0]).not.toBe(action.rounds[0]);
+    // And the creator did not alias the fixture either.
+    expect(action.rounds).not.toBe(MEGA_FIRST_SCHEDULE);
+    expect(action.rounds[0]).not.toBe(MEGA_FIRST_SCHEDULE[0]);
   });
 
   it('returns the state unchanged for a malformed payload — apply stays total', () => {
@@ -683,9 +689,13 @@ describe('canApply schedule/compiled', () => {
       kind: spec.kind,
     }));
 
+    // `malformedPayload` rather than `malformedSchedule`, and that is the right answer
+    // rather than a near miss: `isScheduleCompiledAction` pins index against position, so
+    // this never gets as far as being a question about THIS document's schedule. The
+    // reason names the check that actually refused it.
     expect(canApply(pooledState(), stamp(scheduleCompiled(shifted), 1))).toEqual({
       ok: false,
-      reason: 'malformedSchedule',
+      reason: 'malformedPayload',
     });
   });
 });

@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'preact/hooks';
 import { newId, newSeed } from '../../adapters/id';
 import type { SpriteMeta } from '../../adapters/roster-source';
 import { bannedEntries } from '../../core/bans';
+import { compile } from '../../core/compile';
 import { drawPool } from '../../core/draw';
 import {
   checkFeasibility,
@@ -775,6 +776,12 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       megaCapableCount: draw.megaCapableCount,
       order,
       orderSeed,
+      // TEMPORARY SHAPE. 03-03 replaces this call with the host's reordered preview state
+      // — this exact line is what that plan edits. Until the reorder control exists there
+      // is nothing to permute, so the canonical order IS the approved schedule, and
+      // compiling it here keeps the config the document records and the schedule it
+      // records describing one tournament.
+      schedule: compile(config.rules, ROUNDS),
     });
 
     // A refused creation leaves the host on this screen with their answers intact, which

@@ -45,10 +45,12 @@ import {
   draftStarted,
   isDraftStartedAction,
   isPoolBuiltAction,
+  isScheduleCompiledAction,
   pickMade,
   poolBuilt,
   type Action,
   type Intent,
+  type RoundSpec,
 } from '../src/core/actions';
 import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../src/core/model';
 import {
@@ -232,6 +234,22 @@ const SIX_PLAYER_CONFIG: TournamentConfig = {
   poolSize: 36,
 };
 
+/**
+ * A REORDERED schedule, not the canonical one.
+ *
+ * Deliberate: `compile` puts both Mega rounds first, so a store that recompiled instead of
+ * recording what it was handed would still emit a valid-looking schedule and would pass
+ * every other assertion in this file. This one it fails.
+ */
+const APPROVED_SCHEDULE: readonly RoundSpec[] = [
+  { index: 1, kind: 'open' },
+  { index: 2, kind: 'mega' },
+  { index: 3, kind: 'open' },
+  { index: 4, kind: 'mega' },
+  { index: 5, kind: 'open' },
+  { index: 6, kind: 'open' },
+];
+
 function sixPlayerInput(overrides: Partial<CreateTournamentInput> = {}): CreateTournamentInput {
   return {
     config: SIX_PLAYER_CONFIG,
@@ -240,22 +258,46 @@ function sixPlayerInput(overrides: Partial<CreateTournamentInput> = {}): CreateT
     megaCapableCount: 9,
     order: SIX_PLAYER_CONFIG.players.map((player) => player.id),
     orderSeed: 34,
+    schedule: APPROVED_SCHEDULE,
     ...overrides,
   };
 }
 
 describe('createTournament', () => {
-  it('emits exactly pool/built then draft/started, each carrying its own seed', () => {
+  it('emits pool/built, schedule/compiled then draft/started, each carrying its own result', () => {
     const created = createTournament(sixPlayerInput());
 
     expect(created).not.toBeNull();
-    expect(created?.log).toHaveLength(2);
+    expect(created?.log).toHaveLength(3);
     expect(getState()?.config.players).toHaveLength(6);
 
-    const [pool, started] = created?.log ?? [];
+    // Order asserted by position, because it is a requirement rather than an accident: the
+    // schedule is meaningful only against a pool, and `draft/started` is refused without one.
+    expect(created?.log.map((action) => action.type)).toEqual([
+      'pool/built',
+      'schedule/compiled',
+      'draft/started',
+    ]);
+
+    const [pool, compiled, started] = created?.log ?? [];
     expect(pool).toBeDefined();
+    expect(compiled).toBeDefined();
     expect(started).toBeDefined();
-    if (pool === undefined || started === undefined) return;
+    if (pool === undefined || compiled === undefined || started === undefined) return;
+
+    expect(isScheduleCompiledAction(compiled)).toBe(true);
+    if (isScheduleCompiledAction(compiled)) {
+      expect(compiled.rounds).toEqual(APPROVED_SCHEDULE);
+      // The host's permutation, never `compile`'s canonical order.
+      expect(compiled.rounds.map((spec) => spec.kind)).not.toEqual([
+        'mega',
+        'mega',
+        'open',
+        'open',
+        'open',
+        'open',
+      ]);
+    }
 
     expect(isPoolBuiltAction(pool)).toBe(true);
     expect(isDraftStartedAction(started)).toBe(true);
@@ -286,8 +328,9 @@ describe('createTournament', () => {
     expect(created?.config.formatLabel).toBe('Champions mb');
     expect(created?.schemaVersion).toBe(SCHEMA_VERSION);
 
-    // The document's own RNG seed is reserved for Phase 3's priority-card tie-breaks and
-    // is not either of the two config-time seeds, which ride on the actions.
+    // Nothing in this build advances `doc.rng`: the cursor is 0 at creation and stays 0
+    // for the life of the document. Phase 3's priority-card tie-break breaks on
+    // `(value, seq)` and consumes no randomness at all (D-22).
     expect(created?.rng.cursor).toBe(0);
   });
 
@@ -333,6 +376,20 @@ describe('createTournament', () => {
     expect(isOwner()).toBe(false);
 
     const created = createTournament(sixPlayerInput());
-    expect(created?.log).toHaveLength(2);
+    expect(created?.log).toHaveLength(3);
+  });
+
+  it('returns null and leaves both signals untouched when the schedule dispatch is refused', () => {
+    expect(createTournament(sixPlayerInput())).not.toBeNull();
+
+    const docBefore = getDoc();
+    const stateBefore = getState();
+
+    // A schedule shorter than the configured round count. This is the MIDDLE dispatch, so
+    // the rollback has to undo a document that already holds a pool.
+    expect(createTournament(sixPlayerInput({ schedule: APPROVED_SCHEDULE.slice(0, 3) }))).toBeNull();
+
+    expect(getDoc()).toBe(docBefore);
+    expect(getState()).toBe(stateBefore);
   });
 });

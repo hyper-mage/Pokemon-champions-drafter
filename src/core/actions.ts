@@ -10,13 +10,17 @@
  * for a clock would be an ambient read inside the core and `npm run check:pure` would
  * fail the build for it. That split is the point, not an inconvenience.
  *
- * All four types exist from day one, including `draft/pickUndone`, which nothing
- * dispatches until plan 01-07. Sync rule 15 requires the compensating action type to
- * exist and be reducible now, so that popping the log stays a local-only optimization
- * rather than a design the log cannot express.
+ * Phase 1's four types all existed from day one, including `draft/pickUndone`, which
+ * nothing dispatched until plan 01-07. Sync rule 15 requires the compensating action type
+ * to exist and be reducible now, so that popping the log stays a local-only optimization
+ * rather than a design the log cannot express. `schedule/compiled` is the fifth, added in
+ * Phase 3, and it lands in the same five places every type here does: constant, payload
+ * interface, `Intent` member, creator, structural guard — plus `buildLogEntry`'s arm in
+ * `import-guard.ts`, which is the sixth and the one a round trip fails silently without.
  */
 
 export const POOL_BUILT = 'pool/built';
+export const SCHEDULE_COMPILED = 'schedule/compiled';
 export const DRAFT_STARTED = 'draft/started';
 export const DRAFT_PICK_MADE = 'draft/pickMade';
 export const DRAFT_PICK_UNDONE = 'draft/pickUndone';
@@ -42,9 +46,13 @@ export interface ActionEnvelope {
  *
  * This is ARCHITECTURE Pattern 5 — a materialized result carrying its own provenance —
  * and it is the same reason this payload already carries `rosterVersion` and `checksum`.
- * `doc.rng` is a single `{ seed, cursor }` reserved for the pure generator that Phase 3's
- * priority-card tie-breaks will advance; putting the pool draw's seed there would make two
- * unrelated consumers share one number and one cursor.
+ * `doc.rng` is a single `{ seed, cursor }`, and **nothing in this build advances it**:
+ * `rng.cursor` is `0` when a tournament is created and `0` for the rest of its life. Phase
+ * 3's priority-card tie-break, which an earlier version of this comment reserved the
+ * generator for, breaks ties on `(value, seq)` and consumes no randomness at all (D-22).
+ * The field stays because it is the provenance argument's home for any future consumer
+ * that does need a seeded derivation — and putting the pool draw's seed there would make
+ * two unrelated consumers share one number and one cursor.
  *
  * Keeping it on the action also makes a re-roll expressible without contradicting
  * anything: a Phase 3 re-roll emits a NEW `pool/built` with a new seed and a new id list,
@@ -99,6 +107,40 @@ export interface RoundSpec {
   kind: RoundKind;
 }
 
+/**
+ * The schedule the host approved, after any RULE-06 reorder. Written once, at Start.
+ *
+ * ## Why this is materialized, against "nothing derived is stored"
+ *
+ * Three arguments, strongest first.
+ *
+ * 1. **The schedule is not derived.** It carries a host decision `compile()` cannot
+ *    reproduce: `compile(rules, rounds)` yields one canonical order, and RULE-06 lets the
+ *    host permute it. A document recording only `rules` would recompute the canonical order
+ *    on every load, and the reorder would silently not survive a reload. The reorder is an
+ *    external input, and Pattern 5 exists for exactly that class.
+ * 2. **A compiler change or a roster rotation would retype slots in a FINISHED draft.**
+ *    D-08 reads a slot's type from schedule position, so a v1.1 compiler that emitted Mega
+ *    rounds last would reinterpret a completed team. `pool/built` above carries resolved
+ *    `ids` for the same reason.
+ * 3. **The reducer and the selectors need it in `DraftState`,** and the only route into
+ *    `DraftState` is through the fold.
+ *
+ * ## There is no reorder action, and there is deliberately no second schedule
+ *
+ * The reorder is config-time (D-13) and therefore pre-document form state, exactly like the
+ * banlist: only the RESOLVED result reaches the log. There is one schedule for the life of
+ * a document — `canApply` refuses a second — which is what makes "a slot's type cannot
+ * change under a pick already made" true by construction rather than by a check. A
+ * mid-draft reorder is CONTEXT `<deferred>` and would need an action of its own, which this
+ * build does not have.
+ */
+export interface ScheduleCompiledPayload {
+  type: typeof SCHEDULE_COMPILED;
+  /** `length === config.rounds`, `index` contiguous from 1. */
+  rounds: RoundSpec[];
+}
+
 /** The starting order, materialized from the seed at creation time. */
 export interface DraftStartedPayload {
   type: typeof DRAFT_STARTED;
@@ -125,11 +167,13 @@ export interface PickUndonePayload {
 
 export type Intent =
   | PoolBuiltPayload
+  | ScheduleCompiledPayload
   | DraftStartedPayload
   | PickMadePayload
   | PickUndonePayload;
 
 export type PoolBuiltAction = PoolBuiltPayload & ActionEnvelope;
+export type ScheduleCompiledAction = ScheduleCompiledPayload & ActionEnvelope;
 export type DraftStartedAction = DraftStartedPayload & ActionEnvelope;
 export type PickMadeAction = PickMadePayload & ActionEnvelope;
 export type PickUndoneAction = PickUndonePayload & ActionEnvelope;
@@ -168,6 +212,21 @@ export function poolBuilt(
   megaCapableCount: number,
 ): PoolBuiltPayload {
   return { type: POOL_BUILT, ids: [...ids], rosterVersion, checksum, seed, megaCapableCount };
+}
+
+/**
+ * A fresh array of FRESH RECORDS, never the caller's objects.
+ *
+ * The config screen holds its reorder preview in component state and re-renders it on every
+ * drag; a payload that aliased that array would let a later render mutate a log entry that
+ * has already been written. Copying element by element here is the same rule `copyConfig`
+ * states for the document.
+ */
+export function scheduleCompiled(rounds: readonly RoundSpec[]): ScheduleCompiledPayload {
+  return {
+    type: SCHEDULE_COMPILED,
+    rounds: rounds.map((spec) => ({ index: spec.index, kind: spec.kind })),
+  };
 }
 
 export function draftStarted(order: readonly string[], seed: number): DraftStartedPayload {
@@ -222,6 +281,33 @@ export function isPoolBuiltAction(action: AnyAction): action is PoolBuiltAction 
     isSafeInteger(action['seed']) &&
     isSafeInteger(action['megaCapableCount'])
   );
+}
+
+const ROUND_KINDS: readonly RoundKind[] = ['mega', 'open'];
+
+/**
+ * Structurally typed, and positionally pinned.
+ *
+ * `rounds[i].index === i + 1` is checked rather than assumed, so a hand-edited file cannot
+ * produce a schedule whose carried index and array position disagree — the two are read by
+ * different call sites (`selectRoundKind` indexes; the reorder preview renders `index`), and
+ * a disagreement between them is invisible until a Mega round appears in the wrong column.
+ *
+ * `kind` is checked against the union for the reason the union's own comment gives: these
+ * strings are an API. A file declaring `kind: 'legendary'` would fold to a round this build
+ * has no pool filter, no swap predicate and no export rule for.
+ */
+export function isScheduleCompiledAction(action: AnyAction): action is ScheduleCompiledAction {
+  if (action.type !== SCHEDULE_COMPILED || !isRecord(action)) return false;
+
+  const rounds = action['rounds'];
+  if (!Array.isArray(rounds)) return false;
+
+  return rounds.every((spec, position) => {
+    if (!isRecord(spec)) return false;
+    if (!isSafeInteger(spec['index']) || spec['index'] !== position + 1) return false;
+    return ROUND_KINDS.some((kind) => kind === spec['kind']);
+  });
 }
 
 export function isDraftStartedAction(action: AnyAction): action is DraftStartedAction {

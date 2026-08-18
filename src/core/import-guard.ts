@@ -58,7 +58,7 @@
  * would mean reaching for an ambient API from inside the core.
  */
 
-import type { Action } from './actions';
+import type { Action, RoundKind, RoundSpec } from './actions';
 import { migrate, V1_CONFIG_DEFAULTS, V2_CONFIG_DEFAULTS } from './migrate';
 import type {
   BanMode,
@@ -280,6 +280,7 @@ const BAN_MODES: readonly BanMode[] = ['hostBanlist', 'blind', 'snake'];
 const DEPTHS: readonly TournamentDepth[] = ['draftOnly', 'draftAndBrackets', 'draftBracketsAndLog'];
 const DUAL_MEGA_FORMES: readonly DualMegaForme[] = ['x', 'y', 'either'];
 const COMPOSITION_RULE_KINDS: readonly CompositionRule['kind'][] = ['mega'];
+const ROUND_KINDS: readonly RoundKind[] = ['mega', 'open'];
 
 function isOneOf<T extends string>(value: unknown, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value);
@@ -403,6 +404,39 @@ function buildCompositionRules(value: unknown, rounds: number): CompositionRule[
   }
 
   return rules;
+}
+
+/**
+ * One compiled schedule, rebuilt spec by spec.
+ *
+ * `kind` is checked against the union rather than accepted as a string, for the reason
+ * `buildCompositionRules` gives about rule kinds: a file must not be able to declare a
+ * round type this build has no pool filter, no swap predicate and no export rule for, and
+ * then be folded into a draft that silently ignores it (T-03-07).
+ *
+ * `index` is required to be a positive integer and nothing more. Whether it AGREES with its
+ * array position is `isScheduleCompiledAction`'s check, run by `apply` on every fold — this
+ * function's job is to bound the shape, and an entry that survives here and is then ignored
+ * by the reducer is the layering working rather than a gap in it.
+ */
+function buildRoundSpecs(value: unknown): RoundSpec[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length > MAX_ROUNDS) return null;
+
+  const specs: RoundSpec[] = [];
+  for (const raw of value) {
+    const entry = safeObject(raw);
+    if (entry === null) return null;
+
+    const index = entry['index'];
+    const kind = entry['kind'];
+    if (!isPositiveInteger(index)) return null;
+    if (!isOneOf(kind, ROUND_KINDS)) return null;
+
+    specs.push({ index, kind });
+  }
+
+  return specs;
 }
 
 /**
@@ -628,6 +662,19 @@ function buildLogEntry(value: unknown): Action | null {
         megaCapableCount,
         ...envelope,
       };
+    }
+
+    case 'schedule/compiled': {
+      // Bounded by MAX_ROUNDS rather than by `config.rounds`, and the distinction is the
+      // one this file keeps everywhere: a bound is not an integrity check. A count reaches
+      // the renderer as an allocation — four hundred specs is four hundred board columns,
+      // and the size gate does not constrain it, because four hundred two-key objects is a
+      // few KB (T-03-06). Whether the length AGREES with the document's round count is
+      // `canApply`'s question on origination and `selectSchedule`'s on fold; neither is
+      // this function's, which types every entry in isolation.
+      const rounds = buildRoundSpecs(raw['rounds']);
+      if (rounds === null) return null;
+      return { type: 'schedule/compiled', rounds, ...envelope };
     }
 
     case 'draft/started': {

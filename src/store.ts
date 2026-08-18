@@ -25,7 +25,14 @@ import { computed, effect, signal, type ReadonlySignal } from '@preact/signals';
 import { now } from './adapters/clock';
 import { newId, newSeed } from './adapters/id';
 import { isOwner } from './adapters/tab-lock';
-import { draftStarted, poolBuilt, type Action, type Intent } from './core/actions';
+import {
+  draftStarted,
+  poolBuilt,
+  scheduleCompiled,
+  type Action,
+  type Intent,
+  type RoundSpec,
+} from './core/actions';
 import { migrate } from './core/migrate';
 import {
   initialState,
@@ -157,6 +164,16 @@ export interface CreateTournamentInput {
   order: readonly string[];
   /** The seed that produced `order`. */
   orderSeed: number;
+  /**
+   * The schedule the host approved — a RESULT the config screen already showed them, after
+   * any RULE-06 reorder, not an instruction to recompute.
+   *
+   * The same argument the fields above make, and here it is load-bearing rather than
+   * stylistic: a store that called `compile(config.rules, config.rounds)` itself would
+   * discard the reorder entirely, and would do so silently, because the canonical order it
+   * produced would be a perfectly valid schedule.
+   */
+  schedule: readonly RoundSpec[];
 }
 
 /**
@@ -166,25 +183,32 @@ export interface CreateTournamentInput {
  * a roster. The config screen owns all three and has already put them on screen; this is
  * where they become a document.
  *
- * Two actions are emitted, both carrying materialized results rather than instructions to
- * recompute (ARCHITECTURE Pattern 5):
+ * Three actions are emitted, each carrying materialized results rather than instructions to
+ * recompute (ARCHITECTURE Pattern 5), and the order is not stylistic:
  *
- *   pool/built     the actual ids, plus the regulation and checksum they came from, the
- *                  seed that drew them and how many can Mega Evolve. Champions
- *                  regulations rotate roughly every 2.5 months; a document that recorded
- *                  only "build a pool" would reopen next regulation as a different
- *                  tournament.
- *   draft/started  the resolved starting order, and the seed it was rolled from.
+ *   pool/built         the actual ids, plus the regulation and checksum they came from, the
+ *                      seed that drew them and how many can Mega Evolve. Champions
+ *                      regulations rotate roughly every 2.5 months; a document that recorded
+ *                      only "build a pool" would reopen next regulation as a different
+ *                      tournament.
+ *   schedule/compiled  the round schedule the host approved, after any reorder. AFTER the
+ *                      pool, because a schedule is meaningful only against one; BEFORE the
+ *                      draft, because `canApply(DRAFT_STARTED)` now requires it and because
+ *                      CARD-02 needs the schedule on screen before the first card is played.
+ *   draft/started      the resolved starting order, and the seed it was rolled from.
  *
  * Both seeds ride on the ACTION rather than in `config` or `rng`, which is what keeps a
  * later re-roll expressible: it emits a new action with a new seed and contradicts no
  * field anywhere else in the document.
  *
- * `rng` is a THIRD seed and it is untouched by anything in Phase 2. It is reserved for
- * Phase 3's priority-card tie-breaks, which is the first feature that needs the cursor to
- * advance — and it must materialize the advanced cursor into the log when it does, or two
- * consumers silently share one stretch of one stream. The config screen's two derivations
- * dodge that by using two independent seeds, each consumed from cursor 0.
+ * `rng` is a THIRD seed and **nothing in this build advances it**. It is drawn here and
+ * `rng.cursor` stays `0` for the life of the document. An earlier version of this comment
+ * reserved it for Phase 3's priority-card tie-breaks; those break ties on `(value, seq)`
+ * and consume no randomness (D-22). The field remains for the provenance argument and for
+ * any future consumer that needs a seeded derivation — and if one ever arrives it must
+ * materialize the advanced cursor into the log, or two consumers silently share one stretch
+ * of one stream. The config screen's two derivations dodge that by using two independent
+ * seeds, each consumed from cursor 0.
  *
  * ## Ordering that looks stylistic and is not
  *
@@ -217,14 +241,21 @@ export function createTournament(input: CreateTournamentInput): TournamentDoc | 
     ),
   );
 
-  const started = pool.ok
+  const compiled = pool.ok ? dispatch(scheduleCompiled(input.schedule)) : pool;
+
+  const started = compiled.ok
     ? dispatch(draftStarted(input.order, input.orderSeed))
-    : pool;
+    : compiled;
 
   if (!started.ok) {
+    // `started` carries the FIRST refusal of the three, because each dispatch is skipped
+    // once an earlier one failed. That is what makes this one branch cover all three
+    // outcomes rather than needing one arm each.
+    //
     // A half-built tournament is worse than none: the pool would render with no turn
-    // banner and no way to pick. The caller gets null and the store gets its old life
-    // back, including the object identity every component is holding.
+    // banner and no way to pick, and a pool plus a schedule with no order would render a
+    // typed board nobody can pick into. The caller gets null and the store gets its old
+    // life back, including the object identity every component is holding.
     docSignal.value = previousDoc;
     stateSignal.value = previousState;
     return null;

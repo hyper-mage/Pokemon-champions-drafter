@@ -105,7 +105,14 @@ function makeDoc(log: readonly Action[] = []): TournamentDoc {
   };
 }
 
-/** `pool/built` then `draft/started`, exactly as `createTournament` emits them. */
+/**
+ * `pool/built` then `draft/started` — the shape a Phase 2 document has.
+ *
+ * `createTournament` emits a third action between these two since 03-02, and this fixture
+ * deliberately does not: `undo` never reads the schedule, and a Phase 2 save is exactly the
+ * log this file must keep working against. `fold` does not run `canApply`, so the absent
+ * `schedule/compiled` is not a legality question here.
+ */
 function openingLog(): Action[] {
   return [
     stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
