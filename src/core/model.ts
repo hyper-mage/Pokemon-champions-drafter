@@ -249,6 +249,47 @@ export interface DraftPick {
 }
 
 /**
+ * One priority card, played face up.
+ *
+ * `seq` carries the same justification `DraftPick.seq` does: it is the sequence number of
+ * the action that recorded the play, which is what a compensating action targets, and an
+ * array index would not survive a retraction earlier in the log. Here it does a second job
+ * that is load-bearing rather than incidental — it IS the tiebreak. `resolvePickOrder`
+ * orders on `(value, seq)`, and because `seq` is unique log-wide by construction
+ * (`store.ts` allocates `max(seq) + 1`) that comparator is total and needs no third clause.
+ *
+ * `round` is stamped at the edge for the reason `PickMadePayload.round` is: the round must
+ * not be re-derived from position after an undo.
+ *
+ * The hand a player still holds is NOT here and must never be. It is `1..config.rounds`
+ * minus the values that player has played, which `selectHand` computes — a stored hand
+ * would be a second copy of a fact the log already asserts, free to disagree with it after
+ * an undo (CARD-01, CARD-06, D-06).
+ */
+export interface CardPlay {
+  playerId: string;
+  value: number;
+  round: number;
+  /** The seq of the action that recorded it — what the tiebreak and a retraction target. */
+  seq: number;
+}
+
+/**
+ * One round's pick order, materialized when the last card of that round lands.
+ *
+ * ARCHITECTURE Pattern 5, and the same argument `pool/built` and `draft/started` carry: the
+ * resolved order is the outcome of a rule, and a document that recorded only the plays would
+ * re-derive it on every load under whatever comparator the current build happens to ship.
+ * `selectors.ts` predicted this shape one phase early, and D-19 is what makes it a written
+ * fact rather than a computation: the order lands in the log the instant it is decided, so a
+ * refresh mid-round shows the same order the room just watched being decided.
+ */
+export interface ResolvedOrder {
+  round: number;
+  order: string[];
+}
+
+/**
  * The fold of the log. Only facts the log asserted; never anything computable.
  *
  * `poolIds` and `order` are materialized results, not derivations (ARCHITECTURE
@@ -272,6 +313,21 @@ export interface DraftState {
    * performs no log surgery and so writes no `schedule/compiled` into an old log.
    */
   schedule: RoundSpec[];
+  /**
+   * Every priority card played so far, in log order, recorded by `cards/played`.
+   *
+   * An ARRAY rather than a `Record<playerId, number[]>`, and the reason is the same one
+   * {@link DualMegaChoice} gives: sync rule 14 forbids deriving anything order-sensitive
+   * from a key set, and the tiebreak this list feeds is nothing but order. A record would
+   * also lose the interleaving between players, which is precisely what D-22 resolves on.
+   */
+  cardsPlayed: CardPlay[];
+  /**
+   * The rounds whose pick order has been decided, recorded by `order/resolved`. `[]` until
+   * the first round's last card lands, and `[]` forever for a migrated schema-2 document,
+   * which dealt no cards and ran strict alternation instead.
+   */
+  resolvedOrders: ResolvedOrder[];
 }
 
 /**
@@ -317,5 +373,7 @@ export function initialState(config: TournamentConfig): DraftState {
     order: [],
     picks: [],
     schedule: [],
+    cardsPlayed: [],
+    resolvedOrders: [],
   };
 }

@@ -18,7 +18,7 @@
 
 import type { RoundKind, RoundSpec } from './actions';
 import { choiceFor, isMegaEligible, legalMegaForme } from './mega';
-import type { DraftState } from './model';
+import type { CardPlay, DraftState } from './model';
 import { nextInt } from './rng';
 import type { RosterEntry } from './roster/types';
 
@@ -254,6 +254,127 @@ export function selectIsComplete(state: DraftState): boolean {
   return state.config.players.every(
     (player) => (counts.get(player.id) ?? 0) >= state.config.rounds,
   );
+}
+
+/**
+ * The round the draft is standing in — 1-based, and valid during card play as well as
+ * picking.
+ *
+ * `selectCurrentTurn` below derives the same number, but only while a pick is on the clock.
+ * The card phase needs the round BEFORE any of that round's picks exist and before anyone
+ * knows who is picking, so the arithmetic is exposed on its own rather than reached through
+ * a turn that is legitimately null.
+ *
+ * Clamped at `config.rounds`, because a completed draft is standing in its last round
+ * rather than in a round that does not exist. `1` before the draft has started, for the
+ * same read-while-rendering reason `selectRoundKind` answers instead of throwing.
+ */
+export function selectCurrentRound(state: DraftState): number {
+  const playerCount = state.order.length;
+  if (playerCount === 0) return 1;
+
+  const round = Math.floor(state.picks.length / playerCount) + 1;
+  return Math.min(round, state.config.rounds);
+}
+
+/**
+ * The priority cards a player still holds — CARD-01, CARD-06.
+ *
+ * `1..config.rounds` minus every value that player has played. **`config.rounds`, never the
+ * literal 6** (D-06): a four-round tournament deals four cards, and the only way that stays
+ * true is for there to be no second number anywhere to disagree with it.
+ *
+ * Nothing stores a hand. A stored one would be a second copy of a fact the log already
+ * asserts — free to drift after an undo, and free to disagree with the strikethroughs on
+ * screen, which are rendered from this. The `Set` is computation-local and never returned
+ * or stored (CLAUDE.md §Serializability).
+ *
+ * A player id this tournament has never heard of gets a full hand rather than an error.
+ * This is read once per board row on every render; a selector that threw over a stale id
+ * would take the whole board down.
+ */
+export function selectHand(state: DraftState, playerId: string): number[] {
+  const spent = new Set(
+    state.cardsPlayed.filter((play) => play.playerId === playerId).map((play) => play.value),
+  );
+
+  return Array.from({ length: state.config.rounds }, (_, position) => position + 1).filter(
+    (value) => !spent.has(value),
+  );
+}
+
+/**
+ * Who plays round `round`'s cards, and in what order — D-18, CARD-03.
+ *
+ * The rotation: round 1 runs `state.order`, round 2 begins with `order[1]`, and round
+ * `players + 1` is round 1 again. That is the fairness mechanism rather than a
+ * presentational nicety. Playing LAST is an advantage — you have seen every card already on
+ * the table before committing yours — so a fixed play order would hand one player that
+ * advantage in all six rounds. Rotating spreads it evenly, and the whole tournament's worth
+ * of positions is decided before a single card is played.
+ *
+ * **Independent of every card outcome.** This reads `state.order` and the round number and
+ * nothing else, so no result of any bid can move who bids first next round, and there is
+ * nothing here to manipulate. `state.order` is `draft/started.order` — the seeded shuffle,
+ * which `selectStartingOrder` already sorts ids before rolling so that it depends only on
+ * the set of players and the seed.
+ *
+ * A round number outside `1..rounds` still answers, normalized into range, for the reason
+ * `selectRoundKind` answers out of range: this runs while rendering.
+ */
+export function selectCardPlayOrder(state: DraftState, round: number): string[] {
+  const playerCount = state.order.length;
+  if (playerCount === 0) return [];
+
+  const order: string[] = [];
+  for (let offset = 0; offset < playerCount; offset++) {
+    // The double modulo keeps a round number below 1 in range instead of indexing
+    // negatively and silently returning a short order.
+    const position = (((round - 1 + offset) % playerCount) + playerCount) % playerCount;
+    const playerId = state.order[position];
+    if (playerId === undefined) continue;
+    order.push(playerId);
+  }
+
+  return order;
+}
+
+/**
+ * The cards played in round `round`, in log order.
+ *
+ * Log order, NOT resolved order — `resolvePickOrder` is the only thing that decides the
+ * latter, and it does so from `seq` rather than from this array's order precisely so that
+ * the two cannot come to different conclusions. This is what the card panel renders as the
+ * cards go down, and what the resolution reads when the last one lands.
+ *
+ * Freshly built records, like everything in this file: a caller cannot reach into
+ * `state.cardsPlayed` through the return value.
+ */
+export function selectCardsPlayedThisRound(state: DraftState, round: number): CardPlay[] {
+  return state.cardsPlayed
+    .filter((play) => play.round === round)
+    .map((play) => ({
+      playerId: play.playerId,
+      value: play.value,
+      round: play.round,
+      seq: play.seq,
+    }));
+}
+
+/**
+ * Round `round`'s recorded pick order, or `null` if it has not resolved yet.
+ *
+ * `null` is the state D-17 makes representable: every card can be down without an order
+ * existing, and the screen is in the card phase until this answers. The order is READ from
+ * the log rather than recomputed from the plays, which is the point of materializing it —
+ * a build whose comparator changed would otherwise silently reinterpret a finished round.
+ *
+ * The FIRST match wins, so a hand-edited document carrying two resolutions for one round
+ * folds to the earlier one rather than to whichever the array happened to end with.
+ */
+export function selectResolvedOrder(state: DraftState, round: number): string[] | null {
+  const resolved = state.resolvedOrders.find((entry) => entry.round === round);
+  return resolved === undefined ? null : [...resolved.order];
 }
 
 /**
