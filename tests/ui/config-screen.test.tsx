@@ -54,7 +54,11 @@ vi.mock('../../src/adapters/id', () => ({
 
 import committedSnapshot from '../../public/data/roster.mb.json';
 import type { SpriteMeta } from '../../src/adapters/roster-source';
-import { isPoolBuiltAction, isDraftStartedAction } from '../../src/core/actions';
+import {
+  isDraftStartedAction,
+  isPoolBuiltAction,
+  isScheduleCompiledAction,
+} from '../../src/core/actions';
 import type { FeasibilityResult } from '../../src/core/feasibility';
 import { selectStartingOrder } from '../../src/core/selectors';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
@@ -935,9 +939,11 @@ describe('Start draft on a satisfiable configuration', () => {
     const doc = getDoc();
     const state = getState();
 
-    expect(doc?.log).toHaveLength(2);
+    // Three, since 03-02: pool/built, schedule/compiled, draft/started.
+    expect(doc?.log).toHaveLength(3);
     expect(state?.poolIds).toHaveLength(36);
     expect(state?.order).toHaveLength(6);
+    expect(state?.schedule).toHaveLength(6);
     expect(doc?.config.players.map((player) => player.name)).toEqual(SIX_NAMES);
     expect(doc?.config.rounds).toBe(6);
     expect(doc?.config.poolSize).toBe(36);
@@ -958,7 +964,7 @@ describe('Start draft on a satisfiable configuration', () => {
 
     const log = getDoc()?.log ?? [];
     const pool = log[0];
-    const started = log[1];
+    const started = log[2];
 
     expect(pool).toBeDefined();
     expect(started).toBeDefined();
@@ -1044,6 +1050,38 @@ describe('Start draft on a satisfiable configuration', () => {
     expect(getDoc()?.config.megasRequiredPerTeam).toBe(2);
     expect(getDoc()?.config.rules).toEqual([{ kind: 'mega', count: 2 }]);
     expect(getDoc()?.config.megaFormeBans).toEqual([]);
+  });
+
+  it('compiles that rule list into the schedule the log records — RULE-02', () => {
+    mount();
+    nameEveryone(SIX_NAMES);
+
+    const megas = fieldLabelled('Megas required per team');
+    expect(megas).not.toBeNull();
+    if (megas !== null) type(megas, '2');
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    // The whole slice, end to end: the host typed 2, and the document the group will draft
+    // against says two of its six rounds are Mega rounds — before a single pick.
+    const compiled = getDoc()?.log[1];
+    expect(compiled?.type).toBe('schedule/compiled');
+    expect(compiled).toBeDefined();
+    if (compiled === undefined || !isScheduleCompiledAction(compiled)) return;
+
+    expect(compiled.rounds).toHaveLength(6);
+    expect(compiled.rounds.map((spec) => spec.kind)).toEqual([
+      'mega',
+      'mega',
+      'open',
+      'open',
+      'open',
+      'open',
+    ]);
+    expect(compiled.rounds.filter((spec) => spec.kind === 'mega')).toHaveLength(2);
+    expect(getState()?.schedule).toEqual(compiled.rounds);
   });
 
   it('stores the Megas required and only the dual-Mega rows the host changed', () => {
