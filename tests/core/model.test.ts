@@ -1,5 +1,5 @@
 /**
- * model.test.ts — the version 2 config shape, and the one hazard the compiler cannot see.
+ * model.test.ts — the version 3 config shape, and the one hazard the compiler cannot see.
  *
  * `copyConfig` is checked by TypeScript for a MISSING field: its return is an explicit
  * object literal typed `TournamentConfig`, so `strict` errors the moment a new field is
@@ -22,12 +22,13 @@ import { describe, expect, it } from 'vitest';
 import { initialState, SCHEMA_VERSION, type TournamentConfig } from '../../src/core/model';
 
 /**
- * A config carrying every field version 2 added, with none of them left at its default.
+ * A config carrying every field versions 2 and 3 added, with none left at its default.
  *
  * Defaults are the wrong fixture for a copy test: `bans: []` and `dualMegaChoices: []`
- * would deep-equal each other whether the copy was deep, shallow or absent.
+ * would deep-equal each other whether the copy was deep, shallow or absent. The version 3
+ * fields follow the same rule — `rules` and `megaFormeBans` are both non-empty here.
  */
-function v2Config(): TournamentConfig {
+function v3Config(): TournamentConfig {
   return {
     formatLabel: 'Champions MB',
     players: [
@@ -46,12 +47,16 @@ function v2Config(): TournamentConfig {
       { speciesId: 'raichu', forme: 'either' },
     ],
     depth: 'draftAndBrackets',
+    rules: [{ kind: 'mega', count: 2 }],
+    megaFormeBans: ['charizardmegax', 'gengarmega'],
+    swapBudget: 3,
+    swapRounds: 1,
   };
 }
 
 describe('SCHEMA_VERSION', () => {
-  it('is 2', () => {
-    expect(SCHEMA_VERSION).toBe(2);
+  it('is 3', () => {
+    expect(SCHEMA_VERSION).toBe(3);
   });
 });
 
@@ -91,13 +96,13 @@ function assertJsonSafe(value: unknown, path: string): void {
 }
 
 describe('TournamentConfig serializability', () => {
-  it('survives a JSON round trip unchanged with all six new fields set', () => {
-    const config = v2Config();
+  it('survives a JSON round trip unchanged with every added field set', () => {
+    const config = v3Config();
     expect(JSON.parse(JSON.stringify(config)) as TournamentConfig).toEqual(config);
   });
 
   it('leaks no Set, Map, Date or class instance into the document', () => {
-    assertJsonSafe(v2Config(), 'config');
+    assertJsonSafe(v3Config(), 'config');
   });
 });
 
@@ -107,7 +112,7 @@ describe('TournamentConfig serializability', () => {
 
 describe('initialState', () => {
   it('copies bans rather than aliasing the caller array', () => {
-    const config = v2Config();
+    const config = v3Config();
     const state = initialState(config);
 
     expect(state.config.bans).not.toBe(config.bans);
@@ -115,7 +120,7 @@ describe('initialState', () => {
   });
 
   it('does not observe a mutation of the caller bans array made afterwards', () => {
-    const config = v2Config();
+    const config = v3Config();
     const state = initialState(config);
 
     config.bans.push('mewtwo');
@@ -124,7 +129,7 @@ describe('initialState', () => {
   });
 
   it('copies each dualMegaChoices element, not merely the array holding them', () => {
-    const config = v2Config();
+    const config = v3Config();
     const state = initialState(config);
 
     expect(state.config.dualMegaChoices).not.toBe(config.dualMegaChoices);
@@ -137,7 +142,7 @@ describe('initialState', () => {
   });
 
   it('copies each player, as it already did before version 2', () => {
-    const config = v2Config();
+    const config = v3Config();
     const state = initialState(config);
 
     expect(state.config.players).not.toBe(config.players);
@@ -147,10 +152,58 @@ describe('initialState', () => {
     expect(state.config.players[0]?.name).toBe('Player 1');
   });
 
-  it('carries every version 2 field through to the folded config', () => {
+  it('carries every version 2 and version 3 field through to the folded config', () => {
     // The compiler catches a field `copyConfig` forgot. This catches one it dropped on
     // the way to a value — a field copied as `undefined` still type-checks under a cast.
-    const config = v2Config();
+    const config = v3Config();
     expect(initialState(config).config).toEqual(config);
+  });
+
+  // -------------------------------------------------------------------------
+  // Version 3 — T-03-03. `rules` and `megaFormeBans` are the two new arrays.
+  // -------------------------------------------------------------------------
+
+  it('copies megaFormeBans rather than aliasing the caller array', () => {
+    const config = v3Config();
+    const state = initialState(config);
+
+    expect(state.config.megaFormeBans).not.toBe(config.megaFormeBans);
+    expect(state.config.megaFormeBans).toEqual(['charizardmegax', 'gengarmega']);
+  });
+
+  it('does not observe a mutation of the caller megaFormeBans array made afterwards', () => {
+    // `fold` runs `initialState` on every undo, so a shared array would surface as
+    // undoing a pick changing the Mega-forme banlist.
+    const config = v3Config();
+    const state = initialState(config);
+
+    config.megaFormeBans.push('gyaradosmega');
+
+    expect(state.config.megaFormeBans).toEqual(['charizardmegax', 'gengarmega']);
+  });
+
+  it('copies each rules element, not merely the array holding them', () => {
+    const config = v3Config();
+    const state = initialState(config);
+
+    expect(state.config.rules).not.toBe(config.rules);
+    expect(state.config.rules[0]).not.toBe(config.rules[0]);
+
+    // A `[...array]` copy passes the two assertions above and fails this one.
+    config.rules[0]!.count = 99;
+    expect(state.config.rules[0]?.count).toBe(2);
+  });
+
+  it('does not observe a mutation of the caller rules array made afterwards', () => {
+    const config = v3Config();
+    const state = initialState(config);
+
+    config.rules.push({ kind: 'mega', count: 5 });
+
+    expect(state.config.rules).toEqual([{ kind: 'mega', count: 2 }]);
+  });
+
+  it('starts the schedule empty — nothing is compiled until schedule/compiled lands', () => {
+    expect(initialState(v3Config()).schedule).toEqual([]);
   });
 });
