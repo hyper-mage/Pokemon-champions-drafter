@@ -1401,7 +1401,7 @@ Adding a third runtime dependency is a constraint violation, not a trade-off (CL
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does the pool re-roll stay available once a schedule is compiled?** (CONTEXT lists this as
    Claude's discretion.)
