@@ -27,6 +27,8 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { SpriteMeta } from '../../src/adapters/roster-source';
+import type { RoundSpec } from '../../src/core/actions';
+import { compile } from '../../src/core/compile';
 import type { PlayerConfig } from '../../src/core/model';
 import type { RosterEntry } from '../../src/core/roster/types';
 import type { Turn } from '../../src/core/selectors';
@@ -76,6 +78,14 @@ function playersOf(count: number): PlayerConfig[] {
     id: `p${index + 1}`,
     name: EIGHT_NAMES[index] ?? `Extra ${index + 1}`,
   }));
+}
+
+/**
+ * All-open, which is what a migrated schema-2 document folds to and what every test
+ * predating the compiler was implicitly rendering.
+ */
+function openSchedule(rounds: number): RoundSpec[] {
+  return compile([], rounds);
 }
 
 /** Empty slot arrays for every player, `rounds` long. */
@@ -173,6 +183,7 @@ describe('BoardGrid at N players and a derived round count', () => {
   function renderBoard(overrides: {
     players: readonly PlayerConfig[];
     rounds: number;
+    schedule?: readonly RoundSpec[];
     teams?: Record<string, (string | null)[]>;
     currentTurn?: Turn | null;
     pickCount?: number;
@@ -184,6 +195,7 @@ describe('BoardGrid at N players and a derived round count', () => {
       <BoardGrid
         players={players}
         rounds={rounds}
+        schedule={overrides.schedule ?? openSchedule(rounds)}
         teams={overrides.teams ?? emptyTeams(players, rounds)}
         currentTurn={overrides.currentTurn ?? null}
         entryById={ENTRY_BY_ID}
@@ -236,6 +248,107 @@ describe('BoardGrid at N players and a derived round count', () => {
     renderBoard({ players: playersOf(8), rounds: 6 });
     expect(all('.board__cell')).toHaveLength(48);
   });
+
+  // -------------------------------------------------------------------------
+  // Typed round headers — CARD-02, D-15
+  // -------------------------------------------------------------------------
+
+  it('marks exactly the Mega rounds, and only those', () => {
+    renderBoard({
+      players: playersOf(4),
+      rounds: 6,
+      schedule: compile([{ kind: 'mega', count: 2 }], 6),
+    });
+
+    const marks = texts('.board__round-mark');
+    expect(marks).toHaveLength(6);
+    expect(marks).toEqual(['Mega round', 'Mega round', '', '', '', '']);
+    expect(marks.filter((text) => text.startsWith('Mega'))).toHaveLength(2);
+
+    // The label line is untouched, so R1..R6 still read as they always did.
+    expect(texts('.board__round-label')).toEqual(['R1', 'R2', 'R3', 'R4', 'R5', 'R6']);
+  });
+
+  it('reserves the marker line in every header, marked or not', () => {
+    // STRUCTURAL, not dimensional. happy-dom performs no layout, so this cannot measure
+    // the reserved 27px — it asserts the thing the CSS hangs that height on: the element
+    // exists in all six headers and four of them are empty. Whether the empty variant is
+    // the same height as the marked one is a stylesheet property and a human-verify one,
+    // following this file's note about what it cannot prove.
+    renderBoard({
+      players: playersOf(4),
+      rounds: 6,
+      schedule: compile([{ kind: 'mega', count: 2 }], 6),
+    });
+
+    const marks = all('.board__round-mark');
+    expect(marks).toHaveLength(6);
+    expect(marks.filter((mark) => (mark.textContent ?? '') === '')).toHaveLength(4);
+
+    // The paint is the only difference between the two variants.
+    expect(all('.board__round-mark--mega')).toHaveLength(2);
+  });
+
+  it('reads Mega round to a screen reader while showing Mega on the board', () => {
+    renderBoard({
+      players: playersOf(4),
+      rounds: 6,
+      schedule: compile([{ kind: 'mega', count: 1 }], 6),
+    });
+
+    const marked = all('.board__round-mark--mega')[0];
+    expect(marked).toBeDefined();
+    if (marked === undefined) return;
+
+    expect(marked.textContent).toBe('Mega round');
+
+    // The suffix is present but visually hidden, so the 86px cell shows `Mega` alone.
+    const hidden = marked.querySelector('.visually-hidden');
+    expect(hidden).not.toBeNull();
+    expect(hidden?.textContent).toBe(' round');
+  });
+
+  it('shows no marker anywhere for a document with no compiled schedule', () => {
+    // A migrated schema-2 board. `selectSchedule` folds its empty schedule to all-open,
+    // and the board it produces is the board Phase 2 shipped.
+    renderBoard({ players: playersOf(8), rounds: 6, schedule: openSchedule(6) });
+
+    expect(host.textContent ?? '').not.toContain('Mega');
+    expect(all('.board__round-mark--mega')).toHaveLength(0);
+    expect(all('.board__round-mark')).toHaveLength(6);
+    expect(texts('.board__round')).toEqual(['R1', 'R2', 'R3', 'R4', 'R5', 'R6']);
+  });
+
+  it('does not shift the grid when the schedule is reordered', () => {
+    // The same six headers and the same six marker lines, in both orders. Only WHICH ones
+    // carry text changes — which is the whole point of reserving the line.
+    const canonical: RoundSpec[] = compile([{ kind: 'mega', count: 2 }], 6);
+    const reordered: RoundSpec[] = [
+      { index: 1, kind: 'open' },
+      { index: 2, kind: 'mega' },
+      { index: 3, kind: 'open' },
+      { index: 4, kind: 'mega' },
+      { index: 5, kind: 'open' },
+      { index: 6, kind: 'open' },
+    ];
+
+    renderBoard({ players: playersOf(4), rounds: 6, schedule: canonical });
+    expect(all('.board__round-mark')).toHaveLength(6);
+    expect(all('.board__cell')).toHaveLength(24);
+    expect(texts('.board__round-mark')).toEqual(['Mega round', 'Mega round', '', '', '', '']);
+
+    renderBoard({ players: playersOf(4), rounds: 6, schedule: reordered });
+    expect(all('.board__round-mark')).toHaveLength(6);
+    expect(all('.board__cell')).toHaveLength(24);
+    expect(texts('.board__round-mark')).toEqual(['', 'Mega round', '', 'Mega round', '', '']);
+  });
+
+  it('reads a round the schedule has no entry for as open rather than crashing', () => {
+    renderBoard({ players: playersOf(4), rounds: 6, schedule: compile([], 2) });
+
+    expect(all('.board__round-mark')).toHaveLength(6);
+    expect(all('.board__round-mark--mega')).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -246,6 +359,7 @@ describe("BoardGrid's empty state names the person who goes first", () => {
       <BoardGrid
         players={playersOf(4)}
         rounds={6}
+        schedule={openSchedule(6)}
         teams={emptyTeams(playersOf(4), 6)}
         currentTurn={null}
         entryById={ENTRY_BY_ID}
@@ -268,6 +382,7 @@ describe("BoardGrid's empty state names the person who goes first", () => {
       <BoardGrid
         players={[]}
         rounds={6}
+        schedule={openSchedule(6)}
         teams={{}}
         currentTurn={null}
         entryById={ENTRY_BY_ID}
@@ -288,6 +403,7 @@ describe("BoardGrid's empty state names the person who goes first", () => {
       <BoardGrid
         players={playersOf(4)}
         rounds={6}
+        schedule={openSchedule(6)}
         teams={emptyTeams(playersOf(4), 6)}
         currentTurn={null}
         entryById={ENTRY_BY_ID}
@@ -315,6 +431,7 @@ describe("the board's turn signal", () => {
       <BoardGrid
         players={players}
         rounds={6}
+        schedule={openSchedule(6)}
         teams={emptyTeams(players, 6)}
         currentTurn={turn}
         entryById={ENTRY_BY_ID}
@@ -341,6 +458,7 @@ describe("the board's turn signal", () => {
       <BoardGrid
         players={players}
         rounds={6}
+        schedule={openSchedule(6)}
         teams={emptyTeams(players, 6)}
         currentTurn={null}
         entryById={ENTRY_BY_ID}
@@ -382,6 +500,7 @@ describe('showName reaches every chip on the board', () => {
       <BoardGrid
         players={players}
         rounds={6}
+        schedule={openSchedule(6)}
         teams={filledTeams()}
         currentTurn={null}
         entryById={ENTRY_BY_ID}

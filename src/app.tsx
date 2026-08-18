@@ -30,6 +30,7 @@ import {
   selectIsComplete,
   selectPickCount,
   selectPlayerName,
+  selectSchedule,
   selectTeams,
 } from './core/selectors';
 import { undoCrossesRoundBoundary, type RoundBoundaryCrossing } from './core/undo';
@@ -1090,6 +1091,10 @@ export function App() {
                 <BoardGrid
                   players={state.config.players}
                   rounds={state.config.rounds}
+                  // The compiled schedule, or all-open for a document drafted before the
+                  // compiler existed. `selectSchedule` answers both cases; the component
+                  // renders the kind it is handed and decides nothing.
+                  schedule={selectSchedule(state)}
                   teams={selectTeams(state)}
                   currentTurn={turn}
                   entryById={entryById}

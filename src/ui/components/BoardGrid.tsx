@@ -1,4 +1,5 @@
 import type { SpriteMeta } from '../../adapters/roster-source';
+import type { RoundSpec } from '../../core/actions';
 import type { PlayerConfig } from '../../core/model';
 import type { RosterEntry } from '../../core/roster/types';
 import type { Turn } from '../../core/selectors';
@@ -32,6 +33,35 @@ function roundLabel(round: number): string {
   return ROUND_LABELS[round - 1] ?? `R${round}`;
 }
 
+/**
+ * The word on a Mega round's marker, and the suffix only a screen reader gets.
+ *
+ * The board shows `Mega` because `Mega` is the widest string an 86px round cell holds
+ * (03-UI-SPEC §Layout Budget: ~46px of marker inside 86px, 40px of slack). A screen reader
+ * hears `Mega round`, which is the sentence, via a visually-hidden suffix.
+ *
+ * 03-UI-SPEC §6 rules out inventing ARIA here: these header cells are `<div>`s with no
+ * programmatic association to the grid cells they sit above, and a fabricated one would be
+ * worse than the text — it would assert a relationship the markup does not have.
+ *
+ * Held as constants rather than written inline for the reason the empty state's sentence
+ * is: JSX collapses whitespace between text lines, and the leading space in the suffix is
+ * the whole point of it.
+ */
+const MEGA_MARKER = 'Mega';
+const MEGA_MARKER_SUFFIX = ' round';
+
+/**
+ * Whether round `round` (1-based) is a Mega round, per the schedule handed in.
+ *
+ * The component decides nothing — it renders the kind it is given. A round the schedule
+ * has no entry for reads as open, which is the same answer `selectRoundKind` gives and is
+ * what a migrated schema-2 document produces for every round.
+ */
+function isMegaRound(schedule: readonly RoundSpec[], round: number): boolean {
+  return schedule[round - 1]?.kind === 'mega';
+}
+
 /** Unchanged from Phase 1, and the only half of the empty state that survives a null name. */
 const EMPTY_HEADING = 'No picks yet';
 
@@ -56,6 +86,12 @@ function emptyBody(firstPlayerName: string): string {
 export interface BoardGridProps {
   players: readonly PlayerConfig[];
   rounds: number;
+  /**
+   * The compiled schedule, straight from `selectSchedule`. Types the round headers, and
+   * nothing else on this component reads it — the columns of slots below are typed BY the
+   * header rather than each carrying a copy of the answer (D-08).
+   */
+  schedule: readonly RoundSpec[];
   /** Player id to an ordered slot array, straight from `selectTeams`. */
   teams: Record<string, (string | null)[]>;
   currentTurn: Turn | null;
@@ -71,6 +107,7 @@ export interface BoardGridProps {
 export function BoardGrid({
   players,
   rounds,
+  schedule,
   teams,
   currentTurn,
   entryById,
@@ -121,11 +158,33 @@ export function BoardGrid({
         >
           <div class="board__corner" />
 
-          {roundNumbers.map((round) => (
-            <div class="board__round" key={round}>
-              {roundLabel(round)}
-            </div>
-          ))}
+          {/*
+            Two lines per header. The marker line is rendered for EVERY round and carries
+            text only on a Mega one, so the reserved height is structural rather than
+            conditional — a header that grew a line when the schedule was reordered would
+            move every board row under it and pull the two panes out of alignment by a
+            full line (the reserved-chrome rule 02-09 established).
+          */}
+          {roundNumbers.map((round) => {
+            const mega = isMegaRound(schedule, round);
+            return (
+              <div class="board__round" key={round}>
+                <span class="board__round-label">{roundLabel(round)}</span>
+                <span
+                  class={
+                    mega ? 'board__round-mark board__round-mark--mega' : 'board__round-mark'
+                  }
+                >
+                  {mega && (
+                    <>
+                      {MEGA_MARKER}
+                      <span class="visually-hidden">{MEGA_MARKER_SUFFIX}</span>
+                    </>
+                  )}
+                </span>
+              </div>
+            );
+          })}
 
           {players.map((player) => (
             <TeamStrip

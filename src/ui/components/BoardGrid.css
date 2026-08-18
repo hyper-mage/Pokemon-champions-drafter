@@ -63,10 +63,57 @@
   min-height: var(--space-4);
 }
 
+/*
+ * Two lines: the round label, then the line D-15 types the column with.
+ *
+ * 03-UI-SPEC §Layout Budget spends 20 + 4 + 27 = 51px here, against a round cell that is
+ * 86px wide after the six --space-2 gaps. The 8-player board lands at ~683px against ~851px
+ * available at 1080p, so the extra line still fits the split board pane with no internal
+ * vertical scroll.
+ */
 .board__round {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   align-self: end;
+}
+
+.board__round-label {
   font: var(--text-label);
   color: var(--color-text-muted);
+}
+
+/*
+ * The reserved marker line. Present on EVERY round header, empty on an open one.
+ *
+ * `1.5em` is --text-body's own line-height factor rather than a length: the element sets
+ * `font: var(--text-body)`, so its own font size resolves this to exactly one line box
+ * (18 x 1.5 = 27px). An empty marker is therefore exactly as tall as a marked one without
+ * this file naming a pixel, and it stays correct if the token ever moves.
+ *
+ * `align-self: start` so the marker shrinks to its content instead of painting the full
+ * 86px of column.
+ */
+.board__round-mark {
+  align-self: start;
+  min-height: 1.5em;
+  font: var(--text-body);
+  color: var(--color-text);
+}
+
+/*
+ * Only a Mega round paints. The pill height token is deliberately NOT reused here:
+ * 03-UI-SPEC §Size tokens records that an 18px line box does not fit a 24px pill, so this
+ * marker sizes to its content and declares no height of its own beyond the reserved line.
+ *
+ * The fill is decorative. The WORD carries the signal, which is what keeps this row of
+ * "colour is never the only signal" satisfied — the board reads correctly with no colour
+ * perception at all, and a screen reader hears `Mega round`.
+ */
+.board__round-mark--mega {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
 }
 
 .board__label {
