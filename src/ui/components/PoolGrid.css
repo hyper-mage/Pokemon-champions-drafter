@@ -56,6 +56,23 @@
   color: var(--color-text-muted);
 }
 
+/*
+ * --- The round's restriction, beside the count (RULE-03, 03-UI-SPEC section 9) ---
+ *
+ * --text-body in --color-text, NOT the muted --text-label the count above takes, and the
+ * difference is the point rather than a slip. The count is meta about the grid; this
+ * sentence is the rule in force at this moment, and it is the only thing on the screen
+ * that stops a suddenly short pool reading as a broken render.
+ *
+ * It wraps onto its own line at narrow widths because .pool__header is a wrapping flex
+ * row, so no width is declared here and nothing needs a media query.
+ */
+.pool__restriction {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}
+
 .pool__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--cell-min), 1fr));

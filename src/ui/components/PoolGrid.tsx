@@ -108,6 +108,38 @@ export interface PoolGridProps<T extends PoolSubject> {
    * is applied here, once, so that value can never reach the control.
    */
   megaInertReason?: string | null;
+  /**
+   * The restriction the CURRENT ROUND imposes, or `null` when the round admits the whole
+   * pool — RULE-03, D-16.
+   *
+   * ONE prop carrying the kind, the round number and the ids, for the reason `bannedIds`
+   * above is one prop rather than a mode plus a set: "a Mega round with no eligibility
+   * data" and "an open round carrying some" are both unrepresentable. Everything this
+   * component does with it — the sentence beside the count, the forced `of` count form,
+   * the inert reason on the Mega control and the two round-specific empty states — needs
+   * all three fields, and a caller that could supply two of them would be a caller that
+   * could render `Round undefined is a Mega round`.
+   *
+   * The component decides nothing. It renders the restriction it is handed and composes
+   * the copy for it; which ids a round admits is `selectRoundEligibleIds`' answer, because
+   * a UI component may not own a game rule.
+   */
+  roundRestriction?: MegaRoundRestriction | null;
+}
+
+/**
+ * A Mega round's own restriction, as the pool surface needs it.
+ *
+ * `kind` is a literal rather than `RoundKind`, and that is the point: an `'open'` round has
+ * no ids to carry, so the type admits only the case that exists. A later round kind with a
+ * restriction of its own widens this into a union and the copy switch becomes exhaustive.
+ */
+export interface MegaRoundRestriction {
+  kind: 'mega';
+  /** 1-based, and rendered — `Round 1`, never `Round 0`. */
+  round: number;
+  /** Pool ids this round admits, already minus picked ids. */
+  ids: ReadonlySet<string>;
 }
 
 /**
@@ -167,6 +199,51 @@ const CLEAR_SEARCH_LABEL = 'Clear the search';
 const CLEAR_FILTERS_LABEL = 'Clear filters';
 const CLEAR_BOTH_LABEL = 'Clear search and filters';
 
+/*
+ * --- A Mega round, 03-UI-SPEC §9 ---
+ *
+ * Composers rather than JSX prose, per S-5 and for the reason the block above gives: these
+ * sentences are contracts down to the em dash, and JSX collapses the whitespace between
+ * text lines.
+ *
+ * The inert reason EXCLUDES the `— ` separator, because `FilterBar` renders that as markup
+ * beside the copy. The copy constant, the prop and the test assertion stay one value.
+ */
+function megaRoundRestrictionLine(round: number): string {
+  return `Round ${round} is a Mega round — only Pokémon that can still Mega are shown.`;
+}
+
+function megaRoundInertReason(round: number): string {
+  return `Round ${round} is a Mega round`;
+}
+
+function megaSearchEmptyBody(round: number, query: string): string {
+  return `Nothing in round ${round}'s Mega-only pool matches "${query}".`;
+}
+
+const MEGA_FILTERS_EMPTY_BODY =
+  'No Pokémon that can still Mega is left in the pool with those types.';
+
+const MEGA_OFFER_EMPTY_HEADING = 'No Pokémon can Mega here';
+
+function megaOfferEmptyBody(round: number): string {
+  return `Round ${round} is a Mega round, and nothing left in the pool can still Mega. Undo a pick to return one, or start a new tournament.`;
+}
+
+/**
+ * What the pool renders in place of the grid, and what its action undoes.
+ *
+ * `action` is `null` for exactly one state: a Mega round whose offer is empty on its own.
+ * There is no filter to clear there, and a button that cleared nothing would be a button
+ * that widened the offer if anyone ever "fixed" it — which is the post-pick validator this
+ * phase exists to remove, arriving as a courtesy.
+ */
+interface EmptyState {
+  heading: string;
+  body: string;
+  action: { label: string; reset: () => void } | null;
+}
+
 /**
  * How long the filter result waits before it is spoken.
  *
@@ -190,6 +267,7 @@ export function PoolGrid<T extends PoolSubject>({
   banSubject,
   idPrefix = 'pool',
   megaInertReason = null,
+  roundRestriction = null,
 }: PoolGridProps<T>) {
   // Read synchronously on the first render, in a state initializer rather than an
   // effect. An effect runs after the first paint, so the host would watch the pool draw
@@ -213,10 +291,30 @@ export function PoolGrid<T extends PoolSubject>({
   */
   const [filters, setFilters] = useState<PoolFilters>(NO_FILTERS);
 
+  /*
+    The round's restriction is composed HERE, out of the prop, and is deliberately NOT held
+    in `filters` state.
+
+    That placement is the whole guarantee. `Clear filters`, the empty-state reset buttons
+    and D-35's clear-on-pick all reset the state to `NO_FILTERS`, so a restriction living
+    in it would be switched off by any of the three — and a pick that "cleared filters"
+    would silently widen a Mega round's offer, which is the post-pick validator this phase
+    exists to remove wearing a friendlier name. Re-applied on every compile from the prop,
+    it cannot be cleared by anything this component does.
+
+    `hasActiveFilters` reads the STATE, which never carries it, so `Clear filters` also
+    never appears on account of a rule. `search.ts` excludes the field from that function
+    besides, so the two halves agree rather than one covering for the other.
+  */
+  const restrictTo = roundRestriction === null ? null : roundRestriction.ids;
+
   // Two memos and no more. `compiled` normalizes the query ONCE per change; `visible` is
   // the whole filtered list in a single derivation keyed on every input, so one keystroke
   // produces one recomputation and one render rather than one per control.
-  const compiled = useMemo(() => compileFilters(filters), [filters]);
+  const compiled = useMemo(
+    () => compileFilters({ ...filters, restrictTo }),
+    [filters, restrictTo],
+  );
   const visible = useMemo(
     () => entries.filter((entry) => matchesFilters(entry, compiled)),
     [entries, compiled],
@@ -387,35 +485,70 @@ export function PoolGrid<T extends PoolSubject>({
   );
 
   /*
-    Which of the three empty states applies, and what its action undoes.
+    Which empty state applies, and what its action undoes.
 
-    All three are wired now even though only the first is reachable before the type
-    toolbar exists, so the next commit adds CONTROLS rather than a branch. Each action
-    resets exactly the part of the state that the sentence blames.
+    Each action resets exactly the part of the state that the sentence blames — and no
+    action resets the ROUND's restriction, because that is not the host's to reset.
+
+    The restricted branch takes the two variants 03-UI-SPEC §9 specifies plus the
+    empty-offer state, and reuses the unrestricted `both` sentence when a query and a
+    control are active together. The spec gives no third restricted variant, and the
+    round-specific sentence would be FALSE in that case: `Nothing in round 1's Mega-only
+    pool matches "gar"` is a lie when Garchomp matches the query, can Mega, and was
+    excluded by a type pill. Existing true copy beats invented copy.
   */
   const queryActive = filters.query !== '';
   const controlsActive = filters.types.length > 0 || filters.mega !== 'all';
+  const restricted = roundRestriction !== null;
 
-  const empty =
-    visible.length > 0 || !filtered
-      ? null
-      : queryActive && controlsActive
-        ? {
-            body: bothEmptyBody(filters.query),
-            label: CLEAR_BOTH_LABEL,
-            reset: () => setFilters(NO_FILTERS),
-          }
-        : queryActive
-          ? {
-              body: searchEmptyBody(filters.query),
-              label: CLEAR_SEARCH_LABEL,
-              reset: () => setFilters({ ...filters, query: '' }),
-            }
-          : {
-              body: FILTERS_EMPTY_BODY,
-              label: CLEAR_FILTERS_LABEL,
-              reset: () => setFilters({ ...filters, types: [], matchAll: false, mega: 'all' }),
-            };
+  function chooseEmptyState(): EmptyState | null {
+    if (visible.length > 0) return null;
+
+    // The restriction alone emptied the offer. Reachable only from an imported or
+    // hand-edited document — the RULE-09 gate is the guarantee for documents this build
+    // creates — and the offer is NEVER widened to fill it.
+    if (!filtered) {
+      if (roundRestriction === null) return null;
+      return {
+        heading: MEGA_OFFER_EMPTY_HEADING,
+        body: megaOfferEmptyBody(roundRestriction.round),
+        action: null,
+      };
+    }
+
+    if (queryActive && controlsActive) {
+      return {
+        heading: EMPTY_HEADING,
+        body: bothEmptyBody(filters.query),
+        action: { label: CLEAR_BOTH_LABEL, reset: () => setFilters(NO_FILTERS) },
+      };
+    }
+
+    if (queryActive) {
+      return {
+        heading: EMPTY_HEADING,
+        body:
+          roundRestriction === null
+            ? searchEmptyBody(filters.query)
+            : megaSearchEmptyBody(roundRestriction.round, filters.query),
+        action: {
+          label: CLEAR_SEARCH_LABEL,
+          reset: () => setFilters({ ...filters, query: '' }),
+        },
+      };
+    }
+
+    return {
+      heading: EMPTY_HEADING,
+      body: restricted ? MEGA_FILTERS_EMPTY_BODY : FILTERS_EMPTY_BODY,
+      action: {
+        label: CLEAR_FILTERS_LABEL,
+        reset: () => setFilters({ ...filters, types: [], matchAll: false, mega: 'all' }),
+      },
+    };
+  }
+
+  const empty = chooseEmptyState();
 
   /*
     The density attribute, the density control and the grid are OUTSIDE the mode branch
@@ -447,13 +580,31 @@ export function PoolGrid<T extends PoolSubject>({
           </h2>
         )}
 
+        {/*
+          The `of` form is forced while a round restriction is in force, even with no user
+          filter active, because the pool IS filtered — 03-UI-SPEC §9. `{total}` is the
+          whole leftover pool, which is the number that makes the restriction legible: a
+          host reading `74 of 213 available` beside the sentence below knows why the grid
+          is short. Narrowing the `entries` prop upstream instead would have left `{total}`
+          equal to `{n}` and the forced form saying nothing.
+        */}
         <p class="pool__count">
           {banMode
             ? banCountLine(bannedCount, visible.length, banSubject)
-            : filtered
+            : filtered || restricted
               ? `${visible.length} of ${entries.length} available`
               : `${visible.length} available`}
         </p>
+
+        {/*
+          Beside the count, at --text-body in --color-text rather than the muted label the
+          count uses. Not a styling slip: this is current STATE — the rule in force right
+          now — where the count is meta about the grid. It is what stops a short pool
+          reading as a broken render.
+        */}
+        {roundRestriction !== null && (
+          <p class="pool__restriction">{megaRoundRestrictionLine(roundRestriction.round)}</p>
+        )}
 
         <SegmentedControl
           legend="Display density"
@@ -470,22 +621,36 @@ export function PoolGrid<T extends PoolSubject>({
           promise. In ban mode it sits above `.pool--ban`'s capped scroll region, never
           inside it, so it cannot scroll away from the grid it filters.
         */}
+        {/*
+          Two disjoint callers by construction, resolved to one value here rather than in
+          `FilterBar`. The config screen's Mega-forme ban grid passes a literal reason and
+          never a round restriction; a Mega round passes a restriction and never a literal.
+          `FilterBar` therefore keeps exactly one reason prop and one code path, and WR-04's
+          shed-the-ARIA behaviour is inherited rather than re-implemented for a second
+          caller — the round ending makes `roundRestriction` null, which makes this null,
+          which removes the attribute rather than setting it to `'false'`.
+        */}
         <FilterBar
           value={filters}
           onChange={setFilters}
           density={density}
           idPrefix={idPrefix}
-          megaInertReason={megaInertReason}
+          megaInertReason={
+            megaInertReason ??
+            (roundRestriction === null ? null : megaRoundInertReason(roundRestriction.round))
+          }
         />
       </header>
 
       {empty !== null ? (
         <div class="pool__empty">
-          <h3 class="pool__empty-heading">{EMPTY_HEADING}</h3>
+          <h3 class="pool__empty-heading">{empty.heading}</h3>
           <p class="pool__empty-body">{empty.body}</p>
-          <button type="button" class="pool__empty-action" onClick={empty.reset}>
-            {empty.label}
-          </button>
+          {empty.action !== null && (
+            <button type="button" class="pool__empty-action" onClick={empty.action.reset}>
+              {empty.action.label}
+            </button>
+          )}
         </div>
       ) : (
         <div class="pool__grid">

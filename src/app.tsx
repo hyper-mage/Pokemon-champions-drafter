@@ -30,6 +30,8 @@ import {
   selectIsComplete,
   selectPickCount,
   selectPlayerName,
+  selectRoundEligibleIds,
+  selectRoundKind,
   selectSchedule,
   selectTeams,
 } from './core/selectors';
@@ -49,7 +51,7 @@ import { BoardGrid } from './ui/components/BoardGrid';
 import { ConfirmDialog } from './ui/components/ConfirmDialog';
 import { ImportConfirmDialog } from './ui/components/ImportConfirmDialog';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
-import { PoolGrid } from './ui/components/PoolGrid';
+import { PoolGrid, type MegaRoundRestriction } from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
 import { SplitPanes } from './ui/components/SplitPanes';
 import { TopBar } from './ui/components/TopBar';
@@ -166,6 +168,39 @@ function rosterDriftNotice(missing: number): string {
   }
 
   return `${missing} Pokémon in this tournament's pool are not in the current roster. They are missing from the pool, and a board slot holding one shows its id instead. Use Download JSON to keep the record.`;
+}
+
+/**
+ * What the host is told when a document's picks disagree with its own schedule — RULE-03.
+ *
+ * NOT in the 03-UI-SPEC copywriting table, and flagged here as an amendment rather than
+ * edited into the spec, exactly as `rosterDriftNotice` above and `importAnnouncement` below
+ * are. The table has no row for it because §9 covers the pool and not the board.
+ *
+ * ## Why this is a notice and cannot be a guard
+ *
+ * `canApply` structurally cannot check round eligibility: it sees only `DraftState`, and
+ * eligibility is a fact about a roster ENTRY. Putting the roster into the fold contradicts
+ * `model.ts`'s "a cache of the log", and widening the single write path for one rule is
+ * worse. So a `draft/pickMade` naming a non-Mega species in a Mega round IS accepted by the
+ * reducer, reachable only from a hand-edited file or an import — and `import-guard` keeps
+ * its own posture that a bound is not an integrity check.
+ *
+ * It therefore reports and repairs NOTHING. `selectTeams` is not filtered either: the board
+ * shows what the log says (`reduce.ts:16-19`), because a board that quietly dropped a pick
+ * would disagree with the file the host can open in a text editor.
+ *
+ * The next action is the honest one. Nothing here can make an illegal pick legal, so what
+ * the host can do is unwind to it or accept it, and the sentence says so rather than
+ * implying a repair button exists. Both forms are written out rather than interpolated
+ * around a plural helper, following `rosterDriftNotice`.
+ */
+function scheduleViolationNotice(count: number): string {
+  if (count === 1) {
+    return '1 pick in this tournament sits in a Mega round with a Pokémon that cannot Mega. It was recorded that way and nothing here changes it. Undo back to that pick to replace it, or carry on.';
+  }
+
+  return `${count} picks in this tournament sit in a Mega round with a Pokémon that cannot Mega. They were recorded that way and nothing here changes them. Undo back to them to replace them, or carry on.`;
 }
 
 /**
@@ -597,6 +632,68 @@ export function App() {
     if (state === null || entries.length === 0) return 0;
     return state.poolIds.reduce((total, id) => (entryById.has(id) ? total : total + 1), 0);
   }, [state, entryById, entries.length]);
+
+  /**
+   * The current round's restriction, or `null` when the round admits the whole pool.
+   *
+   * The rule is `selectRoundEligibleIds`' to state and this component's to hand on.
+   * `PoolGrid` renders the restriction it is given and composes the copy for it; it does
+   * not compute which ids a Mega round admits, because a UI component may not own a game
+   * rule — the same boundary `handlePick`'s comment draws for the pick itself.
+   *
+   * The set is COMPUTATION-LOCAL and re-derived on every fold. Nothing stores it: D-07
+   * declines to materialize eligible id lists into the log, and a `Set` could not be
+   * persisted anyway (CLAUDE.md §Serializability).
+   */
+  const roundRestriction = useMemo<MegaRoundRestriction | null>(() => {
+    if (state === null || entries.length === 0) return null;
+
+    const current = selectCurrentTurn(state);
+    if (current === null) return null;
+    if (selectRoundKind(state, current.round) !== 'mega') return null;
+
+    return {
+      kind: 'mega',
+      round: current.round,
+      ids: new Set(selectRoundEligibleIds(state, entries, current.round)),
+    };
+  }, [state, entries]);
+
+  /**
+   * How many picks this document holds that its own schedule would never have offered.
+   *
+   * Zero for every document this build creates — the offer is constrained rather than the
+   * pick validated, so an illegal pick is unreachable through the UI. Non-zero only for a
+   * hand-edited or imported log, which is the case `scheduleViolationNotice` above exists
+   * for and the one it deliberately does not repair.
+   *
+   * The reference set is computed against a state with NO PICKS, and that is the whole
+   * subtlety: `selectRoundEligibleIds` subtracts picked ids, and every pick under test has
+   * by definition been made, so asking it directly would report the entire draft as
+   * illegal. The question here is whether the SPECIES was admissible — never whether it
+   * was still free, which is `canApply`'s question and one it already answers.
+   *
+   * A pick naming a species the current roster no longer carries is skipped rather than
+   * counted. That is roster drift, `missingFromRoster` above reports it in its own
+   * sentence, and accusing a rotation of breaking a rule would send the host to the wrong
+   * screen.
+   */
+  const scheduleViolations = useMemo(() => {
+    if (state === null || entries.length === 0) return 0;
+
+    const megaRound = selectSchedule(state).find((spec) => spec.kind === 'mega');
+    if (megaRound === undefined) return 0;
+
+    const offer = new Set(
+      selectRoundEligibleIds({ ...state, picks: [] }, entries, megaRound.index),
+    );
+
+    return state.picks.reduce((total, pick) => {
+      if (selectRoundKind(state, pick.round) !== 'mega') return total;
+      if (!entryById.has(pick.monId)) return total;
+      return offer.has(pick.monId) ? total : total + 1;
+    }, 0);
+  }, [state, entries, entryById]);
 
   /**
    * The banned species' names, for the top-bar disclosure — D-13.
@@ -1062,6 +1159,20 @@ export function App() {
                   {rosterDriftNotice(missingFromRoster)}
                 </p>
               )}
+
+              {/*
+                A THIRD notice, on the same rule as the second: three unrelated facts, three
+                sentences. This one says a pick disagrees with the schedule the document
+                itself carries; the one above says the roster moved; the first says the
+                arithmetic stopped adding up. Any of them can hold without the others, and a
+                folded clause would make the host read a sentence about a problem they do
+                not have to reach the one they do.
+              */}
+              {scheduleViolations > 0 && (
+                <p class="draft-notice" role="status">
+                  {scheduleViolationNotice(scheduleViolations)}
+                </p>
+              )}
             </div>
 
             {/*
@@ -1093,6 +1204,10 @@ export function App() {
                     // Not a ban surface. `null` rather than an empty set, so a draft cell
                     // cannot report an unpressed toggle state it does not have.
                     bannedIds={null}
+                    // The WHOLE leftover pool above, and the round's restriction here. The
+                    // grid composes the two, which is what leaves `{total}` in
+                    // `{n} of {total} available` a number worth printing — see PoolGrid.
+                    roundRestriction={roundRestriction}
                   />
                 )
               }
