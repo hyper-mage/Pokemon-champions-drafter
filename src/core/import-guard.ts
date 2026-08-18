@@ -706,6 +706,34 @@ function buildLogEntry(value: unknown): Action | null {
       return { type: 'draft/pickUndone', targetSeq, ...envelope };
     }
 
+    case 'cards/played': {
+      // Both integers bounded by MAX_ROUNDS, and both for the allocation reason rather
+      // than for an integrity one. A card VALUE becomes a pip in every board row's hand
+      // strip, so `"value": 4000000000` is an out-of-memory abort wearing a small number's
+      // clothes exactly the way `rounds` is (T-03-25). Whether the value is one this
+      // document's round count actually deals is `canApply`'s question, asked against a
+      // state this function cannot see.
+      const playerId = raw['playerId'];
+      const value = raw['value'];
+      const round = raw['round'];
+      if (typeof playerId !== 'string') return null;
+      if (!isPositiveInteger(value) || value > MAX_ROUNDS) return null;
+      if (!isPositiveInteger(round) || round > MAX_ROUNDS) return null;
+      return { type: 'cards/played', playerId, value, round, ...envelope };
+    }
+
+    case 'order/resolved': {
+      // Bounded by the PLAYER cap, because that is what the array holds — the same bound
+      // and the same argument `draft/started.order` carries. Whether these ids are the
+      // document's configured players is referential integrity, which this function
+      // deliberately does not check.
+      const order = copyStringArray(raw['order'], MAX_PLAYERS);
+      const round = raw['round'];
+      if (order === null) return null;
+      if (!isPositiveInteger(round) || round > MAX_ROUNDS) return null;
+      return { type: 'order/resolved', round, order, ...envelope };
+    }
+
     default:
       // Envelope only. The cast is honest about what is happening: `TournamentDoc.log` is
       // typed as actions this build understands, and this is an action it does not.

@@ -20,20 +20,33 @@
  */
 
 import {
+  CARDS_PLAYED,
   DRAFT_PICK_MADE,
   DRAFT_PICK_UNDONE,
   DRAFT_STARTED,
+  isCardsPlayedAction,
   isDraftStartedAction,
+  isOrderResolvedAction,
   isPickMadeAction,
   isPickUndoneAction,
   isPoolBuiltAction,
   isScheduleCompiledAction,
+  ORDER_RESOLVED,
   POOL_BUILT,
   SCHEDULE_COMPILED,
   type AnyAction,
 } from './actions';
 import { initialState, type DraftState, type TournamentDoc } from './model';
-import { selectAvailablePool, selectCurrentTurn, selectIsComplete } from './selectors';
+import {
+  selectAvailablePool,
+  selectCardPlayOrder,
+  selectCardsPlayedThisRound,
+  selectCurrentRound,
+  selectCurrentTurn,
+  selectHand,
+  selectIsComplete,
+  selectResolvedOrder,
+} from './selectors';
 
 /**
  * Why an action was refused. These strings are stable — plan 01-07's undo and plan
@@ -58,7 +71,13 @@ export type RejectionReason =
   | 'notYourTurn'
   | 'wrongSlot'
   | 'notInPool'
-  | 'nothingToUndo';
+  | 'nothingToUndo'
+  /** That player has already played this card value in an earlier round (CARD-06). */
+  | 'cardAlreadySpent'
+  /** The round's pick order is already recorded, so nothing about it can still change. */
+  | 'roundAlreadyResolved'
+  /** Not every player has put a card down yet, so there is nothing to resolve. */
+  | 'roundNotComplete';
 
 export type CanApplyResult = { ok: true } | { ok: false; reason: RejectionReason };
 
@@ -131,6 +150,42 @@ export function apply(state: DraftState, action: AnyAction): DraftState {
       const remaining = state.picks.filter((pick) => pick.seq !== action.targetSeq);
       if (remaining.length === state.picks.length) return state;
       return { ...state, picks: remaining };
+    }
+
+    case CARDS_PLAYED: {
+      if (!isCardsPlayedAction(action)) return state;
+      // `seq` comes off the ENVELOPE, never off the array's length. It is what a
+      // compensating action targets and what the tiebreak orders on, and the log may
+      // legally have gaps in it.
+      return {
+        ...state,
+        cardsPlayed: [
+          ...state.cardsPlayed,
+          {
+            playerId: action.playerId,
+            value: action.value,
+            round: action.round,
+            seq: action.seq,
+          },
+        ],
+      };
+    }
+
+    case ORDER_RESOLVED: {
+      if (!isOrderResolvedAction(action)) return state;
+      // Appends, and deliberately does not replace an existing entry for the same round.
+      // `apply` is not a validator: a duplicate is `canApply`'s to refuse on origination,
+      // and `selectResolvedOrder` answers with the FIRST match, so a hand-edited file
+      // cannot rewrite a round the room already played by appending a second opinion.
+      //
+      // Element by element, so the folded state never shares an array with the log entry.
+      return {
+        ...state,
+        resolvedOrders: [
+          ...state.resolvedOrders,
+          { round: action.round, order: [...action.order] },
+        ],
+      };
     }
 
     default:
@@ -214,6 +269,65 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
       if (!isPickUndoneAction(action)) return reject('malformedPayload');
       if (!state.picks.some((pick) => pick.seq === action.targetSeq)) {
         return reject('nothingToUndo');
+      }
+      return OK;
+    }
+
+    case CARDS_PLAYED: {
+      if (!isCardsPlayedAction(action)) return reject('malformedPayload');
+      // The RANGE, which the structural guard could not ask about: it types an action in
+      // isolation and cannot see `config.rounds`. A value outside the deal is not an
+      // illegal move, it is a payload this build never writes.
+      if (action.value < 1 || action.value > state.config.rounds) {
+        return reject('malformedPayload');
+      }
+      if (state.order.length === 0) return reject('draftNotStarted');
+
+      // The card clock: the first player in this round's rotation who has not played yet.
+      // The rotation is independent of every card outcome (D-18), so this cannot be moved
+      // by anything a player does except playing.
+      const round = selectCurrentRound(state);
+      const alreadyPlayed = new Set(
+        selectCardsPlayedThisRound(state, round).map((play) => play.playerId),
+      );
+      const onTheClock = selectCardPlayOrder(state, round).find(
+        (playerId) => !alreadyPlayed.has(playerId),
+      );
+      if (action.playerId !== onTheClock) return reject('notYourTurn');
+
+      // Stamped at the edge from `selectCurrentRound`, so a mismatch can only arrive from
+      // an edited or imported log — the same argument `draft/pickMade` makes above.
+      if (action.round !== round) return reject('wrongSlot');
+
+      if (!selectHand(state, action.playerId).includes(action.value)) {
+        return reject('cardAlreadySpent');
+      }
+
+      // Reachable only from a document whose round resolved while somebody still held a
+      // card, which `fold` reproduces faithfully because it runs no `canApply` at all.
+      if (selectResolvedOrder(state, action.round) !== null) {
+        return reject('roundAlreadyResolved');
+      }
+
+      // D-21's offer constraint — the CARD-04 deadlock check — attaches HERE, and is
+      // deliberately absent. It is the plan after this one's, and half of it would refuse
+      // plays the card panel has no way yet to steer a player away from.
+      return OK;
+    }
+
+    case ORDER_RESOLVED: {
+      if (!isOrderResolvedAction(action)) return reject('malformedPayload');
+      if (state.order.length === 0) return reject('draftNotStarted');
+
+      const played = new Set(
+        selectCardsPlayedThisRound(state, action.round).map((play) => play.playerId),
+      );
+      if (!state.order.every((playerId) => played.has(playerId))) {
+        return reject('roundNotComplete');
+      }
+
+      if (selectResolvedOrder(state, action.round) !== null) {
+        return reject('roundAlreadyResolved');
       }
       return OK;
     }

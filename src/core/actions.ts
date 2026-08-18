@@ -17,6 +17,11 @@
  * Phase 3, and it lands in the same five places every type here does: constant, payload
  * interface, `Intent` member, creator, structural guard — plus `buildLogEntry`'s arm in
  * `import-guard.ts`, which is the sixth and the one a round trip fails silently without.
+ *
+ * `cards/played` and `order/resolved` are the sixth and seventh, and they land in the same
+ * six places apiece. They are also the phase's clearest illustration of why the split
+ * between a structural guard and `canApply` is worth keeping: a guard can say `value` is an
+ * integer, and only `canApply` can say it is a card that player still holds.
  */
 
 export const POOL_BUILT = 'pool/built';
@@ -24,6 +29,8 @@ export const SCHEDULE_COMPILED = 'schedule/compiled';
 export const DRAFT_STARTED = 'draft/started';
 export const DRAFT_PICK_MADE = 'draft/pickMade';
 export const DRAFT_PICK_UNDONE = 'draft/pickUndone';
+export const CARDS_PLAYED = 'cards/played';
+export const ORDER_RESOLVED = 'order/resolved';
 
 /**
  * What `dispatch` adds to every intent.
@@ -165,18 +172,74 @@ export interface PickUndonePayload {
   targetSeq: number;
 }
 
+/**
+ * One player commits one priority card, face up — CARD-01, CARD-03.
+ *
+ * ## One action per card, and why not one per round (D-19)
+ *
+ * The obvious shape is a single `cards/round` carrying every player's value at once, with
+ * the panel holding the partial round in component state until the last player commits.
+ * That is one action instead of eight, and it is wrong for a reason the hot seat makes
+ * concrete: the tab is shared, and a refresh, a reload after a crash, or an accidental
+ * back-navigation mid-bidding would lose every card already down and make the room replay
+ * a round they had already watched. Landing each play as it happens makes the shared screen
+ * a rendering of the log rather than of a component, and there is nothing to lose.
+ *
+ * It also makes the undo D-20 asks for expressible: one card can be walked back without
+ * inventing a partial-round representation for what is left.
+ *
+ * `value` is `1..config.rounds`. The RANGE is not checked by the structural guard below —
+ * a guard types an action in isolation and cannot see the config — so `canApply` refuses an
+ * out-of-range value as `malformedPayload`.
+ *
+ * `round` is stamped at the edge from `selectCurrentRound`, for the reason
+ * {@link PickMadePayload}'s is: the round must not be re-derived from log position after an
+ * undo has removed something ahead of it.
+ */
+export interface CardsPlayedPayload {
+  type: typeof CARDS_PLAYED;
+  playerId: string;
+  /** 1..config.rounds. */
+  value: number;
+  /** 1-based, stamped at the edge from `selectCurrentRound`. */
+  round: number;
+}
+
+/**
+ * The round's pick order, materialized the instant the last card lands — D-19, D-22.
+ *
+ * The other half of the argument above. `resolvePickOrder` derives this from the plays, so
+ * a document could in principle record only the plays — and then every future build would
+ * re-derive the order under whatever comparator it happened to ship, silently reinterpreting
+ * a round the room has already played. `pool/built` carries resolved ids for exactly this
+ * reason, and ARCHITECTURE Pattern 5 is the general case.
+ *
+ * Emitted automatically rather than by a host click: D-17 makes "every card down but no
+ * order yet" a state the screen never has to render, and the alternative costs a click per
+ * round for nothing.
+ */
+export interface OrderResolvedPayload {
+  type: typeof ORDER_RESOLVED;
+  round: number;
+  order: string[];
+}
+
 export type Intent =
   | PoolBuiltPayload
   | ScheduleCompiledPayload
   | DraftStartedPayload
   | PickMadePayload
-  | PickUndonePayload;
+  | PickUndonePayload
+  | CardsPlayedPayload
+  | OrderResolvedPayload;
 
 export type PoolBuiltAction = PoolBuiltPayload & ActionEnvelope;
 export type ScheduleCompiledAction = ScheduleCompiledPayload & ActionEnvelope;
 export type DraftStartedAction = DraftStartedPayload & ActionEnvelope;
 export type PickMadeAction = PickMadePayload & ActionEnvelope;
 export type PickUndoneAction = PickUndonePayload & ActionEnvelope;
+export type CardsPlayedAction = CardsPlayedPayload & ActionEnvelope;
+export type OrderResolvedAction = OrderResolvedPayload & ActionEnvelope;
 
 /** A stamped action this build understands. */
 export type Action = Intent & ActionEnvelope;
@@ -250,6 +313,30 @@ export function pickMade(pick: {
 
 export function pickUndone(targetSeq: number): PickUndonePayload {
   return { type: DRAFT_PICK_UNDONE, targetSeq };
+}
+
+export function cardsPlayed(play: {
+  playerId: string;
+  value: number;
+  round: number;
+}): CardsPlayedPayload {
+  return {
+    type: CARDS_PLAYED,
+    playerId: play.playerId,
+    value: play.value,
+    round: play.round,
+  };
+}
+
+/**
+ * A fresh array, never the caller's — the same rule {@link scheduleCompiled} states.
+ *
+ * The caller's array comes from `resolvePickOrder`, which already returns a fresh one
+ * today. Copying anyway costs nothing and means a later caller that hands over
+ * `state.resolvedOrders[i].order` cannot alias a log entry into the fold it came from.
+ */
+export function orderResolved(round: number, order: readonly string[]): OrderResolvedPayload {
+  return { type: ORDER_RESOLVED, round, order: [...order] };
 }
 
 // ---------------------------------------------------------------------------
@@ -328,4 +415,27 @@ export function isPickMadeAction(action: AnyAction): action is PickMadeAction {
 export function isPickUndoneAction(action: AnyAction): action is PickUndoneAction {
   if (action.type !== DRAFT_PICK_UNDONE || !isRecord(action)) return false;
   return isSafeInteger(action['targetSeq']);
+}
+
+/**
+ * Types only — and the omission is the design rather than an oversight.
+ *
+ * Whether `value` is in `1..config.rounds`, whether that card is still in the player's hand,
+ * and whether this player is the one on the card clock are all questions about the STATE,
+ * and this function sees one action in isolation. They live in `canApply`, which sees both.
+ * A guard that reached for the config would be a second authority on the same rules, free
+ * to disagree with the first.
+ */
+export function isCardsPlayedAction(action: AnyAction): action is CardsPlayedAction {
+  if (action.type !== CARDS_PLAYED || !isRecord(action)) return false;
+  return (
+    typeof action['playerId'] === 'string' &&
+    isSafeInteger(action['value']) &&
+    isSafeInteger(action['round'])
+  );
+}
+
+export function isOrderResolvedAction(action: AnyAction): action is OrderResolvedAction {
+  if (action.type !== ORDER_RESOLVED || !isRecord(action)) return false;
+  return isSafeInteger(action['round']) && isStringArray(action['order']);
 }

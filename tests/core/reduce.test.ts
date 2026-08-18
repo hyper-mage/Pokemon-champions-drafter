@@ -823,10 +823,16 @@ function nextSeqOf(log: readonly Action[]): number {
   return log.reduce((highest, action) => Math.max(highest, action.seq), -1) + 1;
 }
 
-/** One card play per player, in that round's play order, values given in the same order. */
+/**
+ * Card plays in that round's play order, one per value.
+ *
+ * Fewer values than players means a PARTIAL round, which is what the `roundNotComplete`
+ * and `notYourTurn` cases need — and what a real round looks like between the first card
+ * and the last.
+ */
 function withCardPlays(log: Action[], round: number, values: readonly number[]): Action[] {
   const extended = [...log];
-  const order = selectCardPlayOrder(fold(makeDoc(extended)), round);
+  const order = selectCardPlayOrder(fold(makeDoc(extended)), round).slice(0, values.length);
 
   order.forEach((playerId, index) => {
     extended.push(
