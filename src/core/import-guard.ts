@@ -126,6 +126,51 @@ export const MAX_PLAYERS = 64;
 export const MAX_POOL_IDS = 5000;
 
 /**
+ * The swap-budget cap — 24.
+ *
+ * A budget is not a number that is merely stored either. It becomes a per-turn
+ * interactive board cell for every swap still owed and a `n swaps left` countdown line
+ * beside every team, so `"swapBudget": 4000000000` is an allocation failure wearing a
+ * small number's clothes in exactly the way `rounds` is.
+ *
+ * Twenty-four is past anything a 4–8 player night describes — a player with more swaps
+ * than the roster has rounds is not playing the game PROJECT.md documents — and it is
+ * bounded INDEPENDENTLY of `MAX_ROUNDS` because the two numbers answer different
+ * questions and would drift the moment either changed for its own reasons.
+ */
+export const MAX_SWAP_BUDGET = 24;
+
+/**
+ * The swap-round cap — 24.
+ *
+ * Each swap round is one full pass over every player, so this bounds a render loop of
+ * `MAX_PLAYERS × MAX_SWAP_ROUNDS` — 1536 turns, a long night rather than a hang. Same
+ * independence argument as {@link MAX_SWAP_BUDGET}: swap rounds run AFTER the pick
+ * rounds, so `MAX_ROUNDS` does not constrain them.
+ */
+export const MAX_SWAP_ROUNDS = 24;
+
+/**
+ * The composition-rule cap — 8.
+ *
+ * The version 1 rule vocabulary has exactly one kind, so a well-formed file holds one
+ * entry. The bound exists anyway, and it exists NOW rather than when a second kind ships:
+ * an unbounded `rules` is an unbounded list of records this build would carry into state
+ * and every rules-reading surface would render, and adding the bound later means adding it
+ * to a boundary that already accepted files without it.
+ */
+export const MAX_COMPOSITION_RULES = 8;
+
+/**
+ * The Mega-forme ban cap — 5000.
+ *
+ * The same reasoning as {@link MAX_POOL_IDS}, against a smaller population: the committed
+ * snapshot holds 76 Mega formes. Twenty times any roster this project will see absorbs
+ * every regulation rotation and still refuses a file that declares a million bans.
+ */
+export const MAX_MEGA_FORME_BANS = 5000;
+
+/**
  * The three keys that turn a data structure into a code path.
  *
  * `JSON.parse` itself does not invoke setters — it uses a data-property definition, so
@@ -234,6 +279,7 @@ function copyStringArray(value: unknown, limit: number): string[] | null {
 const BAN_MODES: readonly BanMode[] = ['hostBanlist', 'blind', 'snake'];
 const DEPTHS: readonly TournamentDepth[] = ['draftOnly', 'draftAndBrackets', 'draftBracketsAndLog'];
 const DUAL_MEGA_FORMES: readonly DualMegaForme[] = ['x', 'y', 'either'];
+const COMPOSITION_RULE_KINDS: readonly CompositionRule['kind'][] = ['mega'];
 
 function isOneOf<T extends string>(value: unknown, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value);
@@ -327,22 +373,60 @@ function buildDualMegaChoices(value: unknown): DualMegaChoice[] | null {
 }
 
 /**
+ * The composition rule list, rebuilt and bounded by the document's own round count.
+ *
+ * `kind` is checked against {@link COMPOSITION_RULE_KINDS} rather than merely against
+ * `typeof 'string'`, so a file cannot declare a rule kind this build has no compiler for
+ * and then be folded into a draft that silently ignores it — T-03-02.
+ *
+ * `count` is bounded by `rounds` for the reason `megasRequiredPerTeam` is: a rule
+ * requiring more Mega slots than the document has picks is unsatisfiable by arithmetic,
+ * and the sentence that would explain it names a field on a screen the host is no longer
+ * looking at. `rounds <= MAX_ROUNDS` already holds at the call site, so this is strictly
+ * tighter and needs no second bound.
+ */
+function buildCompositionRules(value: unknown, rounds: number): CompositionRule[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length > MAX_COMPOSITION_RULES) return null;
+
+  const rules: CompositionRule[] = [];
+  for (const raw of value) {
+    const entry = safeObject(raw);
+    if (entry === null) return null;
+
+    const kind = entry['kind'];
+    const count = entry['count'];
+    if (!isOneOf(kind, COMPOSITION_RULE_KINDS)) return null;
+    if (!isNonNegativeInteger(count) || count > rounds) return null;
+
+    rules.push({ kind, count });
+  }
+
+  return rules;
+}
+
+/**
  * The config, rebuilt.
  *
  * ## Absent versus malformed — the distinction this function turns on
  *
- * The six keys schema version 2 added are OPTIONAL here, and that is forced by ordering
- * rather than chosen for leniency: this function runs inside `buildDoc`, and `buildDoc`
- * runs BEFORE `migrate`. Requiring the version 2 keys would therefore refuse every version
- * 1 document at the shape check, one step before the migration that exists to upgrade it
- * could run — and the host would be shown a sentence about their file not being a
- * Champions Drafter tournament, which would be false.
+ * The six keys schema version 2 added and the four version 3 added are all OPTIONAL here,
+ * and that is forced by ordering rather than chosen for leniency: this function runs
+ * inside `buildDoc`, and `buildDoc` runs BEFORE `migrate`. Requiring them would therefore
+ * refuse every older document at the shape check, one step before the migration that
+ * exists to upgrade it could run — and the host would be shown a sentence about their file
+ * not being a Champions Drafter tournament, which would be false.
  *
  * A key that is PRESENT and wrong is still refused, and refused for the whole config. That
  * keeps this file's posture intact: repairing untrusted input is worse than refusing it.
  * Supplying a value for a key that is not there is not repair, it is migration, and the
- * values come from ONE place — `V1_CONFIG_DEFAULTS` in `migrate.ts` — so the guard and the
- * migration cannot disagree about what a version 1 tournament was.
+ * values come from ONE place — `V1_CONFIG_DEFAULTS` and `V2_CONFIG_DEFAULTS` in
+ * `migrate.ts` — so the guard and the migration cannot disagree about what an older
+ * tournament was.
+ *
+ * `rules` is the version 3 field with the same shape of exception `poolSize` has: absent,
+ * it is DERIVED from `megasRequiredPerTeam` rather than defaulted, because the document is
+ * already carrying the true answer.
  *
  * `poolSize` is the exception with a reason: absent, it falls back to `players × rounds`,
  * which is provisional. `migrateV1ToV2` replaces it with the length of the `pool/built`
@@ -431,14 +515,43 @@ function buildConfig(value: unknown): TournamentConfig | null {
     depth = raw['depth'];
   }
 
-  // Derived rather than defaulted, and derived from the value validated above — the same
-  // wrap `migrateV2ToV3` performs, so a file that predates the field and a file that was
-  // migrated say the same thing about the same tournament.
-  const rules: CompositionRule[] = [{ kind: 'mega', count: megasRequiredPerTeam }];
+  // ABSENT means derived, not defaulted, and derived from the value validated above — the
+  // same wrap `migrateV2ToV3` performs, so a file that predates the field and a file that
+  // was migrated say the same thing about the same tournament. PRESENT is typed like every
+  // other field here: each entry's `kind` against the union, each `count` against this
+  // document's own `rounds`, for the reason `megasRequiredPerTeam` carries that bound.
+  //
+  // What this does NOT do: compare `rules[0].count` against `megasRequiredPerTeam`, or
+  // `megaFormeBans` against a roster. Those are referential-integrity checks, and a bound
+  // is not an integrity check. A disagreement between the two shapes of the same fact
+  // surfaces as the non-blocking feasibility notice on adoption, never as a refused file.
+  let rules: CompositionRule[] = [{ kind: 'mega', count: megasRequiredPerTeam }];
+  if (raw['rules'] !== undefined) {
+    const built = buildCompositionRules(raw['rules'], rounds);
+    if (built === null) return null;
+    rules = built;
+  }
 
-  const megaFormeBans: string[] = [...V2_CONFIG_DEFAULTS.megaFormeBans];
-  const swapBudget: number = V2_CONFIG_DEFAULTS.swapBudget;
-  const swapRounds: number = V2_CONFIG_DEFAULTS.swapRounds;
+  let megaFormeBans: string[] = [...V2_CONFIG_DEFAULTS.megaFormeBans];
+  if (raw['megaFormeBans'] !== undefined) {
+    const copied = copyStringArray(raw['megaFormeBans'], MAX_MEGA_FORME_BANS);
+    if (copied === null) return null;
+    megaFormeBans = copied;
+  }
+
+  let swapBudget: number = V2_CONFIG_DEFAULTS.swapBudget;
+  if (raw['swapBudget'] !== undefined) {
+    const value_ = raw['swapBudget'];
+    if (!isNonNegativeInteger(value_) || value_ > MAX_SWAP_BUDGET) return null;
+    swapBudget = value_;
+  }
+
+  let swapRounds: number = V2_CONFIG_DEFAULTS.swapRounds;
+  if (raw['swapRounds'] !== undefined) {
+    const value_ = raw['swapRounds'];
+    if (!isNonNegativeInteger(value_) || value_ > MAX_SWAP_ROUNDS) return null;
+    swapRounds = value_;
+  }
 
   return {
     formatLabel,

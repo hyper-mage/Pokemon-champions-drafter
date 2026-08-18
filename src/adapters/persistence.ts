@@ -251,6 +251,13 @@ export function load(): TournamentDoc | null {
   // had to say about the document inside, and the host's symptom was `Resume saved draft`
   // silently never appearing. A wrapper version this build has never supported still
   // returns null — the set of readable versions changed, not the posture.
+  //
+  // This is the THIRD `schemaVersion` compare site, after `store.ts` and `import-guard.ts`,
+  // and it is the one no import-only test can see: a file arriving through the import
+  // button never passes through this branch, so a schema bump that forgets it fails only
+  // for the host who closed the tab yesterday. `SUPPORTED_SCHEMA_VERSIONS` is asked rather
+  // than `SCHEMA_VERSION` compared precisely so that every bump moves this site by
+  // definition rather than by remembering to.
   const wrapperVersion = parsed['schemaVersion'];
   if (typeof wrapperVersion !== 'number') return null;
   if (!SUPPORTED_SCHEMA_VERSIONS.includes(wrapperVersion)) return null;
