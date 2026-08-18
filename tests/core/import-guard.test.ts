@@ -21,11 +21,15 @@ import {
 } from '../../src/core/actions';
 import {
   isValidTournament,
+  MAX_COMPOSITION_RULES,
   MAX_IMPORT_BYTES,
   MAX_LOG_ENTRIES,
+  MAX_MEGA_FORME_BANS,
   MAX_PLAYERS,
   MAX_POOL_IDS,
   MAX_ROUNDS,
+  MAX_SWAP_BUDGET,
+  MAX_SWAP_ROUNDS,
   parseTournamentFile,
 } from '../../src/core/import-guard';
 import { SCHEMA_VERSION, type TournamentDoc } from '../../src/core/model';
@@ -792,6 +796,182 @@ describe('version 2 config fields', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The version 3 config fields — T-03-01 / T-03-02
+// ---------------------------------------------------------------------------
+
+/**
+ * A serialized document whose config has every version 3 key REMOVED, then `overrides`
+ * applied on top.
+ *
+ * The absent case is the interesting one and it needs its own builder, because
+ * `configuredText` starts from a fixture that already carries the version 3 keys and
+ * `Object.assign` cannot express "this key was never written".
+ */
+function v3AbsentText(overrides: Record<string, unknown> = {}): string {
+  const doc = validDoc() as unknown as Record<string, unknown>;
+  const config = doc['config'] as Record<string, unknown>;
+  delete config['rules'];
+  delete config['megaFormeBans'];
+  delete config['swapBudget'];
+  delete config['swapRounds'];
+  Object.assign(config, overrides);
+  return JSON.stringify(doc);
+}
+
+describe('version 3 config fields', () => {
+  it('returns every one of them unchanged, field by field', () => {
+    const result = parse(
+      configuredText({
+        rounds: 6,
+        megasRequiredPerTeam: 4,
+        rules: [{ kind: 'mega', count: 4 }],
+        megaFormeBans: ['charizardmegax', 'gengarmega'],
+        swapBudget: 3,
+        swapRounds: 2,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { config } = result.doc;
+    expect(config.rules).toEqual([{ kind: 'mega', count: 4 }]);
+    expect(config.megaFormeBans).toEqual(['charizardmegax', 'gengarmega']);
+    expect(config.swapBudget).toBe(3);
+    expect(config.swapRounds).toBe(2);
+  });
+
+  it('lands the absent keys on the version 2 defaults', () => {
+    const result = parse(v3AbsentText());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { config } = result.doc;
+    expect(config.megaFormeBans).toEqual([]);
+    expect(config.swapBudget).toBe(0);
+    expect(config.swapRounds).toBe(0);
+  });
+
+  it('derives an absent rules list from the document’s own megasRequiredPerTeam', () => {
+    // The same wrap `migrateV2ToV3` performs. A file that predates the field and a file
+    // that was migrated must agree about what the tournament required.
+    const result = parse(v3AbsentText({ rounds: 6, megasRequiredPerTeam: 3 }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.rules).toEqual([{ kind: 'mega', count: 3 }]);
+  });
+
+  it('refuses a swap budget that would render four billion board cells', () => {
+    // Refused, never clamped — and the refusal is the whole result, so there is no doc to
+    // inspect for a repaired value. That is the assertion: no document at all.
+    const result = parse(configuredText({ swapBudget: 4_000_000_000 }));
+
+    expect(rejection(result)).toBe('wrongShape');
+    expect('doc' in result).toBe(false);
+  });
+
+  it.each([
+    ['a swapBudget one past its cap', { swapBudget: MAX_SWAP_BUDGET + 1 }],
+    ['a negative swapBudget', { swapBudget: -1 }],
+    ['a fractional swapBudget', { swapBudget: 1.5 }],
+    ['a swapBudget written as a string', { swapBudget: '2' }],
+    ['a swapBudget that is null', { swapBudget: null }],
+    ['a swapRounds one past its cap', { swapRounds: MAX_SWAP_ROUNDS + 1 }],
+    ['a fractional swapRounds', { swapRounds: 2.5 }],
+    ['a negative swapRounds', { swapRounds: -1 }],
+    ['a swapRounds that is not a number', { swapRounds: '2' }],
+    ['a rule kind this build has no compiler for', { rules: [{ kind: 'water', count: 2 }] }],
+    ['a rule with no kind at all', { rules: [{ count: 2 }] }],
+    ['a rule whose count is fractional', { rules: [{ kind: 'mega', count: 1.5 }] }],
+    ['a rule whose count is negative', { rules: [{ kind: 'mega', count: -1 }] }],
+    ['a rule that is not an object', { rules: ['mega'] }],
+    ['a rules value that is not an array', { rules: 3 }],
+    ['a megaFormeBans array holding a non-string', { megaFormeBans: ['gengarmega', 7] }],
+    ['a megaFormeBans value that is not an array', { megaFormeBans: 'gengarmega' }],
+  ])('refuses %s', (_label, overrides) => {
+    expect(rejection(parse(configuredText(overrides)))).toBe('wrongShape');
+  });
+
+  it('refuses more Mega rounds than the document has rounds', () => {
+    // The same bound `megasRequiredPerTeam` already carries, for the same reason: a rule
+    // requiring seven Mega slots in a six-round draft is unsatisfiable by arithmetic, and
+    // the screen that could lower it is not the one the host would be looking at.
+    expect(parse(configuredText({ rounds: 6, rules: [{ kind: 'mega', count: 6 }] })).ok).toBe(true);
+    expect(
+      rejection(parse(configuredText({ rounds: 6, rules: [{ kind: 'mega', count: 7 }] }))),
+    ).toBe('wrongShape');
+  });
+
+  it('refuses a rules list longer than the composition cap', () => {
+    const atCap = Array.from({ length: MAX_COMPOSITION_RULES }, () => ({
+      kind: 'mega',
+      count: 1,
+    }));
+    expect(parse(configuredText({ rounds: 6, rules: atCap })).ok).toBe(true);
+
+    expect(
+      rejection(parse(configuredText({ rounds: 6, rules: [...atCap, { kind: 'mega', count: 1 }] }))),
+    ).toBe('wrongShape');
+  });
+
+  it('refuses a megaFormeBans list longer than its own cap', () => {
+    const atCap = Array.from({ length: MAX_MEGA_FORME_BANS }, (_unused, i) => `forme-${String(i)}`);
+    expect(parse(configuredText({ megaFormeBans: atCap })).ok).toBe(true);
+
+    expect(
+      rejection(parse(configuredText({ megaFormeBans: [...atCap, 'one-too-many'] }))),
+    ).toBe('wrongShape');
+  });
+
+  it('accepts a swap budget and a swap-round count exactly at their caps', () => {
+    const result = parse(
+      configuredText({ swapBudget: MAX_SWAP_BUDGET, swapRounds: MAX_SWAP_ROUNDS }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.swapBudget).toBe(MAX_SWAP_BUDGET);
+    expect(result.doc.config.swapRounds).toBe(MAX_SWAP_ROUNDS);
+  });
+
+  it('carries a forme id spelled __proto__ through as a plain string', () => {
+    // The dangerous-key handling is about KEYS. A string that happens to spell one is a
+    // string, and the copy must neither drop it nor let it reach a prototype.
+    const result = parse(configuredText({ megaFormeBans: ['__proto__', 'constructor'] }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.megaFormeBans).toEqual(['__proto__', 'constructor']);
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+    expect(Object.getPrototypeOf(result.doc.config) as unknown).toBe(Object.prototype);
+  });
+
+  it('copies megaFormeBans and rules rather than aliasing the parsed arrays', () => {
+    const result = parse(configuredText({ megaFormeBans: ['gengarmega'] }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // A fresh array on the way in is what keeps folded state from sharing structure with
+    // whatever `JSON.parse` produced.
+    expect(result.doc.config.megaFormeBans).toEqual(['gengarmega']);
+    expect(result.doc.config.rules).not.toBe(result.doc.config.rules.slice(0, 0));
+  });
+
+  it('does no referential-integrity check between rules and megasRequiredPerTeam', () => {
+    // T-03-04, accepted rather than mitigated. A bound is not an integrity check, and the
+    // disagreement surfaces as the non-blocking adoption notice rather than as a refusal.
+    const result = parse(
+      configuredText({ rounds: 6, megasRequiredPerTeam: 2, rules: [{ kind: 'mega', count: 5 }] }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.megasRequiredPerTeam).toBe(2);
+    expect(result.doc.config.rules).toEqual([{ kind: 'mega', count: 5 }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The two config-time seeds — D-06
 // ---------------------------------------------------------------------------
 
@@ -916,6 +1096,101 @@ describe('a version 1 document', () => {
     // worse than refusing it, and a `bans` of `3` is not a document this app ever wrote.
     expect(rejection(parse(v1Text({ bans: 3 })))).toBe('wrongShape');
     expect(rejection(parse(v1Text({ banMode: 'blindish' })))).toBe('wrongShape');
+  });
+
+  it('lands its absent version 3 keys on the version 2 defaults too', () => {
+    const result = parse(v1Text());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { config } = result.doc;
+    expect(config.rules).toEqual([{ kind: 'mega', count: 0 }]);
+    expect(config.megaFormeBans).toEqual([]);
+    expect(config.swapBudget).toBe(0);
+    expect(config.swapRounds).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A version 2 document — the same argument, one version later
+// ---------------------------------------------------------------------------
+
+/** Exactly what Phase 2 wrote: `schemaVersion: 2` and eleven config fields. */
+function v2Text(configOverrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    schemaVersion: 2,
+    id: 'b3f1c2d4-0000-4000-8000-000000000000',
+    createdAt: 1_770_000_000_000,
+    config: {
+      formatLabel: 'Champions MB',
+      players: [
+        { id: 'p1', name: 'Player 1' },
+        { id: 'p2', name: 'Player 2' },
+      ],
+      rounds: 6,
+      rosterVersion: 'mb',
+      rosterChecksum: 'sha256-abc',
+      poolSize: 12,
+      bans: ['mewtwo'],
+      banMode: 'hostBanlist',
+      megasRequiredPerTeam: 2,
+      dualMegaChoices: [],
+      depth: 'draftOnly',
+      ...configOverrides,
+    },
+    rng: { seed: 12345, cursor: 0 },
+    log: [
+      {
+        type: 'pool/built',
+        ids: ['venusaur', 'garchomp', 'rotomwash', 'kommoo'],
+        rosterVersion: 'mb',
+        checksum: 'sha256-abc',
+        seed: POOL_SEED,
+        megaCapableCount: 2,
+        seq: 0,
+        at: 1_770_000_000_001,
+        actorId: 'host',
+      },
+      {
+        type: 'draft/started',
+        order: ['p1', 'p2'],
+        seed: ORDER_SEED,
+        seq: 1,
+        at: 1_770_000_000_002,
+        actorId: 'host',
+      },
+    ],
+  });
+}
+
+describe('a version 2 document', () => {
+  it('is accepted rather than refused for the keys it could not have had', () => {
+    expect(parse(v2Text()).ok).toBe(true);
+  });
+
+  it('arrives at the current schema version', () => {
+    const result = parse(v2Text());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.schemaVersion).toBe(SCHEMA_VERSION);
+  });
+
+  it('lands its absent config keys on the version 2 defaults and the derived rule list', () => {
+    const result = parse(v2Text());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { config } = result.doc;
+    expect(config.rules).toEqual([{ kind: 'mega', count: 2 }]);
+    expect(config.megaFormeBans).toEqual([]);
+    expect(config.swapBudget).toBe(0);
+    expect(config.swapRounds).toBe(0);
+  });
+
+  it('is REFUSED when a version 3 key is present and malformed', () => {
+    expect(rejection(parse(v2Text({ swapBudget: '2' })))).toBe('wrongShape');
+    expect(rejection(parse(v2Text({ rules: [{ kind: 'water', count: 1 }] })))).toBe('wrongShape');
   });
 });
 

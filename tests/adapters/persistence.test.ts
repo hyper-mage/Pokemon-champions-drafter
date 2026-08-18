@@ -457,3 +457,119 @@ describe('a draft saved by Phase 1', () => {
     expect(adoptTournament(future as unknown as TournamentDoc)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Resuming a Phase 2 save — the third schemaVersion compare site, one bump later
+// ---------------------------------------------------------------------------
+
+/**
+ * A version 2 document, exactly as the deployed Phase 2 build wrote one.
+ *
+ * Eleven config fields and a `pool/built` carrying both config-time seeds, because by
+ * version 2 those fields existed. `megasRequiredPerTeam: 2` is what the derived rule list
+ * has to come back holding.
+ */
+function v2Doc(): unknown {
+  return {
+    schemaVersion: 2,
+    id: 'phase-two-tournament',
+    createdAt: 1_700_000_000_000,
+    config: {
+      formatLabel: 'Champions MB',
+      players: [
+        { id: 'p1', name: 'Player 1' },
+        { id: 'p2', name: 'Player 2' },
+      ],
+      rounds: 6,
+      rosterVersion: 'mb',
+      rosterChecksum: 'abc123',
+      poolSize: 4,
+      bans: ['mewtwo'],
+      banMode: 'hostBanlist',
+      megasRequiredPerTeam: 2,
+      dualMegaChoices: [],
+      depth: 'draftOnly',
+    },
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log: [
+      {
+        type: 'pool/built',
+        ids: ['venusaur', 'charizard', 'blastoise', 'garchomp'],
+        rosterVersion: 'mb',
+        checksum: 'abc123',
+        seed: 11,
+        megaCapableCount: 2,
+        seq: 0,
+        at: 1_700_000_000_001,
+        actorId: 'host',
+      },
+      {
+        type: 'draft/started',
+        order: ['p1', 'p2'],
+        seed: 12,
+        seq: 1,
+        at: 1_700_000_000_002,
+        actorId: 'host',
+      },
+    ],
+  };
+}
+
+/** The wrapper record Phase 2 wrote — `schemaVersion: 2` on the WRAPPER. */
+function v2Record(): string {
+  return JSON.stringify({ schemaVersion: 2, generation: 3, savedAt: 0, doc: v2Doc() });
+}
+
+describe('a draft saved by Phase 2', () => {
+  it('is still offered as a resumable draft after the schema 3 bump', () => {
+    // The failure this pins is invisible to every import-only test: the WRAPPER version is
+    // compared a step before `isValidTournament`, so a version list that did not move with
+    // the bump drops the record here and `Resume saved draft` silently never appears.
+    storage.backing.set(STORAGE_KEY, v2Record());
+
+    expect(load()).not.toBeNull();
+  });
+
+  it('resumes at the current version, not at the version it was stored as', () => {
+    storage.backing.set(STORAGE_KEY, v2Record());
+
+    expect(load()?.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(load()?.schemaVersion).toBe(3);
+  });
+
+  it('comes back with a rule list derived from the Megas it required', () => {
+    storage.backing.set(STORAGE_KEY, v2Record());
+
+    expect(load()?.config.rules).toEqual([{ kind: 'mega', count: 2 }]);
+    expect(load()?.config.megasRequiredPerTeam).toBe(2);
+  });
+
+  it('comes back with the swap fields at their lossless defaults', () => {
+    storage.backing.set(STORAGE_KEY, v2Record());
+
+    const restored = load();
+    expect(restored?.config.megaFormeBans).toEqual([]);
+    expect(restored?.config.swapBudget).toBe(0);
+    expect(restored?.config.swapRounds).toBe(0);
+  });
+
+  it('folds to the pool its log recorded, with an empty schedule', () => {
+    storage.backing.set(STORAGE_KEY, v2Record());
+    const restored = load();
+    expect(restored).not.toBeNull();
+    if (restored === null) return;
+
+    expect(adoptTournament(restored)).toBe(true);
+    expect(getState()?.poolIds).toHaveLength(4);
+    expect(getState()?.schedule).toEqual([]);
+  });
+
+  it('does not offer a wrapper at a version this build has never supported', () => {
+    storage.backing.set(
+      STORAGE_KEY,
+      JSON.stringify({ schemaVersion: 4, generation: 1, savedAt: 0, doc: v2Doc() }),
+    );
+
+    expect(load()).toBeNull();
+  });
+});
