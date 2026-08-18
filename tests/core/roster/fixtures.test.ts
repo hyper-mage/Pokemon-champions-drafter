@@ -390,3 +390,49 @@ describe('genuinely distinct alternate formes (ROST-10)', () => {
     }
   });
 });
+
+describe('the dual-Mega X/Y assumption (RULE-04)', () => {
+  /**
+   * `isMegaEligible`'s X/Y pin compares `MegaForme.forme` against exactly `Mega-X` and
+   * `Mega-Y`, and `ConfigScreen` offers the pin to exactly the rows with more than one
+   * forme. Both halves of that only hold while dual-Mega means X/Y.
+   *
+   * The failure mode this guards is silent, which is why it is a test rather than a runtime
+   * branch. If a future regulation put an `M-Mega` / `F-Mega` pair on ONE draftable row, the
+   * host would be offered an X-or-Y choice over two formes that are neither, both pins would
+   * exclude both formes, and the species would vanish from the Mega rounds with no error —
+   * D-10 makes "no legal forme" a normal outcome, so nothing downstream would complain. The
+   * snapshot's own resolution of this today is that Meowstic is TWO rows with one forme
+   * each, which needs no special-casing at all.
+   *
+   * A failing test is a better discovery than a missing species.
+   */
+
+  const DUAL_MEGA_FORME_VALUES = ['Mega-X', 'Mega-Y'];
+
+  it('offers the X/Y pin to exactly Charizard and Raichu', () => {
+    const dual = snapshot.entries
+      .filter((entry) => entry.megaFormes.length > 1)
+      .map((entry) => entry.id)
+      .sort();
+
+    expect(dual).toEqual(['charizard', 'raichu']);
+  });
+
+  it('draws every multi-forme species formes from exactly Mega-X and Mega-Y', () => {
+    for (const entry of snapshot.entries) {
+      if (entry.megaFormes.length <= 1) continue;
+      const formes = entry.megaFormes.map((mega) => mega.forme).sort();
+      expect(formes, `${entry.id} forme values`).toEqual(DUAL_MEGA_FORME_VALUES);
+    }
+  });
+
+  it('keeps M-Mega and F-Mega on separate draftable rows, one forme each', () => {
+    for (const entry of snapshot.entries) {
+      for (const mega of entry.megaFormes) {
+        if (mega.forme !== 'M-Mega' && mega.forme !== 'F-Mega') continue;
+        expect(entry.megaFormes, `${entry.id} carries ${mega.forme}`).toHaveLength(1);
+      }
+    }
+  });
+});
