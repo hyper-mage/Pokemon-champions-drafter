@@ -635,6 +635,76 @@ describe('round trip', () => {
     expect(twice.doc).toEqual(once.doc);
   });
 
+  /**
+   * A six-round document whose schedule was REORDERED away from the canonical order.
+   *
+   * This is the fixture a recompute-on-load implementation fails and every other test in
+   * this file passes. `compile([{ kind: 'mega', count: 2 }], 6)` emits Mega rounds first;
+   * the host permuted it, and the log is the only record that they did.
+   */
+  function reorderedScheduleDoc(): TournamentDoc {
+    const doc = validDoc();
+    doc.config.rounds = 6;
+    doc.config.megasRequiredPerTeam = 2;
+    doc.config.rules = [{ kind: 'mega', count: 2 }];
+    doc.log = [
+      doc.log[0] as TournamentDoc['log'][number],
+      {
+        type: 'schedule/compiled',
+        rounds: [
+          { index: 1, kind: 'open' },
+          { index: 2, kind: 'mega' },
+          { index: 3, kind: 'open' },
+          { index: 4, kind: 'mega' },
+          { index: 5, kind: 'open' },
+          { index: 6, kind: 'open' },
+        ],
+        seq: 1,
+        at: 1_770_000_000_002,
+        actorId: 'host',
+      } as unknown as TournamentDoc['log'][number],
+      {
+        type: 'draft/started',
+        order: ['p1', 'p2'],
+        seed: ORDER_SEED,
+        seq: 2,
+        at: 1_770_000_000_003,
+        actorId: 'host',
+      } as unknown as TournamentDoc['log'][number],
+    ];
+    return doc;
+  }
+
+  it('reproduces a reordered schedule exactly, rather than recompiling the canonical one', () => {
+    const result = parse(exported(reorderedScheduleDoc()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(fold(result.doc).schedule.map((spec) => spec.kind)).toEqual([
+      'open',
+      'mega',
+      'open',
+      'mega',
+      'open',
+      'open',
+    ]);
+    // And the carried indices survive too, not just the kinds.
+    expect(fold(result.doc).schedule.map((spec) => spec.index)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('survives a second trip with the reordered schedule byte for byte', () => {
+    const once = parse(exported(reorderedScheduleDoc()));
+    expect(once.ok).toBe(true);
+    if (!once.ok) return;
+
+    const twice = parse(exported(once.doc));
+    expect(twice.ok).toBe(true);
+    if (!twice.ok) return;
+
+    expect(twice.doc).toEqual(once.doc);
+    expect(exported(twice.doc)).toBe(exported(once.doc));
+  });
+
   it('preserves Kommo-o, Mr. Rime and a U+2019 name character for character', () => {
     const original = validDoc();
     original.config.players = TRICKY_NAMES.map((name, index) => ({
@@ -1007,6 +1077,86 @@ describe('config-time seeds in the log', () => {
     const doc = validDoc() as unknown as Record<string, unknown>;
     (doc['log'] as Record<string, unknown>[])[0]!['megaCapableCount'] = MAX_POOL_IDS + 1;
     expect(rejection(parse(JSON.stringify(doc)))).toBe('wrongShape');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// schedule/compiled at the untrusted boundary — T-03-06 / T-03-07
+// ---------------------------------------------------------------------------
+
+/** A serialized document whose second log entry is `schedule/compiled` carrying `rounds`. */
+function scheduleText(rounds: unknown): string {
+  const doc = validDoc() as unknown as Record<string, unknown>;
+  const log = doc['log'] as Record<string, unknown>[];
+  log.splice(1, 0, {
+    type: 'schedule/compiled',
+    rounds,
+    seq: 100,
+    at: 1_770_000_000_002,
+    actorId: 'host',
+  });
+  // `seq` must strictly increase; the entries after the splice keep their own numbers, so
+  // renumber the tail rather than leaving a log `buildLog` would refuse for the wrong reason.
+  log.forEach((entry, index) => {
+    entry['seq'] = index;
+  });
+  return JSON.stringify(doc);
+}
+
+const TWO_ROUND_SCHEDULE = [
+  { index: 1, kind: 'mega' },
+  { index: 2, kind: 'open' },
+];
+
+describe('a schedule/compiled log entry', () => {
+  it('survives the round trip field by field', () => {
+    const result = parse(scheduleText(TWO_ROUND_SCHEDULE));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const entry = result.doc.log[1];
+    expect(entry?.type).toBe('schedule/compiled');
+    if (entry === undefined || entry.type !== 'schedule/compiled') return;
+    expect(entry.rounds).toEqual(TWO_ROUND_SCHEDULE);
+    expect(entry.actorId).toBe('host');
+  });
+
+  it('refuses a 400-round schedule rather than rendering 400 board columns', () => {
+    // T-03-06. The size gate does not constrain this: four hundred two-key objects is a
+    // few KB. A count reaches the renderer as an allocation, so it is bounded separately.
+    const huge = Array.from({ length: 400 }, (_, index) => ({
+      index: index + 1,
+      kind: 'open',
+    }));
+    expect(rejection(parse(scheduleText(huge)))).toBe('wrongShape');
+  });
+
+  it('accepts a schedule exactly at the round cap and refuses the one past it', () => {
+    const atCap = Array.from({ length: MAX_ROUNDS }, (_, index) => ({
+      index: index + 1,
+      kind: 'open',
+    }));
+    expect(parse(scheduleText(atCap)).ok).toBe(true);
+
+    expect(rejection(parse(scheduleText([...atCap, { index: MAX_ROUNDS + 1, kind: 'open' }])))).toBe(
+      'wrongShape',
+    );
+  });
+
+  it('refuses a rounds field that is not an array of typed records', () => {
+    for (const rounds of ['mega,open', 42, null, { 0: { index: 1, kind: 'mega' } }, [null]]) {
+      expect(rejection(parse(scheduleText(rounds)))).toBe('wrongShape');
+    }
+  });
+
+  it('refuses a kind this build has no filter for', () => {
+    expect(rejection(parse(scheduleText([{ index: 1, kind: 'legendary' }])))).toBe('wrongShape');
+  });
+
+  it('refuses an index that is not a positive integer', () => {
+    for (const index of [0, -1, 1.5, '1', null]) {
+      expect(rejection(parse(scheduleText([{ index, kind: 'open' }])))).toBe('wrongShape');
+    }
   });
 });
 

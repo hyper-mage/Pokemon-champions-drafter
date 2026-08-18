@@ -13,12 +13,16 @@ import { describe, expect, it } from 'vitest';
 import {
   DRAFT_PICK_MADE,
   draftStarted,
+  isScheduleCompiledAction,
   pickMade,
   pickUndone,
   poolBuilt,
+  SCHEDULE_COMPILED,
+  scheduleCompiled,
   type Action,
   type AnyAction,
   type Intent,
+  type RoundSpec,
 } from '../../src/core/actions';
 import {
   initialState,
@@ -32,6 +36,8 @@ import {
   selectCurrentTurn,
   selectIsComplete,
   selectPickCount,
+  selectRoundKind,
+  selectSchedule,
   selectTeams,
 } from '../../src/core/selectors';
 
@@ -98,8 +104,37 @@ function makeDoc(log: readonly Action[] = []): TournamentDoc {
   };
 }
 
-/** `pool/built` then `draft/started`, exactly as `createTournament` emits them. */
+/** All six rounds open, which is what `compile` emits for this config's `count: 0` rule. */
+const OPEN_SCHEDULE: RoundSpec[] = Array.from({ length: CONFIG.rounds }, (_, position) => ({
+  index: position + 1,
+  kind: 'open' as const,
+}));
+
+/** Two Mega rounds first, the canonical order for `megasRequiredPerTeam: 2`. */
+const MEGA_FIRST_SCHEDULE: RoundSpec[] = [
+  { index: 1, kind: 'mega' },
+  { index: 2, kind: 'mega' },
+  { index: 3, kind: 'open' },
+  { index: 4, kind: 'open' },
+  { index: 5, kind: 'open' },
+  { index: 6, kind: 'open' },
+];
+
+/**
+ * `pool/built`, `schedule/compiled`, `draft/started` — exactly as `createTournament` emits
+ * them, and in that order. The schedule sits between the two because it is meaningful only
+ * against a pool, and because `canApply(DRAFT_STARTED)` now refuses to originate without one.
+ */
 function openingLog(): Action[] {
+  return [
+    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
+    stamp(scheduleCompiled(OPEN_SCHEDULE), 1),
+    stamp(draftStarted(ORDER, 9), 2),
+  ];
+}
+
+/** A Phase 2 log: no `schedule/compiled`, because that action did not exist when it was written. */
+function migratedOpeningLog(): Action[] {
   return [
     stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
     stamp(draftStarted(ORDER, 9), 1),
@@ -427,7 +462,15 @@ describe('canApply', () => {
       reason: 'emptyPool',
     });
     expect(
-      canApply(fold(makeDoc([stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 0)])), stamp(draftStarted(['p1', 'ghost'], 9), 1)),
+      canApply(
+        fold(
+          makeDoc([
+            stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 0),
+            stamp(scheduleCompiled(OPEN_SCHEDULE), 1),
+          ]),
+        ),
+        stamp(draftStarted(['p1', 'ghost'], 9), 2),
+      ),
     ).toEqual({ ok: false, reason: 'unknownPlayer' });
   });
 
@@ -462,6 +505,224 @@ describe('canApply', () => {
     canApply(state, stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 0 }), 2));
 
     expect(JSON.parse(JSON.stringify(state))).toEqual(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// schedule/compiled — RULE-02
+// ---------------------------------------------------------------------------
+
+/** Just the pool, which is the state `schedule/compiled` is legal against. */
+function pooledState() {
+  return fold(makeDoc([stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0)]));
+}
+
+describe('isScheduleCompiledAction', () => {
+  function stamped(rounds: unknown): AnyAction {
+    return {
+      type: SCHEDULE_COMPILED,
+      rounds,
+      seq: 1,
+      at: CREATED_AT,
+      actorId: 'host',
+    } as unknown as AnyAction;
+  }
+
+  it('accepts a well-formed schedule', () => {
+    expect(isScheduleCompiledAction(stamp(scheduleCompiled(MEGA_FIRST_SCHEDULE), 1))).toBe(true);
+  });
+
+  it('accepts an empty schedule — length is canApply’s question, not the guard’s', () => {
+    expect(isScheduleCompiledAction(stamped([]))).toBe(true);
+  });
+
+  it('rejects a missing rounds field and one that is not an array', () => {
+    expect(isScheduleCompiledAction(stamped(undefined))).toBe(false);
+    expect(isScheduleCompiledAction(stamped('mega,mega,open'))).toBe(false);
+    expect(isScheduleCompiledAction(stamped({ 0: { index: 1, kind: 'mega' } }))).toBe(false);
+  });
+
+  it('rejects a member whose index is not an integer', () => {
+    expect(isScheduleCompiledAction(stamped([{ index: 1.5, kind: 'mega' }]))).toBe(false);
+    expect(isScheduleCompiledAction(stamped([{ index: '1', kind: 'mega' }]))).toBe(false);
+  });
+
+  it('rejects a kind this build has no filter for', () => {
+    // A hand-edited file must not be able to introduce a round type the pool filter, the
+    // swap predicate and the export path have never heard of — T-03-07.
+    expect(isScheduleCompiledAction(stamped([{ index: 1, kind: 'legendary' }]))).toBe(false);
+    expect(isScheduleCompiledAction(stamped([{ index: 1, kind: null }]))).toBe(false);
+  });
+
+  it('rejects a member whose index disagrees with its array position', () => {
+    expect(
+      isScheduleCompiledAction(
+        stamped([
+          { index: 1, kind: 'mega' },
+          { index: 3, kind: 'open' },
+        ]),
+      ),
+    ).toBe(false);
+    expect(isScheduleCompiledAction(stamped([{ index: 0, kind: 'open' }]))).toBe(false);
+  });
+});
+
+describe('apply schedule/compiled', () => {
+  it('writes the schedule into state', () => {
+    const state = apply(pooledState(), stamp(scheduleCompiled(MEGA_FIRST_SCHEDULE), 1));
+    expect(state.schedule).toEqual(MEGA_FIRST_SCHEDULE);
+  });
+
+  it('writes a fresh copy, so the action’s array is never shared with state', () => {
+    const action = stamp(scheduleCompiled(MEGA_FIRST_SCHEDULE), 1);
+    const state = apply(pooledState(), action);
+
+    expect(state.schedule).not.toBe(action.rounds);
+    expect(state.schedule[0]).not.toBe(action.rounds[0]);
+  });
+
+  it('returns the state unchanged for a malformed payload — apply stays total', () => {
+    const before = pooledState();
+    const malformed = {
+      type: SCHEDULE_COMPILED,
+      seq: 1,
+      at: CREATED_AT,
+      actorId: 'host',
+    } as unknown as AnyAction;
+
+    expect(apply(before, malformed)).toBe(before);
+  });
+
+  it('is read back by the schedule selectors after a fold', () => {
+    const state = fold(
+      makeDoc([
+        stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
+        stamp(scheduleCompiled(MEGA_FIRST_SCHEDULE), 1),
+        stamp(draftStarted(ORDER, 9), 2),
+      ]),
+    );
+
+    expect(selectSchedule(state).map((spec) => spec.kind)).toEqual([
+      'mega',
+      'mega',
+      'open',
+      'open',
+      'open',
+      'open',
+    ]);
+    expect(selectRoundKind(state, 1)).toBe('mega');
+    expect(selectRoundKind(state, 3)).toBe('open');
+  });
+});
+
+describe('canApply schedule/compiled', () => {
+  it('accepts one schedule of the configured length against a built pool', () => {
+    expect(canApply(pooledState(), stamp(scheduleCompiled(OPEN_SCHEDULE), 1))).toEqual({ ok: true });
+  });
+
+  it('rejects a malformed payload', () => {
+    const malformed = {
+      type: SCHEDULE_COMPILED,
+      rounds: 'six',
+      seq: 1,
+      at: CREATED_AT,
+      actorId: 'host',
+    } as unknown as AnyAction;
+
+    expect(canApply(pooledState(), malformed)).toEqual({ ok: false, reason: 'malformedPayload' });
+  });
+
+  it('rejects a schedule before the pool exists', () => {
+    expect(canApply(initialState(CONFIG), stamp(scheduleCompiled(OPEN_SCHEDULE), 0))).toEqual({
+      ok: false,
+      reason: 'poolNotBuilt',
+    });
+  });
+
+  it('rejects a second schedule', () => {
+    // D-13: there is exactly one schedule for the life of a document. A mid-draft reorder
+    // would need a `schedule/reordered` action, and CONTEXT defers it.
+    const state = fold(
+      makeDoc([
+        stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
+        stamp(scheduleCompiled(OPEN_SCHEDULE), 1),
+      ]),
+    );
+
+    expect(canApply(state, stamp(scheduleCompiled(MEGA_FIRST_SCHEDULE), 2))).toEqual({
+      ok: false,
+      reason: 'scheduleAlreadyCompiled',
+    });
+  });
+
+  it('rejects a schedule once the draft has started', () => {
+    const started = fold(makeDoc(migratedOpeningLog()));
+
+    expect(canApply(started, stamp(scheduleCompiled(OPEN_SCHEDULE), 2))).toEqual({
+      ok: false,
+      reason: 'draftAlreadyStarted',
+    });
+  });
+
+  it('rejects a schedule whose length is not the configured round count', () => {
+    expect(
+      canApply(pooledState(), stamp(scheduleCompiled(OPEN_SCHEDULE.slice(0, 4)), 1)),
+    ).toEqual({ ok: false, reason: 'malformedSchedule' });
+
+    expect(
+      canApply(
+        pooledState(),
+        stamp(scheduleCompiled([...OPEN_SCHEDULE, { index: 7, kind: 'open' }]), 1),
+      ),
+    ).toEqual({ ok: false, reason: 'malformedSchedule' });
+  });
+
+  it('rejects a schedule whose indices are not contiguous from 1', () => {
+    const shifted: RoundSpec[] = OPEN_SCHEDULE.map((spec) => ({
+      index: spec.index + 1,
+      kind: spec.kind,
+    }));
+
+    expect(canApply(pooledState(), stamp(scheduleCompiled(shifted), 1))).toEqual({
+      ok: false,
+      reason: 'malformedSchedule',
+    });
+  });
+});
+
+describe('canApply draft/started requires a schedule', () => {
+  it('refuses to originate a draft with no compiled schedule', () => {
+    const pooled = pooledState();
+    expect(canApply(pooled, stamp(draftStarted(ORDER, 9), 1))).toEqual({
+      ok: false,
+      reason: 'scheduleNotCompiled',
+    });
+  });
+
+  it('still refuses an unbuilt pool first — the pool check comes before the schedule check', () => {
+    expect(canApply(initialState(CONFIG), stamp(draftStarted(ORDER, 9), 0))).toEqual({
+      ok: false,
+      reason: 'poolNotBuilt',
+    });
+  });
+
+  it('does not break a migrated schema-2 document, because fold never runs canApply', () => {
+    // Origination is guarded; replay deliberately is not. A Phase 2 save has no
+    // `schedule/compiled` in its log and must still open.
+    const migrated = fold(makeDoc(withPicks(migratedOpeningLog(), 4)));
+
+    expect(migrated.order).toEqual(ORDER);
+    expect(migrated.schedule).toEqual([]);
+    expect(selectPickCount(migrated)).toBe(4);
+    // An empty schedule folds as all-open — what that draft actually ran.
+    expect(selectSchedule(migrated).map((spec) => spec.kind)).toEqual([
+      'open',
+      'open',
+      'open',
+      'open',
+      'open',
+      'open',
+    ]);
   });
 });
 
