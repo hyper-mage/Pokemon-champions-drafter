@@ -302,3 +302,8 @@ Ready. Every plan in wave 2 onward can now read a config field this plan added:
 ---
 *Phase: 03-compiled-rules-priority-cards-swaps*
 *Completed: 2026-08-17*
+
+## Self-Check: PASSED
+
+Every file this summary claims exists, and every commit hash it cites resolves in
+`git log --all`. Checked 2026-08-17.

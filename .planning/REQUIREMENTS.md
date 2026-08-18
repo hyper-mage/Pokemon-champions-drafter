@@ -99,7 +99,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Swaps
 
-- [ ] **SWAP-01**: Host sets a swap budget per player
+- [x] **SWAP-01**: Host sets a swap budget per player
 - [ ] **SWAP-02**: Player can spend a swap mid-draft to replace a team member with a Pokémon from the pool
 - [ ] **SWAP-03**: Host can enable dedicated swap rounds after the pick rounds
 - [ ] **SWAP-04**: Swap rounds use an explicit pick-order source, since every priority card is spent by then
@@ -257,7 +257,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | BAN-06 | Phase 4 | Pending |
 | BAN-07 | Phase 4 | Pending |
 | BAN-08 | Phase 2 | Complete |
-| SWAP-01 | Phase 3 | Pending |
+| SWAP-01 | Phase 3 | Complete |
 | SWAP-02 | Phase 3 | Pending |
 | SWAP-03 | Phase 3 | Pending |
 | SWAP-04 | Phase 3 | Pending |
