@@ -118,8 +118,25 @@ function mount(onStarted: () => void = () => undefined): void {
   });
 }
 
+/**
+ * The `Bans` group, and everything inside it.
+ *
+ * Scoped rather than queried across the whole screen because 03-04 added a SECOND ban
+ * surface — the Mega-forme grid, chips and typeahead inside `Mega rules`, which renders
+ * ABOVE this group. An unscoped `.typeahead__input` or `.pool__count` now finds that one
+ * first, and every assertion here is about the species banlist.
+ */
+function bansGroup(): HTMLElement {
+  const group = [...host.querySelectorAll<HTMLElement>('fieldset')].find(
+    (element) => element.querySelector('legend')?.textContent?.trim() === 'Bans',
+  );
+  // Falls back to the whole host for the cases that mount `PoolGrid` directly, where there
+  // is no config screen around it and therefore only ever one grid.
+  return group ?? host;
+}
+
 function banField(): HTMLInputElement {
-  const input = host.querySelector<HTMLInputElement>('.typeahead__input');
+  const input = bansGroup().querySelector<HTMLInputElement>('.typeahead__input');
   if (input === null) throw new Error('the ban field is not on the screen');
   return input;
 }
@@ -138,7 +155,7 @@ function press(key: string): void {
 }
 
 function options(): HTMLElement[] {
-  return [...host.querySelectorAll<HTMLElement>('[role="option"]')];
+  return [...bansGroup().querySelectorAll<HTMLElement>('[role="option"]')];
 }
 
 function optionTexts(): string[] {
@@ -146,7 +163,7 @@ function optionTexts(): string[] {
 }
 
 function chips(): HTMLButtonElement[] {
-  return [...host.querySelectorAll<HTMLButtonElement>('.ban-chip')];
+  return [...bansGroup().querySelectorAll<HTMLButtonElement>('.ban-chip')];
 }
 
 function chipNames(): string[] {

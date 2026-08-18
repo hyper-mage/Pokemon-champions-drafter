@@ -183,12 +183,29 @@ function buttonNamed(name: string): HTMLButtonElement | null {
   );
 }
 
+/**
+ * The `Bans` group, and everything inside it.
+ *
+ * Scoped rather than queried across the whole screen because 03-04 added a SECOND ban
+ * surface — the Mega-forme grid, chips and typeahead inside `Mega rules`, which renders
+ * ABOVE this group. An unscoped `.typeahead__input` or `.pool__count` now finds that one
+ * first, and every assertion here is about the species banlist.
+ */
+function bansGroup(): HTMLElement {
+  const group = [...host.querySelectorAll<HTMLElement>('fieldset')].find(
+    (element) => element.querySelector('legend')?.textContent?.trim() === 'Bans',
+  );
+  // Falls back to the whole host for the cases that mount `PoolGrid` directly, where there
+  // is no config screen around it and therefore only ever one grid.
+  return group ?? host;
+}
+
 function chips(): HTMLButtonElement[] {
-  return [...host.querySelectorAll<HTMLButtonElement>('.ban-chip')];
+  return [...bansGroup().querySelectorAll<HTMLButtonElement>('.ban-chip')];
 }
 
 function countLine(): string {
-  return host.querySelector('.pool__count')?.textContent ?? '';
+  return bansGroup().querySelector('.pool__count')?.textContent ?? '';
 }
 
 function dialog(): HTMLElement | null {
@@ -212,7 +229,7 @@ function pressEscape(): void {
 }
 
 function cardFor(name: string): HTMLButtonElement {
-  const card = [...host.querySelectorAll<HTMLButtonElement>('.mon-card')].find(
+  const card = [...bansGroup().querySelectorAll<HTMLButtonElement>('.mon-card')].find(
     (element) => element.querySelector('.mon-card__name')?.textContent === name,
   );
   if (card === undefined) throw new Error(`no cell for ${name}`);

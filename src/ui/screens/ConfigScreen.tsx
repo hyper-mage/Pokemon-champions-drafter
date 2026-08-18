@@ -10,6 +10,7 @@ import {
   poolSizeForPreset,
   type PoolPreset,
 } from '../../core/feasibility';
+import { bannedMegaFormes, megaFormeRows } from '../../core/mega';
 import type { RoundSpec } from '../../core/actions';
 import type {
   BanMode,
@@ -19,11 +20,12 @@ import type {
   TournamentConfig,
   TournamentDepth,
 } from '../../core/model';
-import type { RosterEntry, RosterSnapshot } from '../../core/roster/types';
+import type { MegaForme, RosterEntry, RosterSnapshot } from '../../core/roster/types';
 import { selectStartingOrder } from '../../core/selectors';
 import { createTournament } from '../../store';
 import {
   CLEAR_BANLIST_CONFIRM,
+  CLEAR_MEGA_FORME_BANLIST_CONFIRM,
   REMOVE_PLAYER_CONFIRM,
   REROLL_ORDER_CONFIRM,
   REROLL_POOL_CONFIRM,
@@ -83,9 +85,17 @@ import './ConfigScreen.css';
  * to have answered both swap questions before the pool readout below them means anything.
  *
  * `Mega rules` is the one group with SUB-SECTIONS, and their order is the 03-UI-SPEC §1
- * table's: `Megas required per team`, then `Round schedule`, then the dual-Mega rows. The
- * schedule sits directly under the field because it is that field's visible consequence —
- * a host who types 2 sees which two rounds it made, in the same glance.
+ * table's: `Megas required per team`, then `Round schedule`, then `Dual-Mega species`, then
+ * `Mega-forme bans`. The schedule sits directly under the field because it is that field's
+ * visible consequence — a host who types 2 sees which two rounds it made, in the same
+ * glance — and the forme bans read last because they are the longest thing in the group and
+ * everything above them is a sentence or a list.
+ *
+ * All four take ONE treatment: `.config-screen__section` with an `<h2>` at `--text-heading`,
+ * which is 03-UI-SPEC §1's contract. `Dual-Mega species` was a `--text-label` `<p>` until
+ * this group gained its fourth sub-section, on the argument that a heading "would be
+ * claiming a level the form does not have". With four of them the group plainly has the
+ * level, and two treatments inside one group is the thing a host actually notices.
  */
 
 /**
@@ -151,6 +161,50 @@ const SCHEDULE_HELPER =
   'The draft runs these rounds in this order. Reorder them before you start; the schedule is fixed once the draft begins.';
 
 /**
+ * The `Mega-forme bans` sub-section — verbatim from 03-UI-SPEC §3 and §Copywriting Contract.
+ *
+ * The helper's SECOND SENTENCE is load-bearing and must not be trimmed as a repetition of
+ * the first. D-10 makes "Charizard pinned to X with X banned" a normal outcome with no error
+ * state, no warning and no feasibility code — so the species simply stops appearing in the
+ * Mega rounds, and a host who has not been told that reads a missing species as a bug and
+ * goes looking for the setting that broke it.
+ */
+const MEGA_BAN_HEADING = 'Mega-forme bans';
+const MEGA_BAN_HELPER =
+  'A banned forme cannot be used this tournament. A species with no forme left simply stays out of the Mega rounds — it is still draftable in an open round.';
+const MEGA_BAN_FIELD_LABEL = 'Ban a Mega forme by name';
+const MEGA_BAN_FIELD_PLACEHOLDER = 'Name';
+/** The singular noun in the typeahead's no-match line: `No Mega forme matches "{query}".` */
+const MEGA_BAN_SUBJECT = 'Mega forme';
+/** The plural noun in the grid's count line: `{n} of {total} Mega formes banned`. */
+const MEGA_BAN_COUNT_SUBJECT = 'Mega formes';
+/** The list every chip names: `Remove {formeName} from the Mega-forme banlist`. */
+const MEGA_BAN_LIST_NAME = 'Mega-forme banlist';
+/**
+ * Why the `Mega capability` filter is unusable over this grid.
+ *
+ * EXCLUDES the `— ` separator, which `FilterBar` renders as markup beside it. Keeping the
+ * separator out of the constant is what makes the copy table, this value and the assertion
+ * one string rather than three that agree today.
+ */
+const MEGA_FILTER_INERT_REASON = 'This list is Mega formes only';
+
+/** `1 Mega-forme ban` / `{n} Mega-forme bans`, for the same reason `banCountPhrase` exists. */
+function megaFormeBanCountPhrase(count: number): string {
+  return count === 1 ? '1 Mega-forme ban' : `${count} Mega-forme bans`;
+}
+
+/**
+ * The live-region sentence for a forme ban or unban — 03-UI-SPEC §Live-region announcements.
+ *
+ * Composed in ONE place, exactly as `banAnnouncement` is, so the typeahead and the grid
+ * cannot describe one write two ways.
+ */
+function megaFormeBanAnnouncement(name: string, banned: boolean, count: number): string {
+  return `${name} ${banned ? 'banned' : 'unbanned'}. ${megaFormeBanCountPhrase(count)}.`;
+}
+
+/**
  * Verbatim from 03-UI-SPEC §Live-region announcements.
  *
  * A move exchanges two kinds, so exactly one round becomes a Mega round and exactly one
@@ -169,7 +223,8 @@ function reorderAnnouncement(megaRound: number, openRound: number): string {
  *
  * AMENDED by 03-UI-SPEC §Copywriting Contract, and the first clause is the amendment. It
  * answers the likeliest confusion in this phase (03-RESEARCH stress-test case 3): a host
- * who wants a Mega-less night otherwise reaches for 76 forme bans instead of typing `0`.
+ * who wants a Mega-less night otherwise reaches for a full sweep of forme bans instead of
+ * typing `0`.
  * Saying what 0 DOES — no slot is a Mega slot, nothing exports with a stone — is the
  * difference between a field that states a number and one that states a rule set.
  */
@@ -384,6 +439,21 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
   /** BAN-01. `hostBanlist` is the default and the only mode Phase 2 runs (D-12). */
   const [banMode, setBanMode] = useState<BanMode>('hostBanlist');
 
+  /**
+   * The Mega-forme banlist — RULE-04, D-09. One flat list of FORME ids, two surfaces over it.
+   *
+   * A separate list from `bans` and not a subset of it, because the two exclude different
+   * things: a species ban removes a Pokémon from the draw entirely, while a forme ban leaves
+   * it draftable and takes away one thing it could have become. Merging them into one array
+   * would make `Charizard banned` and `Charizard-Mega-X banned` indistinguishable by
+   * membership, which is the whole of D-09.
+   *
+   * An ARRAY of ids, never a `Set`, for `bans`'s reason: it is written into
+   * `TournamentConfig.megaFormeBans` at Start and the document must survive
+   * `JSON.stringify` → `JSON.parse` unchanged.
+   */
+  const [megaFormeBans, setMegaFormeBans] = useState<string[]>([]);
+
   const [poolPreset, setPoolPreset] = useState<PoolPreset>('exact');
 
   /**
@@ -557,6 +627,38 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
   );
 
   /**
+   * Every Mega forme on the roster, in display order — the forme grid's rows.
+   *
+   * Derived from the snapshot on every change, never a hardcoded list and never a count
+   * typed here: the grid's total is this array's length, so a regulation that adds a Mega
+   * moves the cells and the count line together. Charizard and Raichu each contribute TWO
+   * rows, which is what per-forme banning means (03-UI-SPEC §A locked decision whose reach
+   * this spec declines) — not a merged two-toggle cell.
+   */
+  const megaFormeRowsList = useMemo(() => megaFormeRows(entries), [entries]);
+
+  /**
+   * Membership by forme id — CLAUDE.md §Identity. Computation-local and never stored.
+   *
+   * The sibling of `bannedIdSet`, and the same three consumers: the idempotence check in
+   * `applyMegaFormeBan`, the grid's pressed state, and (from 03-05) the eligibility count
+   * the RULE-09 gate reads. Never `includes` on a name — that returns Meganium.
+   */
+  const megaFormeBanSet = useMemo(() => new Set(megaFormeBans), [megaFormeBans]);
+
+  /**
+   * The banned formes, name-sorted — the ONE forme-ban derivation on this screen.
+   *
+   * Every forme-ban figure reads THIS array's length, for `bannedEntries`'s reasons: the raw
+   * list can hold an id this regulation no longer carries, and a count that trusted its
+   * length would disagree with the grid the host is looking at.
+   */
+  const bannedFormes = useMemo(
+    () => bannedMegaFormes(entries, megaFormeBans),
+    [entries, megaFormeBans],
+  );
+
+  /**
    * Membership, tested by id — CLAUDE.md §Identity. Computation-local and never stored.
    *
    * One `Set` with three consumers: the idempotence check in `applyBan`, the draw's candidate
@@ -640,6 +742,57 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
   const handleAddBan = useCallback(
     (entry: RosterEntry) => applyBan(entry, true),
     [applyBan],
+  );
+
+  /**
+   * The ONE write path for the Mega-forme banlist. `applyBan`'s shape, keyed on forme ids.
+   *
+   * Idempotent for the same structural reason: two surfaces write one list, so a name typed
+   * after a grid click on the same forme would land twice and every length-based count would
+   * read one too many. The early return also decides the announcement — a repeat selection
+   * changed nothing, so it says nothing.
+   *
+   * The count in the announcement is the roster-intersected figure, never `nextBans.length`.
+   */
+  const applyMegaFormeBan = useCallback(
+    (forme: MegaForme, next: boolean) => {
+      if (megaFormeBanSet.has(forme.id) === next) return;
+
+      const nextBans = next
+        ? [...megaFormeBans, forme.id]
+        : megaFormeBans.filter((id) => id !== forme.id);
+
+      setMegaFormeBans(nextBans);
+      announce(
+        megaFormeBanAnnouncement(
+          forme.name,
+          next,
+          bannedMegaFormes(entries, nextBans).length,
+        ),
+      );
+    },
+    [entries, megaFormeBans, megaFormeBanSet],
+  );
+
+  /**
+   * The same two-surface fan-out over one write path the species banlist already has.
+   *
+   * The grid TOGGLES because a cell is both the ban and the unban control; the typeahead only
+   * ADDS, because there is no such thing as typing a name to unban.
+   */
+  const toggleMegaFormeBan = useCallback(
+    (forme: MegaForme) => applyMegaFormeBan(forme, !megaFormeBanSet.has(forme.id)),
+    [applyMegaFormeBan, megaFormeBanSet],
+  );
+
+  const handleAddMegaFormeBan = useCallback(
+    (forme: MegaForme) => applyMegaFormeBan(forme, true),
+    [applyMegaFormeBan],
+  );
+
+  const handleRemoveMegaFormeBan = useCallback(
+    (forme: MegaForme) => applyMegaFormeBan(forme, false),
+    [applyMegaFormeBan],
   );
 
   /** What the selected preset asks for, before the host overrides it — DRFT-02. */
@@ -775,6 +928,7 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     | { kind: 'rerollOrder' }
     | { kind: 'removePlayer'; id: string; name: string; below: number }
     | { kind: 'clearBans'; count: number }
+    | { kind: 'clearMegaFormeBans'; count: number }
   >({ kind: 'idle' });
 
   const closeConfirm = useCallback(() => setConfirm({ kind: 'idle' }), []);
@@ -810,6 +964,12 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     [banned],
   );
 
+  /** The fifth variant, carrying the resolved forme count for the same reason. */
+  const requestClearMegaFormeBans = useCallback(
+    () => setConfirm({ kind: 'clearMegaFormeBans', count: bannedFormes.length }),
+    [bannedFormes],
+  );
+
   /**
    * One assignment, and everything follows from it.
    *
@@ -822,6 +982,9 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
    * host has just authorised twice.
    */
   const handleClearBans = useCallback(() => setBans([]), []);
+
+  /** One assignment again — the chips, the pressed cells and the count all derive from it. */
+  const handleClearMegaFormeBans = useCallback(() => setMegaFormeBans([]), []);
 
   /** The forme a row is showing. Absent means `Either`, which is the default. */
   const formeFor = useCallback(
@@ -893,7 +1056,10 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       // A fresh array of fresh rules, never one shared with this screen's memo — the same
       // guarantee `[...bans]` above gives. `rules` itself is documented where it is built.
       rules: rules.map((rule) => ({ ...rule })),
-      megaFormeBans: [],
+      // A fresh copy, exactly as `bans` above: the document must not share an array with
+      // this screen's state. 03-01 wrote the empty literal here because no surface produced
+      // the list yet; this plan is that surface.
+      megaFormeBans: [...megaFormeBans],
       // The same `?? 0` construction and the same reasoning as `megasRequiredPerTeam`
       // above: unreachable while `feasibility.blocked` is false, present because the
       // compiler cannot see that, and 0 rather than an invented number.
@@ -937,6 +1103,7 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     banMode,
     megasRequiredPerTeam,
     rules,
+    megaFormeBans,
     schedule,
     dualMegaChoicesForConfig,
     depth,
@@ -1025,10 +1192,17 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
         {/*
           The heading and the rows appear together or not at all. A regulation with no
           dual-Mega species would otherwise leave a heading over nothing.
+
+          The treatment changed here rather than in 03-03, and this is where the group's
+          hierarchy was settled: it was a `--text-label` <p> on the argument that a heading
+          "would be claiming a level the form does not have", which held while `Mega rules`
+          was one field plus a run of rows. The group now holds four sub-sections and
+          03-UI-SPEC §1 lists all four, so the level is real and one of them rendering
+          differently from the other three is the inconsistency a host sees.
         */}
         {dualMegaRows.length > 0 && (
-          <>
-            <p class="config-screen__subheading">{DUAL_MEGA_HEADING}</p>
+          <div class="config-screen__section">
+            <h2 class="config-screen__section-heading">{DUAL_MEGA_HEADING}</h2>
 
             {dualMegaRows.map((entry) => (
               <SegmentedControl
@@ -1043,8 +1217,77 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
                 onChange={(forme) => handleDualMega(entry.id, forme)}
               />
             ))}
-          </>
+          </div>
         )}
+
+        {/*
+          The group's fourth sub-section — RULE-04, 03-UI-SPEC §3. Last in the group because
+          it is the only thing in it that is a whole roster; everything above is a sentence
+          or a short list.
+
+          Its internal order is the `Bans` group's, one level in: the field, the chips,
+          `Clear the Mega-forme banlist`, then the grid. Both surfaces write one list through
+          one path (D-10 again, keyed on `megaFormes[].id` this time).
+        */}
+        <div class="config-screen__section">
+          <h2 class="config-screen__section-heading">{MEGA_BAN_HEADING}</h2>
+          <p class="config-screen__note">{MEGA_BAN_HELPER}</p>
+
+          {/*
+            `candidates` is every forme, not the formes minus the banlist — the `Bans` group's
+            reasoning verbatim: filtering the banned ones out would make
+            `No Mega forme matches "{query}".` false for a forme that plainly does match and
+            is simply already banned, and `applyMegaFormeBan` already makes re-selecting one
+            a no-op.
+          */}
+          <TypeaheadField
+            id="config-mega-forme-ban"
+            label={MEGA_BAN_FIELD_LABEL}
+            placeholder={MEGA_BAN_FIELD_PLACEHOLDER}
+            subject={MEGA_BAN_SUBJECT}
+            candidates={megaFormeRowsList}
+            onSelect={handleAddMegaFormeBan}
+          />
+
+          <BanChipList
+            banned={bannedFormes}
+            onRemove={handleRemoveMegaFormeBan}
+            listName={MEGA_BAN_LIST_NAME}
+          />
+
+          {/* Not rendered while the list is empty, for `Clear the banlist`'s reason. */}
+          {bannedFormes.length > 0 && (
+            <button
+              type="button"
+              class="config-screen__reroll"
+              onClick={requestClearMegaFormeBans}
+            >
+              {CLEAR_MEGA_FORME_BANLIST_CONFIRM.confirmLabel}
+            </button>
+          )}
+
+          {/*
+            The second surface. Every forme renders, the banned ones included, because this
+            grid shows what is being excluded rather than what is left.
+
+            `megaInertReason` is what makes the `Mega capability` control unusable here: every
+            cell in this grid IS a Mega, so the three-way control has nothing to say and a
+            host who reached `Non-Mega` would empty the grid with no explanation. Search and
+            the eighteen type filters stay live and are genuinely useful — `Charizard-Mega-X`
+            is Fire/Dragon where Charizard is Fire/Flying.
+          */}
+          <PoolGrid
+            entries={megaFormeRowsList}
+            spriteMeta={spriteMeta}
+            onPick={toggleMegaFormeBan}
+            bannedIds={megaFormeBanSet}
+            banSubject={MEGA_BAN_COUNT_SUBJECT}
+            // Distinct from the species ban grid's default `pool`, because this screen is
+            // the first to mount two grids at once — see `PoolGrid.idPrefix`.
+            idPrefix="mega-forme-ban"
+            megaInertReason={MEGA_FILTER_INERT_REASON}
+          />
+        </div>
       </fieldset>
 
       {/*
@@ -1259,6 +1502,21 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
           onConfirm={() => {
             closeConfirm();
             handleClearBans();
+          }}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {confirm.kind === 'clearMegaFormeBans' && (
+        <ConfirmDialog
+          heading={CLEAR_MEGA_FORME_BANLIST_CONFIRM.heading}
+          body={CLEAR_MEGA_FORME_BANLIST_CONFIRM.body(confirm.count)}
+          confirmLabel={CLEAR_MEGA_FORME_BANLIST_CONFIRM.confirmLabel}
+          safeLabel={CLEAR_MEGA_FORME_BANLIST_CONFIRM.safeLabel}
+          tone={CLEAR_MEGA_FORME_BANLIST_CONFIRM.tone}
+          onConfirm={() => {
+            handleClearMegaFormeBans();
+            closeConfirm();
           }}
           onSafe={closeConfirm}
         />

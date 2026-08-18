@@ -87,6 +87,15 @@ export interface PoolGridProps<T extends PoolSubject> {
    */
   banSubject?: string;
   /**
+   * Prefix for this grid's own control ids and radio-group names. Defaults to `pool`.
+   *
+   * 03-04 mounts a SECOND grid on the config screen, directly above the species ban grid, so
+   * the fixed literals two of these components used to share are now a duplicate-id bug and
+   * a merged-radio-group bug on one screen. `FilterBar`'s own prop documents both failures.
+   * The default keeps every shipped id exactly as it was; only the new grid passes one.
+   */
+  idPrefix?: string;
+  /**
    * Forwarded to `FilterBar`. `null` leaves the Mega-capability control live.
    *
    * This component is the only mounter of `FilterBar`, so a caller that needs the control
@@ -179,6 +188,7 @@ export function PoolGrid<T extends PoolSubject>({
   onPick,
   bannedIds,
   banSubject,
+  idPrefix = 'pool',
   megaInertReason = null,
 }: PoolGridProps<T>) {
   // Read synchronously on the first render, in a state initializer rather than an
@@ -413,11 +423,13 @@ export function PoolGrid<T extends PoolSubject>({
     PoolGrid whole" means, and it is why the ban grid inherits the three density levels and
     the shared stored preference without a line of its own.
 
-    The control's radio-group name is fixed rather than derived per instance, unlike the
-    dual-Mega rows on the config screen. Two of these are never mounted at once — the ban
-    grid is on the config screen and the pool is on the draft screen — and two that were
-    would merge into one radio group, which is the failure `SegmentedControl`'s required
-    name prop exists to make impossible.
+    The control's radio-group name is derived from `idPrefix` rather than fixed, and that
+    changed in 03-04. It rested on "two of these are never mounted at once — the ban grid is
+    on the config screen and the pool is on the draft screen", which the Mega-forme ban grid
+    falsified: two ARE mounted at once, one above the other, and two segmented controls
+    sharing a name merge into one radio group. That is the exact failure `SegmentedControl`'s
+    required `name` prop exists to make impossible, so the prop is now given a distinct
+    value rather than the same literal twice.
   */
   const body = (
     <>
@@ -445,7 +457,7 @@ export function PoolGrid<T extends PoolSubject>({
 
         <SegmentedControl
           legend="Display density"
-          name="pool-density"
+          name={`${idPrefix}-density`}
           options={DENSITY_OPTIONS}
           value={density}
           onChange={handleDensityChange}
@@ -462,6 +474,7 @@ export function PoolGrid<T extends PoolSubject>({
           value={filters}
           onChange={setFilters}
           density={density}
+          idPrefix={idPrefix}
           megaInertReason={megaInertReason}
         />
       </header>

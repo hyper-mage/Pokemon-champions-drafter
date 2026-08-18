@@ -151,8 +151,25 @@ function mountScreen(): void {
   });
 }
 
+/**
+ * The `Bans` group, and everything inside it.
+ *
+ * Scoped rather than queried across the whole screen because 03-04 added a SECOND ban
+ * surface — the Mega-forme grid, chips and typeahead inside `Mega rules`, which renders
+ * ABOVE this group. An unscoped `.typeahead__input` or `.pool__count` now finds that one
+ * first, and every assertion here is about the species banlist.
+ */
+function bansGroup(): HTMLElement {
+  const group = [...host.querySelectorAll<HTMLElement>('fieldset')].find(
+    (element) => element.querySelector('legend')?.textContent?.trim() === 'Bans',
+  );
+  // Falls back to the whole host for the cases that mount `PoolGrid` directly, where there
+  // is no config screen around it and therefore only ever one grid.
+  return group ?? host;
+}
+
 function cards(): HTMLButtonElement[] {
-  return [...host.querySelectorAll<HTMLButtonElement>('.mon-card')];
+  return [...bansGroup().querySelectorAll<HTMLButtonElement>('.mon-card')];
 }
 
 function cardFor(name: string): HTMLButtonElement {
@@ -162,11 +179,11 @@ function cardFor(name: string): HTMLButtonElement {
 }
 
 function countLine(): string {
-  return host.querySelector('.pool__count')?.textContent ?? '';
+  return bansGroup().querySelector('.pool__count')?.textContent ?? '';
 }
 
 function chips(): HTMLButtonElement[] {
-  return [...host.querySelectorAll<HTMLButtonElement>('.ban-chip')];
+  return [...bansGroup().querySelectorAll<HTMLButtonElement>('.ban-chip')];
 }
 
 function liveRegionText(): string {
@@ -174,7 +191,7 @@ function liveRegionText(): string {
 }
 
 function banField(): HTMLInputElement {
-  const input = host.querySelector<HTMLInputElement>('.typeahead__input');
+  const input = bansGroup().querySelector<HTMLInputElement>('.typeahead__input');
   if (input === null) throw new Error('the ban field is not on the screen');
   return input;
 }
@@ -221,9 +238,9 @@ describe('PoolGrid outside ban mode', () => {
     // toolbar puts `aria-pressed` on eighteen filter buttons inside the same header, and
     // those genuinely ARE toggles — an unscoped query here would report the filter bar
     // working as this component's regression.
-    expect(host.querySelectorAll('.mon-card[aria-pressed]')).toHaveLength(0);
-    expect(host.querySelectorAll('.mon-card--banned')).toHaveLength(0);
-    expect(host.querySelectorAll('.mon-card__name--banned')).toHaveLength(0);
+    expect(bansGroup().querySelectorAll('.mon-card[aria-pressed]')).toHaveLength(0);
+    expect(bansGroup().querySelectorAll('.mon-card--banned')).toHaveLength(0);
+    expect(bansGroup().querySelectorAll('.mon-card__name--banned')).toHaveLength(0);
   });
 
   it('keeps the sprite decorative at every density', () => {
@@ -231,7 +248,7 @@ describe('PoolGrid outside ban mode', () => {
       localStorage.setItem(VIEW_KEY, JSON.stringify({ density, pane: 'split' }));
       mountGrid(null);
 
-      for (const image of host.querySelectorAll('img.mon-card__sprite')) {
+      for (const image of bansGroup().querySelectorAll('img.mon-card__sprite')) {
         expect(image.getAttribute('alt')).toBe('');
       }
 
@@ -245,7 +262,7 @@ describe('PoolGrid in ban mode', () => {
     mountGrid(new Set(['venusaur']));
 
     expect(host.querySelector('section.pool')).toBeNull();
-    expect(host.querySelector('.pool--ban')).not.toBeNull();
+    expect(bansGroup().querySelector('.pool--ban')).not.toBeNull();
     expect(host.querySelector('[aria-labelledby]')).toBeNull();
     expect(host.querySelectorAll('h2')).toHaveLength(0);
     expect(countLine()).toMatch(/^\d+ of \d+ banned$/);
@@ -263,7 +280,7 @@ describe('PoolGrid in ban mode', () => {
     mountGrid(new Set(['venusaur']));
 
     // Scoped for the same reason as the draft-mode assertion above.
-    expect(host.querySelectorAll('.mon-card[aria-pressed]')).toHaveLength(FIXTURE.length);
+    expect(bansGroup().querySelectorAll('.mon-card[aria-pressed]')).toHaveLength(FIXTURE.length);
     expect(cardFor('Venusaur').getAttribute('aria-pressed')).toBe('true');
     expect(cardFor('Snorlax').getAttribute('aria-pressed')).toBe('false');
 
@@ -365,7 +382,9 @@ describe('the ban grid on the config screen', () => {
       minimal?.click();
     });
 
-    expect(host.querySelector('.pool')?.getAttribute('data-density')).toBe('minimal');
+    // Scoped: the Mega-forme grid 03-04 added renders above this one and owns its own
+    // density state, so the first `.pool` on the screen is no longer this grid.
+    expect(bansGroup().querySelector('.pool')?.getAttribute('data-density')).toBe('minimal');
     expect(JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}')).toMatchObject({
       density: 'minimal',
     });

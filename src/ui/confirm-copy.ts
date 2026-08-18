@@ -175,3 +175,32 @@ export const CLEAR_BANLIST_CONFIRM = {
   body: (banCount: number): string =>
     `This clears all ${bans(banCount)} at once. Every banned Pokémon returns to the pool.`,
 };
+
+/**
+ * 8. Clearing the Mega-forme banlist — 03-UI-SPEC §12's second new set.
+ *
+ * The sibling of `CLEAR_BANLIST_CONFIRM` and deliberately not a parameterization of it. The
+ * two clear different lists, and a shared composer taking a noun would put one string in
+ * front of two copy-table rows that the contract states separately — which is how the two
+ * end up drifting in a way no test catches, because the test would be reading the composer.
+ *
+ * `default` toned for the same honest reason: no tournament exists yet, nothing recorded is
+ * lost, and every cleared forme can be banned again from either surface.
+ *
+ * The count is the roster-intersected figure from `bannedMegaFormes`, never the raw array's
+ * length, and it is resolved when the dialog OPENS — the sentence has to state the world it
+ * was opened against. `Mega-forme ban` takes its own plural helper rather than the `bans`
+ * one above, because the two produce different words for the same number.
+ */
+function megaFormeBans(count: number): string {
+  return count === 1 ? '1 Mega-forme ban' : `${count} Mega-forme bans`;
+}
+
+export const CLEAR_MEGA_FORME_BANLIST_CONFIRM = {
+  heading: 'Clear the Mega-forme banlist?',
+  tone: 'default' as const,
+  confirmLabel: 'Clear the Mega-forme banlist',
+  safeLabel: 'Keep the bans',
+  body: (banCount: number): string =>
+    `This clears all ${megaFormeBans(banCount)} at once. Every banned forme becomes legal again.`,
+};

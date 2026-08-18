@@ -50,6 +50,19 @@ export interface FilterBarProps {
    */
   density: Density;
   /**
+   * Prefix for this bar's three ids and two radio-group names.
+   *
+   * Required, and supplied by `PoolGrid` from its own prop, because 03-04 falsified the
+   * assumption the fixed literals rested on: the config screen now mounts TWO grids, the
+   * species ban grid and the Mega-forme ban grid, one above the other. Two elements sharing
+   * a DOM id break `<label for>` — clicking the second bar's label focuses the first bar's
+   * input — and two radio groups sharing a `name` merge, so choosing `Mega-capable` in one
+   * bar would silently unset the other. Both read as rendering glitches rather than as
+   * naming bugs, which is why 02-08 wrote the forward note this implements: one prefix, one
+   * edit, rather than three edits discovered one bug report at a time.
+   */
+  idPrefix: string;
+  /**
    * Why the `Mega capability` control cannot be used here, or `null` when it can.
    *
    * A reason rather than a boolean, so "unavailable with no explanation" is unrepresentable
@@ -104,7 +117,17 @@ const FILTER_TYPES: readonly FilterType[] = Object.keys(TYPE_CODES)
   .map((type) => ({ type, display: typeDisplay(type) }))
   .filter((row): row is FilterType => row.display !== null);
 
-export function FilterBar({ value, onChange, density, megaInertReason }: FilterBarProps) {
+export function FilterBar({
+  value,
+  onChange,
+  density,
+  idPrefix,
+  megaInertReason,
+}: FilterBarProps) {
+  const searchId = `${idPrefix}-search`;
+  const matchAllId = `${idPrefix}-match-all`;
+  const megaName = `${idPrefix}-mega-filter`;
+
   // One row that wraps visually, so no column count is injected: the horizontal rules are
   // the ones that match how the host reads it, and the hook's default collapses Down onto
   // Right and Up onto Left exactly.
@@ -152,23 +175,21 @@ export function FilterBar({ value, onChange, density, megaInertReason }: FilterB
   return (
     <div class="filter-bar">
       {/*
-        A fixed literal id rather than one derived per instance, and the reasoning is
-        02-07's for the density control's fixed radio-group name: two `PoolGrid`s are
-        never mounted at once, because the ban grid is on the config screen and the pool
-        is on the draft screen.
+        Derived from `idPrefix`, which is 02-08's forward note taken up rather than a new
+        idea: it wrote that if two `PoolGrid`s were ever mounted together, this id, the Mega
+        control's `name` and the density control's `name` all become derived from one shared
+        prefix in a single change. 03-04 is when two were, so this is that change.
 
-        The forward note 02-07 did not need: if two ever WERE mounted together, this id,
-        the Mega control's `name` and 02-07's density control `name` all become derived
-        from one shared prefix in a single change — three ids, one edit, not three edits
-        discovered one bug report at a time.
+        The default prefix stays `pool`, so every id this bar shipped with is unchanged on
+        the draft screen and in the species ban grid.
       */}
-      <label class="visually-hidden" for="pool-search">
+      <label class="visually-hidden" for={searchId}>
         Search the pool by name
       </label>
       <input
         class="filter-bar__search"
         type="search"
-        id="pool-search"
+        id={searchId}
         placeholder="Name"
         value={value.query}
         // `input`, not `change`. D-32 says the pool narrows live, and `change` on a
@@ -244,7 +265,7 @@ export function FilterBar({ value, onChange, density, megaInertReason }: FilterB
       <span class="filter-bar__match-all">
         <input
           type="checkbox"
-          id="pool-match-all"
+          id={matchAllId}
           checked={value.matchAll}
           aria-disabled={matchAllInert ? 'true' : undefined}
           onChange={(event) => {
@@ -261,16 +282,15 @@ export function FilterBar({ value, onChange, density, megaInertReason }: FilterB
           class={['filter-bar__match-all-label', matchAllInert ? 'filter-bar__match-all-label--inert' : '']
             .filter((token) => token !== '')
             .join(' ')}
-          for="pool-match-all"
+          for={matchAllId}
         >
           Match all selected types
         </label>
       </span>
 
       {/*
-        The sixth declared instance of 02-03's `SegmentedControl`, and the `name` is fixed
-        for the same reason `pool-search` above is: two `PoolGrid`s are never mounted at
-        once. Same forward note applies — three ids, one change.
+        The sixth declared instance of 02-03's `SegmentedControl`, and its `name` is derived
+        from `idPrefix` for the reason the search id above is.
 
         --- WHY THE INERT STATE IS ARIA-ONLY, AND WHY IT IS ON THE WRAPPER ---
 
@@ -304,7 +324,7 @@ export function FilterBar({ value, onChange, density, megaInertReason }: FilterB
       >
         <SegmentedControl
           legend="Mega capability"
-          name="pool-mega-filter"
+          name={megaName}
           options={MEGA_OPTIONS}
           value={value.mega}
           onChange={(mega) => {

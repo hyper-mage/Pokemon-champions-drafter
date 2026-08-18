@@ -35,28 +35,74 @@ whole point of the test.
 
 ---
 
-## 2. `Dual-Mega species` is still a `--text-label` `<p>`, not a `--text-heading` sub-section
+## 2. ~~`Dual-Mega species` is still a `--text-label` `<p>`~~ — SETTLED in 03-04
 
 **Found during:** 03-03 Task 2
-**Owner:** **03-04** — the plan that adds the third sub-section (`Mega-forme bans`) to the
-same group and therefore has to answer the same question
-**Severity:** visual inconsistency inside one group, not a defect
+**Settled by:** 03-04 Task 3
+**Status:** closed
 
-03-UI-SPEC §1 says sub-sections inside `Mega rules` are `--text-heading` headings separated
-by `--space-5`, and its table lists four of them: `Megas required per team`, `Round
-schedule`, the dual-Mega rows, and `Mega-forme bans`. 03-03 built `Round schedule` to that
-contract (`.config-screen__section` + `.config-screen__section-heading`). `Dual-Mega species`
-predates the contract and is still `.config-screen__subheading` — a `<p>` at `--text-label`,
-with a doc comment arguing that a heading "would be claiming a level the form does not
-have". That argument is superseded by 03-UI-SPEC, but rewriting it is not 03-03's change to
-make: the group gains its fourth sub-section in 03-04, which is the change that decides what
-the group's internal type hierarchy is.
+03-UI-SPEC §1 lists four sub-sections inside `Mega rules` and says they are `--text-heading`
+headings. 03-03 built `Round schedule` to that contract and left `Dual-Mega species` as a
+`--text-label` `<p>` for 03-04 to decide, because 03-04 is the plan that adds the fourth
+sub-section and therefore the change that fixes the group's hierarchy.
 
-**What it is not.** Not a regression — the dual-Mega rows render exactly as they did before
-03-03, and nothing about them changed. The inconsistency is that the group now shows two
-sub-heading treatments.
+**What 03-04 did.** `Dual-Mega species` moved onto `.config-screen__section` /
+`.config-screen__section-heading` as a real `<h2>`, in the same change that added
+`Mega-forme bans` on the same treatment — so all four sub-sections now render identically.
+`.config-screen__subheading` was DELETED from `ConfigScreen.css` rather than left unused,
+and the comment that argued the superseded rule was replaced with a note recording what the
+argument was, why it no longer holds, and what to do if a run of controls ever needs a label
+that is genuinely not a sub-section.
 
-**Suggested fix when 03-04 lands it:** move `Dual-Mega species` onto
-`.config-screen__section` / `.config-screen__section-heading` in the same change that adds
-`Mega-forme bans`, and rewrite `.config-screen__subheading`'s comment (or delete the rule) in
-that change rather than leaving a stylesheet comment that states a superseded rule.
+---
+
+## 3. Two `PoolGrid`s on the config screen keep independent densities
+
+**Found during:** 03-04 Task 3
+**Owner:** unassigned — a consequence of the shipped component design, not of a plan
+**Severity:** cosmetic inconsistency, no data or accessibility impact
+
+`Mega rules` now mounts a `PoolGrid` and `Bans` mounts another, one above the other. Density
+lives on each component's own state, seeded from `champions-drafter:view` at mount (`PoolGrid`
+documents this deliberately: the config screen must not hold a duplicate copy of the pool's
+view state). So changing density in one grid does not move the other, and both write the same
+storage key — whichever was touched last is what both grids adopt on the next mount.
+
+**What 03-04 did fix.** The genuine defects the second mount created: the two grids shared DOM
+ids (`pool-search`, `pool-match-all`, `pool-mega-filter-*`) and radio-group names
+(`pool-density`, `pool-mega-filter`), so `<label for>` bound across grids and the two radio
+groups merged. `PoolGrid.idPrefix` and `FilterBar.idPrefix` close both, which is exactly the
+forward note 02-08 left in `FilterBar` for this day.
+
+**What it is not.** Not the id bug above, which is fixed. Not an accessibility failure — each
+control is correctly labelled and operable within its own grid.
+
+**Suggested fix when someone owns it:** either lift the density preference to a shared signal
+in `src/adapters/view-prefs`, or accept the divergence and say so in `PoolGrid`'s doc block.
+Do not lift the FILTER state — `PoolGrid`'s doc block already argues that one out.
+
+---
+
+## 4. Three roster figures are still written into `src/` comments
+
+**Found during:** 03-04 Task 1 acceptance checks
+**Owner:** unassigned — all three predate this phase
+**Severity:** documentation drift, not a defect
+
+D-17 forbids a roster figure appearing anywhere under `src/`, "including in a comment, because
+it dates the moment the count rotates" (`TypeaheadField.tsx` states the rule). Three comments
+break it:
+
+- `src/core/import-guard.ts:168` — "snapshot holds 76 Mega formes"
+- `src/core/roster/transform.ts:36` — "count from 76 to 74"
+- `src/ui/components/NumericField.tsx:28` — "18 is far below the roster's 74"
+
+03-04 removed the one in its own file (`ConfigScreen.tsx`'s "76 forme bans") because an
+acceptance criterion required it. The other three are in files this plan does not touch and
+were left alone under the scope boundary.
+
+**What it is not.** Not a hardcoded VALUE anywhere — every one of them is prose. No derivation
+in `src/` reads a roster figure from a literal.
+
+**Suggested fix when someone owns it:** reword each to name the derivation instead of the
+number, in whichever plan next edits that file.

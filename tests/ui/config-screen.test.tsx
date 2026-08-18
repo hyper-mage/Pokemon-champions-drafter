@@ -753,7 +753,17 @@ describe('the Mega rules group', () => {
     mount();
 
     expect(host.textContent).not.toContain('Dual-Mega species');
-    expect(host.textContent).not.toContain(' Mega forme');
+
+    // Asserted on the ROWS rather than on a substring of the screen's text. The bare
+    // ` Mega forme` this used to look for is now also a substring of
+    // `Ban a Mega forme by name`, which 03-04 put on this screen and which is unrelated to
+    // the dual-Mega rows — so the substring form would fail on a roster that has neither.
+    expect(host.querySelectorAll('input[name^="dual-mega-"]')).toHaveLength(0);
+
+    const legends = [...host.querySelectorAll('legend')].map(
+      (legend) => legend.textContent?.trim() ?? '',
+    );
+    expect(legends.filter((legend) => legend.endsWith(' Mega forme'))).toEqual([]);
   });
 
   it('keeps the two dual-Mega rows in separate radio groups', () => {

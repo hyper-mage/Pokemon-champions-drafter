@@ -59,7 +59,8 @@
 }
 
 /*
- * A sub-section inside a group — currently only `Round schedule`, inside `Mega rules`.
+ * A sub-section inside a group — `Round schedule`, `Dual-Mega species` and
+ * `Mega-forme bans`, all three inside `Mega rules`.
  *
  * 03-UI-SPEC §1: sub-sections carry a --text-heading heading and sit --space-5 apart, "the
  * same gap the form already uses between groups, one level in". The margin here is
@@ -87,16 +88,20 @@
 }
 
 /*
- * A label for a run of controls inside a group — currently only `Dual-Mega species`.
+ * `.config-screen__subheading` USED TO LIVE HERE and is deliberately gone rather than left
+ * unused, because a rule with no markup is a rule the next reader wires something to.
  *
- * A <p> rather than a heading or a nested <legend>: each row below it already carries a
- * self-describing legend (`Charizard Mega forme`), so this is a visual grouping aid and
- * announcing it as structure would be claiming a level the form does not have.
+ * It styled `Dual-Mega species` as a --text-label <p>, on the argument that each row below
+ * it already carries a self-describing legend (`Charizard Mega forme`) so announcing the
+ * label as structure "would be claiming a level the form does not have". That argument held
+ * while `Mega rules` was one field plus a run of rows. 03-UI-SPEC §1 then listed four
+ * sub-sections for that group and 03-04 built the fourth, at which point the level is one
+ * the form genuinely has and the only thing the second treatment communicated was that two
+ * things at one level look different. All four now use `.config-screen__section` above.
+ *
+ * If a run of controls inside a group ever needs a label that is NOT a sub-section, add the
+ * rule back with the case that justifies it — do not reach for a heading to get the spacing.
  */
-.config-screen__subheading {
-  margin: 0;
-  font: var(--text-label);
-}
 
 /*
  * The draw readout. At --text-body rather than --text-label (02-UI-SPEC §2): it is the
