@@ -32,10 +32,15 @@ import { fold } from '../../src/core/reduce';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import {
   selectAvailablePool,
+  selectCardPlayOrder,
+  selectCardsPlayedThisRound,
+  selectCurrentRound,
   selectCurrentTurn,
+  selectHand,
   selectIsComplete,
   selectPickCount,
   selectPlayerName,
+  selectResolvedOrder,
   selectRoundEligibleIds,
   selectRoundKind,
   selectSchedule,
@@ -739,5 +744,51 @@ describe('selectSlotStone', () => {
 
     expect(selectSlotStone(state, ENTRIES, 'p1', 0)).toBeNull();
     expect(selectSlotStone(state, ENTRIES, 'p1', 1)).toBe(formeOf('garchomp', 'Mega').requiredItem);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The card selectors, over this file's two-player fixture — CARD-01, CARD-03, CARD-06
+// ---------------------------------------------------------------------------
+
+describe('the card selectors on a document that has dealt none', () => {
+  it('starts the fold with an empty card log and no resolved orders', () => {
+    const fresh = initialState(CONFIG);
+
+    expect(fresh.cardsPlayed).toEqual([]);
+    expect(fresh.resolvedOrders).toEqual([]);
+  });
+
+  it('hands every player a full hand, one card per configured round', () => {
+    const state = stateAfter(0);
+
+    expect(selectHand(state, 'p1')).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(selectHand(state, 'p2')).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('reads the card-play order off the recorded starting order', () => {
+    const state = stateAfter(0);
+
+    expect(selectCardPlayOrder(state, 1)).toEqual(state.order);
+    expect(selectCardPlayOrder(state, 2)).toEqual([...state.order].reverse());
+  });
+
+  it('tracks the round the draft is standing in as the picks land', () => {
+    // The same arithmetic `selectCurrentTurn` runs, exposed on its own so the card phase
+    // can ask for the round without asking whose turn it is.
+    expect(selectCurrentRound(stateAfter(0))).toBe(1);
+    expect(selectCurrentRound(stateAfter(1))).toBe(1);
+    expect(selectCurrentRound(stateAfter(2))).toBe(2);
+    expect(selectCurrentRound(stateAfter(11))).toBe(6);
+    expect(selectCurrentRound(stateAfter(12))).toBe(6);
+  });
+
+  it('reports no plays and no resolved order for any round', () => {
+    const state = stateAfter(4);
+
+    for (let round = 1; round <= CONFIG.rounds; round++) {
+      expect(selectCardsPlayedThisRound(state, round), `round ${round}`).toEqual([]);
+      expect(selectResolvedOrder(state, round), `round ${round}`).toBeNull();
+    }
   });
 });
