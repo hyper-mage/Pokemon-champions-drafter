@@ -32,3 +32,31 @@ should paper over by widening a Phase 2 assertion.
 set `testTimeout` in `vite.config.ts`'s `test` block. Do not reduce the ban count — 187/188 is
 the measured worst-case boundary from `02-RESEARCH §Worst-case ban starvation` and is the
 whole point of the test.
+
+---
+
+## 2. `Dual-Mega species` is still a `--text-label` `<p>`, not a `--text-heading` sub-section
+
+**Found during:** 03-03 Task 2
+**Owner:** **03-04** — the plan that adds the third sub-section (`Mega-forme bans`) to the
+same group and therefore has to answer the same question
+**Severity:** visual inconsistency inside one group, not a defect
+
+03-UI-SPEC §1 says sub-sections inside `Mega rules` are `--text-heading` headings separated
+by `--space-5`, and its table lists four of them: `Megas required per team`, `Round
+schedule`, the dual-Mega rows, and `Mega-forme bans`. 03-03 built `Round schedule` to that
+contract (`.config-screen__section` + `.config-screen__section-heading`). `Dual-Mega species`
+predates the contract and is still `.config-screen__subheading` — a `<p>` at `--text-label`,
+with a doc comment arguing that a heading "would be claiming a level the form does not
+have". That argument is superseded by 03-UI-SPEC, but rewriting it is not 03-03's change to
+make: the group gains its fourth sub-section in 03-04, which is the change that decides what
+the group's internal type hierarchy is.
+
+**What it is not.** Not a regression — the dual-Mega rows render exactly as they did before
+03-03, and nothing about them changed. The inconsistency is that the group now shows two
+sub-heading treatments.
+
+**Suggested fix when 03-04 lands it:** move `Dual-Mega species` onto
+`.config-screen__section` / `.config-screen__section-heading` in the same change that adds
+`Mega-forme bans`, and rewrite `.config-screen__subheading`'s comment (or delete the rule) in
+that change rather than leaving a stylesheet comment that states a superseded rule.

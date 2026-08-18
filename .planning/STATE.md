@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-02 — the compiled schedule, in the log and on the board
-last_updated: "2026-08-18T03:29:15.738Z"
-last_activity: 2026-08-18 -- Phase 03 plan 02 complete
+stopped_at: Completed 03-03 — the schedule preview and its reorder
+last_updated: "2026-08-18T03:53:49.355Z"
+last_activity: 2026-08-18 -- Phase 03 plan 03 complete
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 36
-  completed_plans: 26
-  percent: 72
+  completed_plans: 27
+  percent: 75
 ---
 
 # Project State
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-08-03)
 ## Current Position
 
 Phase: 03 (compiled-rules-priority-cards-swaps) — EXECUTING
-Plan: 3 of 12
+Plan: 4 of 12
 Plans: 8 of 8 written, 6 waves
-Status: Executing Phase 03 — 03-02 complete, 03-03 next
-Last activity: 2026-08-18 -- Phase 03 plan 02 complete
+Status: Executing Phase 03 — 03-03 complete, 03-04 next
+Last activity: 2026-08-18 -- Phase 03 plan 03 complete
 
-Progress: [███████░░░] 72%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [███████░░░] 72%
 
 *Updated after each plan completion*
 | Phase 03 P02 | 28min | 3 tasks | 18 files |
+| Phase 03 P03 | 14min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,9 @@ Recent decisions affecting current work:
 - [Phase 03]: compile() clamps for layout only and never repairs the config — the feasibility gate stays the only authority on satisfiability
 - [Phase 03]: The schedule is materialized into the log because it carries a host reorder compile() cannot reproduce — origination is guarded by canApply, replay deliberately is not
 - [Phase 03]: Reserved chrome is one element with a modifier class — an open round renders the same marker span with no text, so reordering never shifts the board grid
+- [Phase 03]: The reorder is discarded by the Megas-required input handler, compared on the parsed value — one authority, and 2 to 3 to 2 genuinely discards
+- [Phase 03]: A rule line whose condition can never be false renders unconditionally, with the reasoning recorded where the branch would have gone
+- [Phase 03]: A schedule move swaps kinds between fixed round numbers and re-indexes, so the ordinal stays the row identity
 
 ### Pending Todos
 
@@ -117,7 +121,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-18T03:28:50.907Z
+Last session: 2026-08-18T03:53:11.835Z
 Stopped at: Completed 03-02 — the compiled schedule, in the log and on the board
 Resume file: None
 
