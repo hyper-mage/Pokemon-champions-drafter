@@ -26,6 +26,21 @@
  * above rules out, and the trade — a slightly biased pool the group can re-roll, versus a
  * frozen browser — is not close.
  *
+ * ## The quota is drawn from ELIGIBLE species, not from Mega-capable ones
+ *
+ * Stage 1 partitions on membership in `megaEligibleIds`, and that predicate is load-bearing
+ * rather than incidental — 03-RESEARCH files it as Pitfall 7. Partitioning on
+ * the `megaCapable` FLAG lets the quota be filled entirely with species whose every Mega forme
+ * is banned (D-09) or excluded by the host's X/Y pin (D-10). The resulting pool passes every
+ * feasibility check, records a healthy `megaCapableCount`, and then opens a Mega round with
+ * nothing in it — and the rules compiler deliberately removed the runtime validator that
+ * would have caught that, so nothing downstream is watching. Do not simplify the predicate
+ * back to the flag.
+ *
+ * The RULE-09 gate measures the same eligibility over the CANDIDATE set, and stage 2 here
+ * carries the count into the pool by construction. Between them there is no configuration
+ * this build accepts that can starve a Mega round.
+ *
  * ## On the cursor
  *
  * `drawPool` returns the advanced cursor so a caller that draws twice cannot silently reuse
@@ -47,6 +62,15 @@ export interface DrawInput {
   size: number;
   /** `players × megasRequiredPerTeam`. 0 means unconstrained. */
   megasRequired: number;
+  /**
+   * Ids among `candidates` that still have a legal Mega forme — D-09/D-10.
+   *
+   * The quota is drawn from THESE, never from the `megaCapable` FLAG, or a Mega round can
+   * starve. Required rather than optional for the same reason `candidates` is: a default
+   * would let a caller omit the one argument that makes the guarantee true and get the old
+   * behaviour back with nothing to read in the diff.
+   */
+  megaEligibleIds: readonly string[];
   seed: number;
   /** Where in the seed's stream to start. 0 for a fresh roll. */
   cursor?: number;
@@ -58,10 +82,19 @@ export interface DrawResult {
   /**
    * Mega-capable entries actually drawn — counted from the chosen set, not echoed from
    * `megasRequired`. It is normally larger, because stage 3 draws from a set that still
-   * holds unused Mega-capable entries. This is D-09's recorded figure: Phase 3's RULE-09
-   * gate reads it rather than recomputing against a roster that may since have rotated.
+   * holds unused Mega-capable entries.
+   *
+   * This counts the `megaCapable` FLAG and is the figure `pool/built` records. Nothing reads
+   * it as the RULE-09 gate's input any more: D-11 calls it the pre-ban upper bound and the
+   * post-rotation cross-check, because it was measured before Mega-forme bans existed and a
+   * document that recorded only it could not be re-judged against a rotated roster.
    */
   megaCapableCount: number;
+  /**
+   * Drawn ids that are in `megaEligibleIds` — the count that actually answers "can the Mega
+   * rounds be filled from this pool". At least `megasRequired` by construction of stage 2.
+   */
+  megaEligibleCount: number;
   /** The advanced cursor, so a caller that draws twice cannot reuse the stream. */
   cursor: number;
 }
@@ -110,17 +143,21 @@ export function drawPool(input: DrawInput): DrawResult {
   let cursor = input.cursor ?? 0;
 
   // Stage 1 — partition, preserving the input's display order inside each part.
-  const megaCapable = candidates.filter((entry) => entry.megaCapable);
-  const rest = candidates.filter((entry) => !entry.megaCapable);
+  //
+  // On ELIGIBILITY, never on the `megaCapable` FLAG — see the doc block's Pitfall 7 paragraph.
+  // The `Set` is computation-local and never returned or stored (CLAUDE.md §Serializability).
+  const eligible = new Set(input.megaEligibleIds);
+  const megaEligible = candidates.filter((entry) => eligible.has(entry.id));
+  const rest = candidates.filter((entry) => !eligible.has(entry.id));
 
   // Stage 2 — the Mega quota, from a copy so the caller's ordering is untouched. Skipped
   // entirely when `megasRequired` is 0, which makes the default path a plain uniform draw.
-  const quota = selectInPlace([...megaCapable], megasRequired, seed, cursor);
+  const quota = selectInPlace([...megaEligible], megasRequired, seed, cursor);
   cursor = quota.cursor;
 
   // Stage 3 — the remainder, from everything stage 2 did not take.
   const chosen = new Set(quota.taken.map((entry) => entry.id));
-  const remainder = [...megaCapable.filter((entry) => !chosen.has(entry.id)), ...rest];
+  const remainder = [...megaEligible.filter((entry) => !chosen.has(entry.id)), ...rest];
   const fill = selectInPlace(remainder, size - megasRequired, seed, cursor);
   cursor = fill.cursor;
 
@@ -137,5 +174,7 @@ export function drawPool(input: DrawInput): DrawResult {
     (entry) => entry.megaCapable && chosen.has(entry.id),
   ).length;
 
-  return { ids, megaCapableCount, cursor };
+  const megaEligibleCount = ids.filter((id) => eligible.has(id)).length;
+
+  return { ids, megaCapableCount, megaEligibleCount, cursor };
 }

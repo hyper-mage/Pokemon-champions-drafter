@@ -87,6 +87,17 @@ const MEGA_CAPABLE_IDS = new Set(
 );
 
 /**
+ * What the screen hands `drawPool` as `megaEligibleIds` while nothing is banned.
+ *
+ * Read off the formes rather than off the flag, because that is the question the screen
+ * asks — and with no forme bans and no X/Y pin the two answers coincide, which is why the
+ * expected draws below are unchanged from before 03-05.
+ */
+const MEGA_ELIGIBLE_IDS: readonly string[] = ENTRIES.filter(
+  (entry) => entry.megaFormes.length > 0,
+).map((entry) => entry.id);
+
+/**
  * The ban grid needs a sprite inventory — 02-07 added it to the screen's props.
  *
  * Left empty on purpose: an id absent from the map resolves to the committed placeholder,
@@ -452,6 +463,7 @@ describe('the draw readout', () => {
       candidates: ENTRIES,
       size: 48,
       megasRequired: 0,
+      megaEligibleIds: MEGA_ELIGIBLE_IDS,
       seed: POOL_SEED,
     });
 
@@ -481,12 +493,14 @@ describe('Re-roll pool', () => {
       candidates: ENTRIES,
       size: 48,
       megasRequired: 0,
+      megaEligibleIds: MEGA_ELIGIBLE_IDS,
       seed: POOL_SEED,
     });
     const after = drawPool({
       candidates: ENTRIES,
       size: 48,
       megasRequired: 0,
+      megaEligibleIds: MEGA_ELIGIBLE_IDS,
       seed: REROLL_SEED,
     });
     // The premise, asserted rather than assumed.

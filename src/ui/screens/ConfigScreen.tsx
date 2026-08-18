@@ -10,7 +10,7 @@ import {
   poolSizeForPreset,
   type PoolPreset,
 } from '../../core/feasibility';
-import { bannedMegaFormes, megaFormeRows } from '../../core/mega';
+import { bannedMegaFormes, choiceFor, isMegaEligible, megaFormeRows } from '../../core/mega';
 import type { RoundSpec } from '../../core/actions';
 import type {
   BanMode,
@@ -884,15 +884,31 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     // each on an Exact pool the probability a uniform 48-draw satisfies the constraint is
     // 1.56 × 10^-8, about sixty-four million expected redraws, and that configuration
     // passes every feasibility blocker. Do not replace this with a retry loop.
+    //
+    // Measured over the CANDIDATE set — entries minus species bans — and not over
+    // `draw.ids`. D-11's wording asks for pool entries that can still Mega, and this is the
+    // only place that question is answerable: the guard above makes the draw `null` whenever
+    // the gate has anything to say, so the gate can never read the pool. `drawPool`'s stage 2
+    // then takes the quota from THIS list, which carries the count into the pool by
+    // construction. Do not try to measure `draw.ids` instead — it does not exist yet.
+    const megaEligibleIds = drawCandidates
+      .filter((entry) =>
+        isMegaEligible(entry, megaFormeBanSet, choiceFor(dualMegaChoices, entry.id)),
+      )
+      .map((entry) => entry.id);
+
     return drawPool({
       candidates: drawCandidates,
       size: poolSize,
       megasRequired: players.length * (megasRequiredPerTeam ?? 0),
+      megaEligibleIds,
       seed: poolSeed,
     });
   }, [
     feasibility.blocked,
     drawCandidates,
+    megaFormeBanSet,
+    dualMegaChoices,
     poolSize,
     players.length,
     megasRequiredPerTeam,
