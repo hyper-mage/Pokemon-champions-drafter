@@ -206,7 +206,14 @@ function selected(filters: PoolFilters): string[] {
 
 describe('NO_FILTERS', () => {
   it('is the neutral value on every field', () => {
-    expect(NO_FILTERS).toEqual({ query: '', types: [], matchAll: false, mega: 'all' });
+    expect(NO_FILTERS).toEqual({
+      query: '',
+      types: [],
+      matchAll: false,
+      mega: 'all',
+      // `null` and not an empty set — an empty set is a restriction admitting nothing.
+      restrictTo: null,
+    });
   });
 
   it('selects the whole roster', () => {
@@ -223,22 +230,33 @@ describe('compileFilters', () => {
     expect(filters.query).toBe('Mr. Rime');
   });
 
-  it('copies the other three fields through untouched', () => {
+  it('copies the other four fields through untouched', () => {
+    const restrictTo = new Set(['rotomwash']);
     const filters: PoolFilters = {
       query: 'rotom',
       types: ['Water', 'Electric'],
       matchAll: true,
       mega: 'nonMega',
+      restrictTo,
     };
     const compiled = compileFilters(filters);
 
     expect(compiled.types).toEqual(['Water', 'Electric']);
     expect(compiled.matchAll).toBe(true);
     expect(compiled.mega).toBe('nonMega');
+    // The same set, not a copy of it: there is nothing about a set of ids to normalize,
+    // and rebuilding it per keystroke would be work with no answer to show for it.
+    expect(compiled.restrictTo).toBe(restrictTo);
   });
 
   it('mutates neither its argument nor NO_FILTERS', () => {
-    const filters: PoolFilters = { query: 'Mr. Rime', types: ['Water'], matchAll: true, mega: 'mega' };
+    const filters: PoolFilters = {
+      query: 'Mr. Rime',
+      types: ['Water'],
+      matchAll: true,
+      mega: 'mega',
+      restrictTo: null,
+    };
     const before = JSON.stringify(filters);
     const neutralBefore = JSON.stringify(NO_FILTERS);
 
@@ -332,6 +350,117 @@ describe('hasActiveFilters', () => {
   it('ignores matchAll on its own, because on its own it is unobservable', () => {
     expect(hasActiveFilters({ ...NO_FILTERS, matchAll: true })).toBe(false);
     expect(selected({ ...NO_FILTERS, matchAll: true })).toHaveLength(ENTRIES.length);
+  });
+
+  /**
+   * The second deliberate omission, and the one with teeth.
+   *
+   * `restrictTo` is not a control the host owns — it is the compiled schedule's rule. If
+   * `hasActiveFilters` counted it, `Clear filters` would appear during every Mega round
+   * offering to switch that rule off, and D-35's clear-on-pick would widen the offer on
+   * every single pick. Either one produces a team that violates the composition rule this
+   * phase exists to enforce, with no post-pick validator left to catch it.
+   */
+  it('ignores restrictTo, because a rule is not a filter the host can clear (RULE-03)', () => {
+    const restricted = { ...NO_FILTERS, restrictTo: new Set(['charizard']) };
+
+    expect(hasActiveFilters(restricted)).toBe(false);
+    // And it is genuinely in force while being uncounted — the two facts together are the
+    // whole point, since either alone would be satisfied by a field nothing reads.
+    expect(selected(restricted)).toEqual(['Charizard']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The round's own restriction — RULE-03, and the seam matchesFilters documents
+// ---------------------------------------------------------------------------
+
+describe('the round restriction', () => {
+  /*
+   * Ids the CURRENT ROUND allows, composed as a separate clause rather than folded into
+   * `MegaFilterMode`. `selectRoundEligibleIds` supplies the set in production; here it is
+   * written out, because what is under test is the composition and not the eligibility.
+   */
+
+  it('changes nothing when it is null', () => {
+    expect(selected({ ...NO_FILTERS, restrictTo: null })).toHaveLength(ENTRIES.length);
+  });
+
+  it('excludes an entry outside the set whatever every other filter says', () => {
+    const charizard = entry('charizard');
+    const restrictTo = new Set(['venusaur']);
+
+    // Every other clause passes Charizard: its name matches, it carries the type, and it
+    // can Mega. The restriction alone is what refuses it.
+    const compiled = compileFilters({
+      query: 'charizard',
+      types: charizard.types,
+      matchAll: true,
+      mega: 'mega',
+      restrictTo,
+    });
+
+    expect(matchesFilters(charizard, compiled)).toBe(false);
+    expect(matchesFilters(entry('venusaur'), compileFilters({ ...NO_FILTERS, restrictTo }))).toBe(
+      true,
+    );
+  });
+
+  it('composes with the search rather than replacing it', () => {
+    /*
+     * The worked case the round restriction exists for: a query that matches on both sides
+     * of the restriction, so an implementation that dropped either clause fails here.
+     *
+     * `gar` matches five species on the committed snapshot and only three of them can
+     * Mega. Both lists are derived from the snapshot rather than typed out — the roster
+     * rotates roughly every 2.5 months and a hardcoded list would date this file.
+     */
+    const megaOnly = new Set(
+      ENTRIES.filter((candidate) => candidate.megaCapable).map((candidate) => candidate.id),
+    );
+
+    const unrestricted = selected({ ...NO_FILTERS, query: 'gar' });
+    const restricted = selected({ ...NO_FILTERS, query: 'gar', restrictTo: megaOnly });
+
+    expect(restricted.length).toBeGreaterThan(0);
+    expect(restricted.length).toBeLessThan(unrestricted.length);
+    expect(restricted).toEqual(
+      unrestricted.filter((name) =>
+        ENTRIES.some((candidate) => candidate.name === name && candidate.megaCapable),
+      ),
+    );
+    // Naming one survivor and one casualty, so the assertion above cannot pass vacuously.
+    expect(restricted).toContain('Garchomp');
+    expect(unrestricted).toContain('Garbodor');
+    expect(restricted).not.toContain('Garbodor');
+  });
+
+  it('composes with the type filters', () => {
+    const restrictTo = new Set(['charizard', 'blastoise', 'venusaur']);
+
+    expect(selected({ ...NO_FILTERS, types: ['Water'], restrictTo })).toEqual(['Blastoise']);
+    expect(selected({ ...NO_FILTERS, types: ['Fire'], restrictTo })).toEqual(['Charizard']);
+  });
+
+  it('admits nothing when the set is empty, and that is not the same as null', () => {
+    // The empty-offer case 03-UI-SPEC gives its own empty state. It is reachable only from
+    // an imported document, and it renders an explanation rather than a widened pool.
+    expect(selected({ ...NO_FILTERS, restrictTo: new Set() })).toEqual([]);
+  });
+
+  it('ignores an id the roster does not carry rather than inventing a row for it', () => {
+    expect(selected({ ...NO_FILTERS, restrictTo: new Set(['venusaur', 'missingno']) })).toEqual([
+      'Venusaur',
+    ]);
+  });
+
+  it('keeps MegaFilterMode at exactly three members', () => {
+    // The restriction is a separate clause, never a fourth radio. A `MegaFilterMode` that
+    // grew one would put a rule the schedule imposes into a control the host operates.
+    const modes: MegaFilterMode[] = ['all', 'mega', 'nonMega'];
+    for (const mode of modes) {
+      expect(selected({ ...NO_FILTERS, mega: mode }).length).toBeGreaterThan(0);
+    }
   });
 });
 

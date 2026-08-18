@@ -38,6 +38,15 @@
  * WIDENING, not a branch: no function below asks which of the two it was handed.
  */
 export interface FilterableEntry {
+  /**
+   * THE identity key, and the only thing the round-restriction clause compares.
+   *
+   * Read by `matchesFilters` and by nothing else here — the three predicates above it match
+   * on `name`, `types` and `megaCapable`. It is on this interface rather than bolted onto
+   * one signature because CLAUDE.md §Identity admits no exception: set membership is by
+   * `id`, never by a display name, and both subjects carry one.
+   */
+  id: string;
   /** The display string the host reads and searches against. */
   name: string;
   types: readonly string[];
@@ -151,6 +160,19 @@ export interface PoolFilters {
   /** True = every selected type must be present (D-33's AND). False = any (the default). */
   matchAll: boolean;
   mega: MegaFilterMode;
+  /**
+   * Ids the CURRENT ROUND allows, or `null` for no restriction — RULE-03.
+   *
+   * A rule the compiled schedule imposes, not a preference the host expresses. That is the
+   * whole distinction, and three things follow from it: it has no widget in `FilterBar`,
+   * `hasActiveFilters` never counts it, and `Clear filters` therefore cannot reach it. A
+   * host must not be able to switch a rule off from a toolbar.
+   *
+   * A `Set` is safe here where it would not be on the document, because `PoolFilters` is
+   * ephemeral VIEW state by the block above: never persisted, never logged, never exported
+   * (D-35). Nothing in this field ever meets `JSON.stringify`.
+   */
+  restrictTo: ReadonlySet<string> | null;
 }
 
 /** `PoolFilters` with the query normalized. Built once per change, not once per entry. */
@@ -159,6 +181,8 @@ export interface CompiledPoolFilters {
   readonly types: readonly string[];
   readonly matchAll: boolean;
   readonly mega: MegaFilterMode;
+  /** Carried through unchanged — there is nothing about a set of ids to normalize. */
+  readonly restrictTo: ReadonlySet<string> | null;
 }
 
 /**
@@ -174,6 +198,9 @@ export const NO_FILTERS: PoolFilters = {
   types: [],
   matchAll: false,
   mega: 'all',
+  // `null` and never an empty set. An empty set is a restriction admitting nothing, which
+  // would empty the pool on every screen that resets to this constant.
+  restrictTo: null,
 };
 
 /**
@@ -190,30 +217,38 @@ export function compileFilters(filters: PoolFilters): CompiledPoolFilters {
     types: filters.types,
     matchAll: filters.matchAll,
     mega: filters.mega,
+    restrictTo: filters.restrictTo,
   };
 }
 
 /**
- * The one composed predicate: name AND types AND Mega.
+ * The one composed predicate: the round's restriction AND name AND types AND Mega.
  *
- * It holds no matching logic of its own. Three calls to the three predicates above, ANDed
- * — which is what keeps the pool filter and the ban typeahead the same matcher rather
- * than two that agree today.
+ * It holds no matching logic of its own. One set membership plus three calls to the three
+ * predicates above, ANDed — which is what keeps the pool filter and the ban typeahead the
+ * same matcher rather than two that agree today.
  *
- * ## The Phase 3 seam, written down so it is inherited rather than redesigned
+ * ## The Phase 3 seam, taken up in 03-06 rather than redesigned
  *
- * A round's own pool restriction joins HERE. It adds one field to `PoolFilters` and
- * `CompiledPoolFilters` and one clause to this function, and it changes no UI file —
- * because a round restriction is a rule the compiled schedule imposes, not a preference
- * the host is expressing, so it gets no widget in `FilterBar`. A host must not be able to
- * switch a rule off from a toolbar.
+ * A round's own pool restriction joins HERE, and this is the shape 02-01 specified for it:
+ * one field on `PoolFilters` and `CompiledPoolFilters` and one clause in this function.
+ * The clause is FIRST because it is the one thing here that is not the host's to change —
+ * a rule the compiled schedule imposes, read before any preference the host is expressing.
+ * It gets no widget in `FilterBar`, and `hasActiveFilters` below excludes it, so a host
+ * cannot switch a rule off from a toolbar.
  *
- * `MegaFilterMode` does NOT gain a fourth member to carry it. That decision is 02-01's
- * and is recorded in `matchesMega`'s own doc block above; folding a schedule's constraint
- * into the host's control is exactly the collapse it rejects.
+ * `MegaFilterMode` did NOT gain a fourth member to carry it. That decision is 02-01's and
+ * is recorded in `matchesMega`'s own doc block above; folding a schedule's constraint into
+ * the host's control is exactly the collapse it rejects.
+ *
+ * The restriction is composed rather than applied by the caller narrowing its own array,
+ * and the count line is why: 03-UI-SPEC §9 requires `{n} of {total} available` during a
+ * Mega round, where `{total}` is the whole leftover pool. A caller that had already
+ * dropped the ineligible entries would have no `{total}` left to name.
  */
 export function matchesFilters(entry: FilterableEntry, compiled: CompiledPoolFilters): boolean {
   return (
+    (compiled.restrictTo === null || compiled.restrictTo.has(entry.id)) &&
     matchesName(entry, compiled.key) &&
     matchesTypes(entry, compiled.types, compiled.matchAll) &&
     matchesMega(entry, compiled.mega)
@@ -231,6 +266,12 @@ export function matchesFilters(entry: FilterableEntry, compiled: CompiledPoolFil
  * own is unobservable — and calling it "active" would put a `Clear filters` button on
  * screen that visibly clears nothing. Its own test pins the omission so nobody restores
  * it as a fix.
+ *
+ * `restrictTo` is absent for a different and stronger reason: it is not a control. A
+ * `Clear filters` button that cleared a round's restriction would be offering to switch
+ * off a rule, and D-35's clear-on-pick would widen the offer every time somebody drafted —
+ * which is the post-pick validator this phase exists to remove, arriving as a convenience.
+ * Pinned by its own test for the same reason `matchAll`'s omission is.
  */
 export function hasActiveFilters(filters: PoolFilters): boolean {
   return filters.query !== '' || filters.types.length > 0 || filters.mega !== 'all';

@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import committedSnapshot from '../../public/data/roster.mb.json';
 import {
   draftStarted,
   pickMade,
@@ -28,15 +29,18 @@ import {
   type TournamentDoc,
 } from '../../src/core/model';
 import { fold } from '../../src/core/reduce';
+import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import {
   selectAvailablePool,
   selectCurrentTurn,
   selectIsComplete,
   selectPickCount,
   selectPlayerName,
+  selectRoundEligibleIds,
   selectRoundKind,
   selectSchedule,
   selectSlotKind,
+  selectSlotStone,
   selectTeams,
 } from '../../src/core/selectors';
 
@@ -469,5 +473,271 @@ describe('scaling past two players', () => {
       playerId: 'p1',
       pickIndex: 8,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The round's own offer, and the slot that decides the export — RULE-03, D-04
+// ---------------------------------------------------------------------------
+
+/*
+ * These two selectors take the roster as an ARGUMENT. `DraftState` holds no roster and
+ * must not gain one — the fold is a cache of the log (`model.ts:11-13`), and 235 entries
+ * in it would contradict that and the serializability posture besides. The precedent is
+ * `checkFeasibility(input.entries)` and `bannedEntries(entries, bans)`.
+ *
+ * Real ids and real FORME ids from the committed snapshot, never strings typed here: the
+ * stone names are the ones that reach a paste the host hands to a third-party site, so a
+ * literal in this file would be asserting the test's spelling rather than the roster's.
+ */
+
+const SNAPSHOT = committedSnapshot as unknown as RosterSnapshot;
+const ENTRIES: readonly RosterEntry[] = SNAPSHOT.entries;
+
+function rosterEntry(id: string): RosterEntry {
+  const found = ENTRIES.find((candidate) => candidate.id === id);
+  expect(found, `expected ${id} in the committed snapshot`).toBeDefined();
+  return found as RosterEntry;
+}
+
+/** A forme looked up by its `forme` FIELD, never by taking a name apart. */
+function formeOf(speciesId: string, forme: string) {
+  const found = rosterEntry(speciesId).megaFormes.find((candidate) => candidate.forme === forme);
+  expect(found, `expected ${speciesId} to carry a ${forme} forme`).toBeDefined();
+  return found as NonNullable<typeof found>;
+}
+
+interface PlacedPick {
+  playerId: string;
+  monId: string;
+  round: number;
+}
+
+/**
+ * A started draft over an arbitrary config, with a schedule and the given picks.
+ *
+ * The schedule is spread onto the folded state rather than dispatched, following
+ * `stateWithSchedule` above: what is under test here is what the selectors do with a
+ * schedule, and `schedule/compiled`'s own round trip is `reduce.test.ts`'s subject.
+ */
+function stateWith(
+  config: TournamentConfig,
+  kinds: readonly RoundKind[],
+  picks: readonly PlacedPick[],
+): DraftState {
+  const log: Action[] = [
+    stamp(poolBuilt(POOL, config.rosterVersion, config.rosterChecksum, 7, 0), 0),
+    stamp(draftStarted(ORDER, 9), 1),
+  ];
+
+  picks.forEach((pick, pickIndex) => {
+    log.push(stamp(pickMade({ ...pick, pickIndex }), log.length));
+  });
+
+  const folded = fold({ ...makeDoc(log), config });
+  return { ...folded, schedule: kinds.map((kind, position) => ({ index: position + 1, kind })) };
+}
+
+const ALL_OPEN: readonly RoundKind[] = ['open', 'open', 'open', 'open', 'open', 'open'];
+const MEGA_FIRST: readonly RoundKind[] = ['mega', 'mega', 'open', 'open', 'open', 'open'];
+
+/** Pool ids whose species carries at least one Mega forme, in pool order. */
+const POOL_MEGA_CAPABLE = POOL.filter((id) => rosterEntry(id).megaFormes.length > 0);
+
+describe('selectRoundEligibleIds', () => {
+  it('is the whole available pool for an open round', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, []);
+
+    expect(selectRoundEligibleIds(state, ENTRIES, 3)).toEqual(selectAvailablePool(state));
+  });
+
+  it('offers only species that can still Mega in a Mega round', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, []);
+
+    const eligible = selectRoundEligibleIds(state, ENTRIES, 1);
+    expect(eligible).toEqual(POOL_MEGA_CAPABLE);
+    // Rotom-Wash is in the pool and cannot Mega. A restriction that admitted it would be
+    // no restriction at all.
+    expect(selectAvailablePool(state)).toContain('rotomwash');
+    expect(eligible).not.toContain('rotomwash');
+  });
+
+  it('subtracts picks, in both kinds of round', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, [
+      { playerId: 'p1', monId: 'venusaur', round: 1 },
+      { playerId: 'p2', monId: 'rotomwash', round: 1 },
+    ]);
+
+    expect(selectRoundEligibleIds(state, ENTRIES, 1)).not.toContain('venusaur');
+    expect(selectRoundEligibleIds(state, ENTRIES, 3)).not.toContain('venusaur');
+    expect(selectRoundEligibleIds(state, ENTRIES, 3)).not.toContain('rotomwash');
+  });
+
+  it('reads the DOCUMENT’s own Mega-forme bans, not today’s defaults', () => {
+    const banned: TournamentConfig = {
+      ...CONFIG,
+      megaFormeBans: [formeOf('venusaur', 'Mega').id],
+    };
+    const state = stateWith(banned, MEGA_FIRST, []);
+
+    expect(selectRoundEligibleIds(state, ENTRIES, 1)).not.toContain('venusaur');
+    // And it stays draftable in an open round — D-10 as behaviour, not as an error.
+    expect(selectRoundEligibleIds(state, ENTRIES, 3)).toContain('venusaur');
+  });
+
+  it('reads the document’s own X/Y pin, and a ban beats the pin', () => {
+    const pinned: TournamentConfig = {
+      ...CONFIG,
+      dualMegaChoices: [{ speciesId: 'charizard', forme: 'x' }],
+      megaFormeBans: [formeOf('charizard', 'Mega-X').id],
+    };
+    const state = stateWith(pinned, MEGA_FIRST, []);
+
+    // Pinned to X with X banned leaves Charizard nothing it is allowed to become.
+    expect(selectRoundEligibleIds(state, ENTRIES, 1)).not.toContain('charizard');
+
+    const unpinned = stateWith({ ...pinned, dualMegaChoices: [] }, MEGA_FIRST, []);
+    expect(selectRoundEligibleIds(unpinned, ENTRIES, 1)).toContain('charizard');
+  });
+
+  it('drops a pool id the current roster no longer carries from a Mega round', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, []);
+    const drifted: DraftState = { ...state, poolIds: [...state.poolIds, 'missingno'] };
+
+    // Eligibility cannot be established for a species that is not there. The COUNT of
+    // those is the roster-drift notice's job, not this selector's.
+    expect(selectRoundEligibleIds(drifted, ENTRIES, 1)).not.toContain('missingno');
+    expect(selectRoundEligibleIds(drifted, ENTRIES, 3)).toContain('missingno');
+  });
+
+  it('answers a round number out of range as open rather than throwing', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, []);
+
+    for (const round of [0, -1, 7, 600]) {
+      expect(selectRoundEligibleIds(state, ENTRIES, round)).toEqual(selectAvailablePool(state));
+    }
+  });
+
+  it('returns a fresh array — mutating it cannot reach the state', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, []);
+
+    const eligible = selectRoundEligibleIds(state, ENTRIES, 1);
+    eligible.push('missingno');
+    eligible.length = 1;
+
+    expect(state.poolIds).toEqual(POOL);
+    expect(selectRoundEligibleIds(state, ENTRIES, 1)).toEqual(POOL_MEGA_CAPABLE);
+  });
+
+  it('leaves the board alone — an illegal pick in the log is still on the team', () => {
+    // 03-RESEARCH: `selectTeams` must not be filtered by this. The board shows what the
+    // log says; a hand-edited document is REPORTED, never repaired and never hidden.
+    const state = stateWith(CONFIG, MEGA_FIRST, [
+      { playerId: 'p1', monId: 'rotomwash', round: 1 },
+    ]);
+
+    expect(selectTeams(state)['p1']?.[0]).toBe('rotomwash');
+    expect(selectRoundEligibleIds(state, ENTRIES, 1)).not.toContain('rotomwash');
+  });
+});
+
+describe('selectSlotStone', () => {
+  it('is null for an empty slot', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, []);
+
+    expect(selectSlotStone(state, ENTRIES, 'p1', 0)).toBeNull();
+  });
+
+  /**
+   * D-04, and the assertion that has to be made from the SLOT side.
+   *
+   * A Mega-capable species drafted into an open round occupies an untyped slot and exports
+   * bare. Reading the stone off the species instead would pass every test of the species
+   * table and produce an export that silently claims a Mega nobody drafted.
+   */
+  it('is null for a Mega-CAPABLE species sitting in an open slot', () => {
+    const state = stateWith(CONFIG, ALL_OPEN, [{ playerId: 'p1', monId: 'venusaur', round: 1 }]);
+
+    expect(rosterEntry('venusaur').megaCapable).toBe(true);
+    expect(selectSlotStone(state, ENTRIES, 'p1', 0)).toBeNull();
+  });
+
+  it('is the forme’s own stone for a filled Mega slot', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, [{ playerId: 'p1', monId: 'venusaur', round: 1 }]);
+
+    expect(selectSlotStone(state, ENTRIES, 'p1', 0)).toBe(formeOf('venusaur', 'Mega').requiredItem);
+  });
+
+  it('is null for a species with no Mega forme at all, rather than an error', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, [{ playerId: 'p1', monId: 'rotomwash', round: 1 }]);
+
+    expect(selectSlotStone(state, ENTRIES, 'p1', 0)).toBeNull();
+  });
+
+  it('follows the X/Y pin for a dual-Mega species', () => {
+    const pinned: TournamentConfig = {
+      ...CONFIG,
+      dualMegaChoices: [{ speciesId: 'charizard', forme: 'y' }],
+    };
+    const state = stateWith(pinned, MEGA_FIRST, [{ playerId: 'p1', monId: 'charizard', round: 1 }]);
+
+    expect(selectSlotStone(state, ENTRIES, 'p1', 0)).toBe(
+      formeOf('charizard', 'Mega-Y').requiredItem,
+    );
+  });
+
+  it('resolves an unpinned dual-Mega species through the ban list', () => {
+    const banned: TournamentConfig = {
+      ...CONFIG,
+      megaFormeBans: [formeOf('charizard', 'Mega-X').id],
+    };
+    const state = stateWith(banned, MEGA_FIRST, [{ playerId: 'p1', monId: 'charizard', round: 1 }]);
+
+    // `'either'` is what an absent choice means, so the only forme left is the Y one.
+    expect(selectSlotStone(state, ENTRIES, 'p1', 0)).toBe(
+      formeOf('charizard', 'Mega-Y').requiredItem,
+    );
+  });
+
+  it('is null when every forme of the picked species is banned', () => {
+    const banned: TournamentConfig = {
+      ...CONFIG,
+      megaFormeBans: [formeOf('charizard', 'Mega-X').id, formeOf('charizard', 'Mega-Y').id],
+    };
+    const state = stateWith(banned, MEGA_FIRST, [{ playerId: 'p1', monId: 'charizard', round: 1 }]);
+
+    // The slot exports bare rather than failing. That case is reachable only from an
+    // imported document — the Mega round would never have offered Charizard.
+    expect(selectSlotStone(state, ENTRIES, 'p1', 0)).toBeNull();
+  });
+
+  it('is null for a player the tournament does not have, and for a slot out of range', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, [{ playerId: 'p1', monId: 'venusaur', round: 1 }]);
+
+    expect(selectSlotStone(state, ENTRIES, 'nobody', 0)).toBeNull();
+    expect(selectSlotStone(state, ENTRIES, 'p1', -1)).toBeNull();
+    expect(selectSlotStone(state, ENTRIES, 'p1', 99)).toBeNull();
+  });
+
+  it('is null for a pick the current roster no longer carries', () => {
+    const state = stateWith(CONFIG, MEGA_FIRST, []);
+    const drifted: DraftState = {
+      ...state,
+      picks: [{ playerId: 'p1', monId: 'missingno', round: 1, pickIndex: 0, seq: 2 }],
+    };
+
+    expect(selectSlotStone(drifted, ENTRIES, 'p1', 0)).toBeNull();
+  });
+
+  it('reads the SCHEDULE, so a reordered Mega round moves the stone with it', () => {
+    const reordered: readonly RoundKind[] = ['open', 'mega', 'open', 'open', 'open', 'open'];
+    const state = stateWith(CONFIG, reordered, [
+      { playerId: 'p1', monId: 'venusaur', round: 1 },
+      { playerId: 'p2', monId: 'blastoise', round: 1 },
+      { playerId: 'p1', monId: 'garchomp', round: 2 },
+    ]);
+
+    expect(selectSlotStone(state, ENTRIES, 'p1', 0)).toBeNull();
+    expect(selectSlotStone(state, ENTRIES, 'p1', 1)).toBe(formeOf('garchomp', 'Mega').requiredItem);
   });
 });

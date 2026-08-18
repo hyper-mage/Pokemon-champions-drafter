@@ -14,6 +14,12 @@
  *      cannot Mega while a Mega round is picking.
  *   4. **The swap target filter** (SWAP-05/06) answers the same question for one slot.
  *
+ * A fifth surface needs the same conjunction and one thing more: `selectSlotStone`
+ * (`selectors.ts`) must emit the stone a Mega slot exports with, so it needs the FORME
+ * rather than a boolean. `legalMegaForme` below is where the conjunction is written; the
+ * predicate is a `!== null` over it, so the export and the filter cannot come to different
+ * conclusions about the same species.
+ *
  * Two comments already in the repository exist to prevent exactly this duplication:
  * `search.ts`'s written-down Phase 3 seam, which specifies the join as one clause reading a
  * predicate rather than a re-implementation, and `feasibility.ts`'s opening rule that one
@@ -88,6 +94,33 @@ function permittedByChoice(forme: MegaForme, choice: DualMegaForme): boolean {
 }
 
 /**
+ * The forme this entry would actually become, or `null` when there is none — D-09, D-10.
+ *
+ * The same question `isMegaEligible` asks, answered with the forme rather than with a
+ * boolean, because the export path needs the forme's `requiredItem` and the filter path
+ * needs only whether one exists. Written once and consumed twice rather than twice: a
+ * second copy of the "unbanned AND permitted by the pin" conjunction is a second thing
+ * that can disagree with the first, which is the duplication this module's opening
+ * paragraph exists to prevent.
+ *
+ * FIRST in the entry's own forme order, which is the snapshot's order — so a Charizard
+ * pinned to `'either'` with nothing banned resolves to `Charizard-Mega-X`. That is a
+ * display-order tie-break and not a ruling: the only case where the order is observable is
+ * a dual-Mega species left unpinned, and D-12 makes the pin the host's to set.
+ */
+export function legalMegaForme(
+  entry: RosterEntry,
+  bannedFormeIds: ReadonlySet<string>,
+  choice: DualMegaForme,
+): MegaForme | null {
+  return (
+    entry.megaFormes.find(
+      (forme) => !bannedFormeIds.has(forme.id) && permittedByChoice(forme, choice),
+    ) ?? null
+  );
+}
+
+/**
  * Does this entry still have a Mega forme it is allowed to become? — D-09, D-10.
  *
  * `false` for a species that was never Mega-capable, for one whose every forme is banned,
@@ -103,9 +136,7 @@ export function isMegaEligible(
   bannedFormeIds: ReadonlySet<string>,
   choice: DualMegaForme,
 ): boolean {
-  return entry.megaFormes.some(
-    (forme) => !bannedFormeIds.has(forme.id) && permittedByChoice(forme, choice),
-  );
+  return legalMegaForme(entry, bannedFormeIds, choice) !== null;
 }
 
 /**

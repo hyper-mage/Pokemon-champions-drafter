@@ -17,8 +17,10 @@
  */
 
 import type { RoundKind, RoundSpec } from './actions';
+import { choiceFor, isMegaEligible, legalMegaForme } from './mega';
 import type { DraftState } from './model';
 import { nextInt } from './rng';
+import type { RosterEntry } from './roster/types';
 
 /** The player and slot on the clock. `round` is 1-based; `pickIndex` is 0-based. */
 export interface Turn {
@@ -130,6 +132,114 @@ export function selectRoundKind(state: DraftState, round: number): RoundKind {
  */
 export function selectSlotKind(state: DraftState, slotIndex: number): RoundKind {
   return selectRoundKind(state, slotIndex + 1);
+}
+
+/**
+ * The roster is ambient data the core RECEIVES, never data it holds.
+ *
+ * Both selectors below take `entries` as an argument, following `checkFeasibility(input.entries)`
+ * and `bannedEntries(entries, bans)`. `DraftState` does not gain a roster field and must not:
+ * `model.ts:11-13` calls the fold a cache of the log, and 235 entries in it would contradict
+ * that and the serializability posture besides. D-07 separately declines to materialize
+ * eligible id lists into the log, so there is nothing stored to read either.
+ */
+function entriesById(entries: readonly RosterEntry[]): Map<string, RosterEntry> {
+  // Computation-local, never returned and never stored (CLAUDE.md §Serializability).
+  return new Map(entries.map((entry) => [entry.id, entry]));
+}
+
+/**
+ * Pool ids the given round's kind admits, already minus picked ids — RULE-03.
+ *
+ * ## What this is FOR, which is not what it looks like
+ *
+ * The EDGE consults this before dispatching, and that is the whole design. `canApply`
+ * structurally cannot check round eligibility: it sees only `DraftState`, round eligibility
+ * is a fact about a roster ENTRY (`entry.megaFormes`), and neither putting the roster into
+ * the fold nor widening the single write path for one rule is on the table (03-RESEARCH
+ * §Where "no post-pick validation anywhere in the system" cannot be honored). So the offer
+ * is CONSTRAINED rather than the pick VALIDATED — an illegal pick is unreachable through
+ * the UI instead of rejected after the fact.
+ *
+ * Three things follow, and none of them is an oversight:
+ *
+ *   - `canApply` gains no eligibility arm and `apply` gains no rule check.
+ *   - `selectTeams` is NOT filtered by this. The board shows what the log says
+ *     (`reduce.ts:16-19`); a hand-edited document's illegal pick is REPORTED by the
+ *     adoption notice in `app.tsx`, never repaired and never hidden.
+ *   - A Mega round's offer is never widened when it comes back empty. A fallback that
+ *     quietly allowed a non-Mega pick would be the removed validator wearing a friendlier
+ *     name, and nothing downstream would be left to catch the team it produced.
+ *
+ * An `'open'` round returns `selectAvailablePool(state)` unchanged. A `'mega'` round returns
+ * that list filtered by `isMegaEligible` under THIS DOCUMENT's own `megaFormeBans` and
+ * `dualMegaChoices` — the same predicate the RULE-09 gate and the pool draw read, so the
+ * three cannot come to different conclusions about one species.
+ *
+ * A pool id the current roster no longer carries is dropped from a Mega round's offer and
+ * kept in an open round's, which is not an inconsistency: eligibility cannot be established
+ * for a species that is not there, and `app.tsx` drops unresolvable ids from the rendered
+ * pool anyway. The count of them is the roster-drift notice's, not this function's.
+ */
+export function selectRoundEligibleIds(
+  state: DraftState,
+  entries: readonly RosterEntry[],
+  round: number,
+): string[] {
+  const available = selectAvailablePool(state);
+  if (selectRoundKind(state, round) === 'open') return available;
+
+  const byId = entriesById(entries);
+  const bannedFormeIds = new Set(state.config.megaFormeBans);
+
+  return available.filter((id) => {
+    const entry = byId.get(id);
+    if (entry === undefined) return false;
+    return isMegaEligible(entry, bannedFormeIds, choiceFor(state.config.dualMegaChoices, entry.id));
+  });
+}
+
+/**
+ * The stone a slot's pick exports with, or `null` for a bare species — D-04.
+ *
+ * **The SLOT decides whether a stone is emitted, never the species.** A Mega-capable species
+ * drafted into an open round occupies an untyped slot and exports bare; the same species in
+ * a Mega slot exports as `Species @ StoneItemName`. Getting that backwards produces exports
+ * that are wrong in a way no test of the species table would catch, which is why the tests
+ * for this assert from the slot side.
+ *
+ * That rule is also why `toShowdownPaste` needed no signature change: Phase 1 shipped
+ * `PasteSlot.megaStone` for exactly this caller and settled the format then. The returned
+ * string is a forme's `requiredItem` read from the committed snapshot, and `declaredStone`
+ * re-derives it from the entry's own copy before it reaches the paste — so nothing a
+ * tampered document carries can reach text the host pastes into a third-party site.
+ *
+ * `null` for an empty slot, `null` for an `'open'` slot whatever occupies it, and `null` for
+ * a Mega slot whose species has no legal forme left. The last one is D-10 as behaviour
+ * rather than as an error: a species with every forme banned exports bare instead of
+ * failing.
+ */
+export function selectSlotStone(
+  state: DraftState,
+  entries: readonly RosterEntry[],
+  playerId: string,
+  slotIndex: number,
+): string | null {
+  if (selectSlotKind(state, slotIndex) !== 'mega') return null;
+
+  const monId = selectTeams(state)[playerId]?.[slotIndex] ?? null;
+  if (monId === null) return null;
+
+  const entry = entriesById(entries).get(monId);
+  if (entry === undefined) return null;
+
+  const forme = legalMegaForme(
+    entry,
+    new Set(state.config.megaFormeBans),
+    choiceFor(state.config.dualMegaChoices, entry.id),
+  );
+
+  return forme === null ? null : forme.requiredItem;
 }
 
 /** True exactly when every player holds a full set of `rounds` picks. */
