@@ -102,6 +102,18 @@ export interface BoardGridProps {
   showName: boolean;
   /** From `selectPlayerName(state, turn.playerId)`. Names the empty state's first picker. */
   firstPlayerName: string | null;
+  /**
+   * Player id to the priority cards they still hold, straight from `selectHand` — or
+   * `null` when this tournament deals no cards at all (CARD-07, D-24).
+   *
+   * `null` rather than an empty record, so a migrated schema-2 draft cannot be confused
+   * with a Phase 3 one in which everybody happens to have spent everything. The first
+   * renders no strips; the second renders six struck-through pips per row.
+   *
+   * The composition root decides which of the two a document is. This component renders
+   * what it is handed and works nothing out, exactly as it does for `schedule`.
+   */
+  hands: Record<string, number[]> | null;
 }
 
 export function BoardGrid({
@@ -115,7 +127,14 @@ export function BoardGrid({
   pickCount,
   showName,
   firstPlayerName,
+  hands,
 }: BoardGridProps) {
+  /**
+   * The round numbers, and — the same list — every priority-card value the tournament
+   * deals. A player holds one card per pick round (D-06), so `1..rounds` answers both
+   * questions and deriving it twice would be two places for a round count to disagree
+   * with itself.
+   */
   const roundNumbers = Array.from({ length: rounds }, (_, index) => index + 1);
 
   return (
@@ -201,6 +220,11 @@ export function BoardGrid({
               entryById={entryById}
               spriteMeta={spriteMeta}
               showName={showName}
+              cardValues={roundNumbers}
+              // `?? []` is not the same answer as `null`: a tournament that deals cards but
+              // has no entry for this player hands over an empty hand, which renders six
+              // struck pips. Only a `hands` of null suppresses the strip entirely.
+              hand={hands === null ? null : hands[player.id] ?? []}
             />
           ))}
         </div>

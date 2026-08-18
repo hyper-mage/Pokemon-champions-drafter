@@ -116,12 +116,34 @@
   background: var(--color-surface-raised);
 }
 
+/*
+ * The row label: the player's name, and beneath it the cards they still hold (D-24).
+ *
+ * A column stack rather than a single centred line, and it declares no height of its own.
+ * 03-UI-SPEC §Layout Budget spends 30px of name + 4px of gap + 30px of pips = 64px against
+ * the 64px `.board__cell` below already reserves, so the hand strip costs ZERO additional
+ * row height. `justify-content: center` keeps the stack vertically centred in the row now
+ * that the cell stretches rather than shrinking to its text — which is what the old
+ * `align-self: center` was doing, and what a two-line stack cannot use.
+ *
+ * The label column's own width is UNCHANGED, and deliberately so: a bare digit needs no
+ * box, so six pips and their gaps come to ~104px inside the existing 176px, and the name
+ * keeps the full column to itself — more width than it had sharing a single centred line.
+ */
 .board__label {
-  align-self: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font: var(--text-heading);
+}
+
+/* The ellipsis mechanism, moved off the cell and onto the line that carries the text. */
+.board__label-name {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font: var(--text-heading);
 }
 
 .board__cell {

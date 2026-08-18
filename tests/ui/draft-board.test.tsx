@@ -189,6 +189,7 @@ describe('BoardGrid at N players and a derived round count', () => {
     pickCount?: number;
     showName?: boolean;
     firstPlayerName?: string | null;
+    hands?: Record<string, number[]> | null;
   }) {
     const { players, rounds } = overrides;
     render(
@@ -205,6 +206,7 @@ describe('BoardGrid at N players and a derived round count', () => {
         firstPlayerName={
           overrides.firstPlayerName === undefined ? players[0]?.name ?? null : overrides.firstPlayerName
         }
+        hands={overrides.hands ?? null}
       />,
       host,
     );
@@ -367,6 +369,7 @@ describe("BoardGrid's empty state names the person who goes first", () => {
         pickCount={0}
         showName={false}
         firstPlayerName="Ada"
+        hands={null}
       />,
       host,
     );
@@ -390,6 +393,7 @@ describe("BoardGrid's empty state names the person who goes first", () => {
         pickCount={0}
         showName={false}
         firstPlayerName={null}
+        hands={null}
       />,
       host,
     );
@@ -411,6 +415,7 @@ describe("BoardGrid's empty state names the person who goes first", () => {
         pickCount={1}
         showName={false}
         firstPlayerName="Ada"
+        hands={null}
       />,
       host,
     );
@@ -439,6 +444,7 @@ describe("the board's turn signal", () => {
         pickCount={20}
         showName={false}
         firstPlayerName="Eli"
+        hands={null}
       />,
       host,
     );
@@ -466,6 +472,7 @@ describe("the board's turn signal", () => {
         pickCount={48}
         showName={false}
         firstPlayerName={null}
+        hands={null}
       />,
       host,
     );
@@ -508,6 +515,7 @@ describe('showName reaches every chip on the board', () => {
         pickCount={16}
         showName={showName}
         firstPlayerName={null}
+        hands={null}
       />,
       host,
     );
@@ -533,6 +541,148 @@ describe('showName reaches every chip on the board', () => {
 
   it('puts no control in any board cell, at either state', () => {
     renderWith(true);
+    expect(all('button')).toHaveLength(0);
+    expect(all('a')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hand strips in the board rows — CARD-07, D-24
+// ---------------------------------------------------------------------------
+
+describe('the hand strip on a board row', () => {
+  const players = playersOf(3);
+
+  function renderHands(hands: Record<string, number[]> | null, rounds = 6) {
+    render(
+      <BoardGrid
+        players={players}
+        rounds={rounds}
+        schedule={openSchedule(rounds)}
+        teams={emptyTeams(players, rounds)}
+        currentTurn={null}
+        entryById={ENTRY_BY_ID}
+        spriteMeta={SPRITE_META}
+        pickCount={0}
+        showName={false}
+        firstPlayerName="Ada"
+        hands={hands}
+      />,
+      host,
+    );
+  }
+
+  /** Every player's full hand, so a test can vary one row and leave the rest alone. */
+  function fullHands(rounds = 6): Record<string, number[]> {
+    const hands: Record<string, number[]> = {};
+    for (const player of players) {
+      hands[player.id] = Array.from({ length: rounds }, (_, index) => index + 1);
+    }
+    return hands;
+  }
+
+  it('renders one pip per card the tournament deals, in every row', () => {
+    renderHands(fullHands());
+
+    expect(all('.hand-strip')).toHaveLength(3);
+    expect(all('.hand-strip__pip')).toHaveLength(18);
+    expect(texts('.hand-strip__pips')[0]).toBe('123456');
+  });
+
+  it('deals four pips at four rounds rather than six of anything', () => {
+    renderHands(fullHands(4), 4);
+
+    expect(all('.hand-strip__pip')).toHaveLength(12);
+    expect(texts('.hand-strip__pips')[0]).toBe('1234');
+  });
+
+  it('strikes AND dims a spent pip, never one alone', () => {
+    // Two signals, and neither of them is hue. Dimming alone is this project's disabled
+    // convention and would say "unavailable" about a card the player deliberately spent.
+    renderHands({ ...fullHands(), p1: [1, 2, 4, 5, 6] });
+
+    const spent = all('.hand-strip__pip--struck');
+    expect(spent).toHaveLength(1);
+    expect(spent[0]?.textContent).toBe('3');
+    expect(spent[0]?.classList.contains('hand-strip__pip--dimmed')).toBe(true);
+    expect(all('.hand-strip__pip--dimmed')).toHaveLength(1);
+  });
+
+  it('keeps a spent pip in its own position rather than shuffling the rest up', () => {
+    renderHands({ ...fullHands(), p1: [1, 2, 4, 5, 6] });
+    expect(texts('.hand-strip__pips')[0]).toBe('123456');
+  });
+
+  it('hides the pips from assistive technology and speaks one sentence instead', () => {
+    renderHands({ ...fullHands(), p1: [2, 5, 6] });
+
+    expect(all('.hand-strip__pips').every((strip) => strip.getAttribute('aria-hidden') === 'true')).toBe(
+      true,
+    );
+    expect(texts('.hand-strip .visually-hidden')[0]).toBe('Ada holds 2, 5 and 6.');
+  });
+
+  it('composes the summary for one, two and no cards', () => {
+    renderHands({ ...fullHands(), p1: [4] });
+    expect(texts('.hand-strip .visually-hidden')[0]).toBe('Ada holds 4.');
+
+    renderHands({ ...fullHands(), p1: [2, 5] });
+    expect(texts('.hand-strip .visually-hidden')[0]).toBe('Ada holds 2 and 5.');
+
+    renderHands({ ...fullHands(), p1: [] });
+    expect(texts('.hand-strip .visually-hidden')[0]).toBe('Ada holds no cards.');
+  });
+
+  it('names each row’s own player in that row’s sentence', () => {
+    renderHands({ p1: [1], p2: [2, 3], p3: [] });
+
+    expect(texts('.hand-strip .visually-hidden')).toEqual([
+      'Ada holds 1.',
+      'Bo holds 2 and 3.',
+      'Cass holds no cards.',
+    ]);
+  });
+
+  it('renders no strip at all for a migrated schema-2 board', () => {
+    // Picks present, no compiled schedule, no card ever played. Six unspent pips would be
+    // a confident lie about a draft that ran strict alternation and dealt nothing.
+    renderHands(null);
+
+    expect(all('.hand-strip')).toHaveLength(0);
+    expect(all('.hand-strip__pip')).toHaveLength(0);
+    expect(texts('.board__label')).toEqual(['Ada', 'Bo', 'Cass']);
+  });
+
+  it('stacks exactly two children in the label cell, and adds no height of its own', () => {
+    // STRUCTURAL, not dimensional — happy-dom performs no layout, following this file's
+    // note about what it cannot prove. 03-UI-SPEC §Layout Budget spends 30 + 4 + 30 = 64px
+    // against the 64px `.board__cell` already reserves, so the strip is meant to cost zero
+    // additional row height. What is checkable here is the shape that claim rests on: two
+    // stacked children, and not one element in the whole board declaring a height inline.
+    // The physical measurement belongs to the DRFT-14 pass.
+    renderHands(fullHands());
+
+    for (const label of all('.board__label')) {
+      expect(label.children).toHaveLength(2);
+      expect(label.children[0]?.className).toBe('board__label-name');
+      expect(label.children[1]?.className).toBe('hand-strip');
+    }
+
+    // The grid template is the ONE inline style on this component, and it sets columns.
+    const inline = all('[style]');
+    expect(inline).toHaveLength(1);
+    expect(inline[0]?.className).toBe('board__grid');
+    expect(inline[0]?.style.height).toBe('');
+    expect(inline[0]?.style.minHeight).toBe('');
+  });
+
+  it('keeps the name on its own line, so the row still reads as one player', () => {
+    renderHands(fullHands());
+    expect(texts('.board__label-name')).toEqual(['Ada', 'Bo', 'Cass']);
+  });
+
+  it('puts no control in the strip', () => {
+    renderHands(fullHands());
     expect(all('button')).toHaveLength(0);
     expect(all('a')).toHaveLength(0);
   });

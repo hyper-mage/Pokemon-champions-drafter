@@ -1,0 +1,51 @@
+/*
+ * HandStrip — six bare digits under a player's name on their board row.
+ *
+ * Consumes tokens only; declares no raw colour and no raw length. It also declares NO
+ * HEIGHT, and that is the load-bearing property of this file rather than an omission.
+ * 03-UI-SPEC §Layout Budget spends the 176px label column as 30px of name + 4px of gap +
+ * 30px of pips = 64px, against the 64px `.board__cell` already reserves
+ * (`min-height: calc(var(--sprite-sm) + var(--space-3))`). The strip therefore costs zero
+ * additional row height — a number that stays true only for as long as nothing here sets
+ * one.
+ *
+ * A pip is a BARE DIGIT. No box, no fill, no border, no padding. Separation is carried by
+ * the --space-1 gap alone, which is what leaves the six of them at ~104px inside 176px and
+ * lets the name keep the full column on its own line above.
+ */
+
+.hand-strip {
+  display: block;
+  min-width: 0;
+}
+
+/*
+ * The pips themselves, hidden from assistive technology — HandStrip.tsx carries the one
+ * spoken summary instead. `overflow: hidden` rather than a wrap, on the same three
+ * properties the player name uses: at an absurd round count the strip clips inside its
+ * column instead of growing the row and pulling the two panes out of alignment.
+ */
+.hand-strip__pips {
+  display: flex;
+  gap: var(--space-1);
+  overflow: hidden;
+  white-space: nowrap;
+  font: var(--text-heading);
+  color: var(--color-text);
+}
+
+/*
+ * Spent is TWO rules, applied together and tested as two.
+ *
+ * 0.45 is this project's disabled opacity, and dimming alone would say "unavailable" about
+ * a card the player deliberately spent in the open. The strike is what says "played". The
+ * same pairing, for the same reason, as the ban grid's `.mon-card--banned` plus
+ * `.mon-card__name--banned`.
+ */
+.hand-strip__pip--dimmed {
+  opacity: 0.45;
+}
+
+.hand-strip__pip--struck {
+  text-decoration: line-through;
+}

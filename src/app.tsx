@@ -27,6 +27,7 @@ import type { RosterEntry } from './core/roster/types';
 import {
   selectAvailablePool,
   selectCurrentTurn,
+  selectHand,
   selectIsComplete,
   selectPickCount,
   selectPlayerName,
@@ -660,6 +661,30 @@ export function App() {
   }, [state, entries]);
 
   /**
+   * Every player's remaining priority cards, or `null` when this tournament deals none —
+   * CARD-07, D-24.
+   *
+   * The GATE is the whole of the decision here, and it is 03-UI-SPEC's: a document with an
+   * empty schedule AND no card ever played is a migrated Phase 2 draft. It ran strict
+   * alternation and dealt nothing, so it renders no strips — six unspent pips would be a
+   * confident lie about a draft that never had them. Anything else deals cards, including a
+   * Phase 3 draft standing at round 1 with every hand still full.
+   *
+   * The hand itself is `selectHand`'s answer and never this file's. `HandStrip` decides
+   * nothing either; it renders the pips and composes the sentence.
+   */
+  const hands = useMemo<Record<string, number[]> | null>(() => {
+    if (state === null) return null;
+    if (state.schedule.length === 0 && state.cardsPlayed.length === 0) return null;
+
+    const byPlayer: Record<string, number[]> = {};
+    for (const player of state.config.players) {
+      byPlayer[player.id] = selectHand(state, player.id);
+    }
+    return byPlayer;
+  }, [state]);
+
+  /**
    * How many picks this document holds that its own schedule would never have offered.
    *
    * Zero for every document this build creates — the offer is constrained rather than the
@@ -1232,6 +1257,8 @@ export function App() {
                   // pane states cannot each grow their own answer.
                   showName={pane === 'board'}
                   firstPlayerName={turnPlayerName}
+                  // Null for a migrated schema-2 draft, which dealt no cards. See the memo.
+                  hands={hands}
                 />
               }
             />

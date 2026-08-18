@@ -2,6 +2,7 @@ import type { SpriteMeta } from '../../adapters/roster-source';
 import type { PlayerConfig } from '../../core/model';
 import type { RosterEntry } from '../../core/roster/types';
 
+import { HandStrip } from './HandStrip';
 import { MonChip } from './MonChip';
 
 /**
@@ -29,6 +30,22 @@ export interface TeamStripProps {
   spriteMeta: SpriteMeta;
   /** Passed through from the pane state. Nothing here branches on it. */
   showName: boolean;
+  /**
+   * Every priority-card value this tournament deals, ascending — `1..config.rounds`.
+   *
+   * The same list as the round numbers, and that identity is D-06's rule rather than a
+   * coincidence worth deduplicating away: a player holds exactly one card per pick round.
+   */
+  cardValues: readonly number[];
+  /**
+   * What this player still holds, from `selectHand`, or `null` when the tournament deals
+   * no cards at all.
+   *
+   * `null` is a migrated schema-2 draft — picks present, no card ever played, no compiled
+   * schedule — and it renders NO strip rather than an unspent one. Six untouched pips would
+   * be a lie about a draft that ran strict alternation and never dealt a card.
+   */
+  hand: readonly number[] | null;
 }
 
 export function TeamStrip({
@@ -38,10 +55,22 @@ export function TeamStrip({
   entryById,
   spriteMeta,
   showName,
+  cardValues,
+  hand,
 }: TeamStripProps) {
   return (
     <>
-      <div class="board__label">{player.name}</div>
+      {/*
+        Two stacked lines, not one centred one. The name keeps the whole 176px column on its
+        own line — more width than it had when it shared a single-line cell — and the strip
+        sits beneath it inside the 64px the row already reserved (03-UI-SPEC §Layout Budget).
+      */}
+      <div class="board__label">
+        <span class="board__label-name">{player.name}</span>
+        {hand !== null && (
+          <HandStrip playerName={player.name} values={cardValues} hand={hand} />
+        )}
+      </div>
 
       {slots.map((monId, index) => {
         const entry = monId === null ? undefined : entryById.get(monId);
