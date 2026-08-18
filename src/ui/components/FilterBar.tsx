@@ -49,6 +49,20 @@ export interface FilterBarProps {
    * otherwise, so the filter and the thing it filters speak the same language (D-29).
    */
   density: Density;
+  /**
+   * Why the `Mega capability` control cannot be used here, or `null` when it can.
+   *
+   * A reason rather than a boolean, so "unavailable with no explanation" is unrepresentable
+   * — the same shape `SplitPanes`' `PaneAvailability` union takes, applied to one control.
+   * It has two callers by design: the Mega-forme ban grid passes
+   * `This list is Mega formes only`, because every cell in it already IS a Mega; and a Mega
+   * ROUND passes `Round {r} is a Mega round`, because the schedule has already applied the
+   * constraint the control would express. Built once for both.
+   *
+   * Search and the eighteen type filters stay live in both cases, and they are genuinely
+   * useful: a forme's own typing differs from its base species'.
+   */
+  megaInertReason: string | null;
 }
 
 /**
@@ -90,7 +104,7 @@ const FILTER_TYPES: readonly FilterType[] = Object.keys(TYPE_CODES)
   .map((type) => ({ type, display: typeDisplay(type) }))
   .filter((row): row is FilterType => row.display !== null);
 
-export function FilterBar({ value, onChange, density }: FilterBarProps) {
+export function FilterBar({ value, onChange, density, megaInertReason }: FilterBarProps) {
   // One row that wraps visually, so no column count is injected: the horizontal rules are
   // the ones that match how the host reads it, and the hook's default collapses Down onto
   // Right and Up onto Left exactly.
@@ -111,6 +125,29 @@ export function FilterBar({ value, onChange, density }: FilterBarProps) {
   // to say. See the block above the control itself for which inert treatment it takes and
   // why the two candidates were both rejected.
   const matchAllInert = value.types.length < 2;
+
+  // One derived local for a state that drives four things — the ARIA, the class, the early
+  // return and whether the reason renders — so they cannot disagree with each other.
+  const megaInert = megaInertReason !== null;
+
+  /**
+   * Put the radio group back where state says it is, after an inert change was refused.
+   *
+   * The match-all checkbox restores itself in one assignment because it is one input. A
+   * radio group cannot: unchecking only the input the host clicked would leave the group
+   * with NOTHING checked, which is a state `value.mega` can never express. So every radio
+   * in the group is re-asserted from state.
+   *
+   * This runs at all because `change` bubbles, so the wrapper below hears the event AFTER
+   * the refusal above. Nothing re-renders on a refused change — the state did not move —
+   * which is exactly why the DOM has to be corrected rather than left to the next render.
+   */
+  function restoreMegaControl(container: HTMLElement): void {
+    for (const input of container.querySelectorAll('input[type="radio"]')) {
+      const radio = input as HTMLInputElement;
+      radio.checked = radio.value === value.mega;
+    }
+  }
 
   return (
     <div class="filter-bar">
@@ -234,14 +271,64 @@ export function FilterBar({ value, onChange, density }: FilterBarProps) {
         The sixth declared instance of 02-03's `SegmentedControl`, and the `name` is fixed
         for the same reason `pool-search` above is: two `PoolGrid`s are never mounted at
         once. Same forward note applies — three ids, one change.
+
+        --- WHY THE INERT STATE IS ARIA-ONLY, AND WHY IT IS ON THE WRAPPER ---
+
+        `aria-disabled`, never the native attribute, and never `'false'`. The native one
+        takes the whole group out of the tab order, so a keyboard host would find a control
+        that appears and disappears — and the reason beside it, which is the entire point of
+        rendering an unusable control, would be unreachable by the route that most needs it.
+        Setting the attribute to `'false'` would be worse than omitting it: plenty of
+        assistive technology reads the mere presence of the attribute as disabled, which is
+        WR-04. It is `undefined` when the reason lifts, so the ARIA is genuinely shed.
+
+        It sits on the WRAPPER rather than on each radio because `SegmentedControl` renders
+        the inputs and this component must not reach inside it. `aria-disabled` is inherited
+        by the descendants of the element that carries it, and the wrapper is the smallest
+        element that contains both the group and the reason that explains it. The
+        alternative — passing `disabled: true` on every option — is the native attribute
+        again, wearing an object literal.
+
+        The wrapper's own `change` handler is the honesty check: without it the attribute
+        would claim the control is inert while the clicked radio stayed visibly selected.
       */}
-      <SegmentedControl
-        legend="Mega capability"
-        name="pool-mega-filter"
-        options={MEGA_OPTIONS}
-        value={value.mega}
-        onChange={(mega) => onChange({ ...value, mega })}
-      />
+      <span
+        class={['filter-bar__mega', megaInert ? 'filter-bar__mega--inert' : '']
+          .filter((token) => token !== '')
+          .join(' ')}
+        aria-disabled={megaInert ? 'true' : undefined}
+        onChange={(event) => {
+          if (!megaInert) return;
+          restoreMegaControl(event.currentTarget);
+        }}
+      >
+        <SegmentedControl
+          legend="Mega capability"
+          name="pool-mega-filter"
+          options={MEGA_OPTIONS}
+          value={value.mega}
+          onChange={(mega) => {
+            // The early return is what keeps the ARIA honest. Without it the attribute
+            // would say inert while a click still narrowed the grid.
+            if (megaInert) return;
+            onChange({ ...value, mega });
+          }}
+        />
+
+        {/*
+          Reason after the control, in DOM order as in visual order, and the separator is
+          MARKUP rather than `::before` content — `SplitPanes`' `POOL_EXPAND_REASON` block
+          states the rule and why: a dash generated by a stylesheet is half a visible line
+          that no test reads. The reason string the caller passes therefore EXCLUDES the
+          separator, so the copy constant, the prop and the assertion are one value.
+        */}
+        {megaInert && (
+          <span class="filter-bar__mega-reason">
+            <span aria-hidden="true">{'— '}</span>
+            {megaInertReason}
+          </span>
+        )}
+      </span>
 
       {/*
         Absent rather than disabled when nothing is active. A control that clears nothing

@@ -29,7 +29,21 @@
  * Pure, like everything under `src/core`.
  */
 
-import type { RosterEntry } from './roster/types';
+/**
+ * The structural minimum these predicates read.
+ *
+ * A `RosterEntry` satisfies it and so does a `MegaForme`, which is what lets the Mega-forme
+ * ban grid reuse the pool's search box and its eighteen type filters rather than growing a
+ * second matcher — the thing this module's opening paragraph exists to prevent. It is a
+ * WIDENING, not a branch: no function below asks which of the two it was handed.
+ */
+export interface FilterableEntry {
+  /** The display string the host reads and searches against. */
+  name: string;
+  types: readonly string[];
+  /** Absent on a Mega forme. `matchesMega` reads absent as not Mega-capable. */
+  megaCapable?: boolean;
+}
 
 /** The three states of the Mega filter control (D-34). Default is `all`. */
 export type MegaFilterMode =
@@ -66,7 +80,7 @@ export function toSearchKey(text: string): string {
  * equality directly, so a rotation that breaks it fails a test instead of quietly making a
  * species unsearchable.
  */
-export function matchesName(entry: RosterEntry, normalizedQuery: string): boolean {
+export function matchesName(entry: FilterableEntry, normalizedQuery: string): boolean {
   if (normalizedQuery === '') return true;
   return toSearchKey(entry.name).includes(normalizedQuery);
 }
@@ -85,7 +99,7 @@ export function matchesName(entry: RosterEntry, normalizedQuery: string): boolea
  * selection comes from the roster's own type list rather than from anything the host types.
  */
 export function matchesTypes(
-  entry: RosterEntry,
+  entry: FilterableEntry,
   selected: readonly string[],
   matchAll: boolean,
 ): boolean {
@@ -104,15 +118,20 @@ export function matchesTypes(
  * own restriction" arrive without reshaping this control: the round's constraint is a fact
  * about the schedule and this one is a preference the host is currently expressing, and
  * folding them into one union would make the host able to switch off a rule.
+ *
+ * An ABSENT `megaCapable` reads as not Mega-capable, which is the right answer for the one
+ * subject that omits it: a Mega forme is not a species that CAN Mega, it IS the Mega. The
+ * Mega-forme ban grid renders this control inert for exactly that reason, so the branch is
+ * a type-level completeness matter rather than a state the host can reach.
  */
-export function matchesMega(entry: RosterEntry, mode: MegaFilterMode): boolean {
+export function matchesMega(entry: FilterableEntry, mode: MegaFilterMode): boolean {
   switch (mode) {
     case 'all':
       return true;
     case 'mega':
-      return entry.megaCapable;
+      return entry.megaCapable === true;
     case 'nonMega':
-      return !entry.megaCapable;
+      return entry.megaCapable !== true;
   }
 }
 
@@ -193,7 +212,7 @@ export function compileFilters(filters: PoolFilters): CompiledPoolFilters {
  * and is recorded in `matchesMega`'s own doc block above; folding a schedule's constraint
  * into the host's control is exactly the collapse it rejects.
  */
-export function matchesFilters(entry: RosterEntry, compiled: CompiledPoolFilters): boolean {
+export function matchesFilters(entry: FilterableEntry, compiled: CompiledPoolFilters): boolean {
   return (
     matchesName(entry, compiled.key) &&
     matchesTypes(entry, compiled.types, compiled.matchAll) &&

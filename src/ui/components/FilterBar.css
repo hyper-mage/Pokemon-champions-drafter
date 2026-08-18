@@ -136,3 +136,35 @@
 .filter-bar__clear:hover {
   background: var(--color-surface-raised);
 }
+
+/*
+ * --- The Mega-capability control, and the reason it is sometimes unusable ---
+ *
+ * A wrapper rather than a rule on the control itself, because the reason line is a SIBLING
+ * of the group and the two have to sit on one baseline. Same structure `SplitPanes` uses
+ * for its expand button plus reason, and the same reason for it: an explanation that is a
+ * child of the control it explains gets pulled inside the control's own accessible name.
+ */
+.filter-bar__mega {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+}
+
+/*
+ * Inert, not absent. The group keeps its place and its tab stop; the opacity is the visual
+ * echo of aria-disabled rather than the mechanism, which is the handler's early return.
+ * The same 0.45 the match-all label, the reorder buttons and a banned cell already take.
+ *
+ * The reason line is deliberately OUTSIDE this rule — it is the one thing on the row that
+ * must stay fully legible, since it is the whole point of rendering an unusable control.
+ */
+.filter-bar__mega--inert .segmented {
+  opacity: 0.45;
+}
+
+.filter-bar__mega-reason {
+  color: var(--color-text-muted);
+  font: var(--text-label);
+}

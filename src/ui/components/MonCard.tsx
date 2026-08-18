@@ -1,6 +1,6 @@
 import type { Density } from '../../adapters/view-prefs';
 import type { SpriteMeta } from '../../adapters/roster-source';
-import type { RosterEntry } from '../../core/roster/types';
+import type { MegaForme, RosterEntry } from '../../core/roster/types';
 import { handleSpriteError, spriteSrc } from '../sprite-src';
 
 import { typeDisplay } from '../type-codes';
@@ -37,13 +37,35 @@ import './MonCard.css';
  * doc block records the one sanctioned form if profiling ever demands it.
  */
 
-export interface MonCardProps {
-  entry: RosterEntry;
+/**
+ * The two shapes a pool cell, a chip or a combobox option can be.
+ *
+ * Expressed as a TYPE PARAMETER constrained to the union rather than as the bare union on
+ * each prop, and that is not decoration. A bare union would force every EXISTING caller —
+ * the draft pool's `handlePick`, the species banlist's `toggleBan` — to widen its own
+ * handler to something it can never actually receive, which is a weaker type at four call
+ * sites in exchange for nothing. With the parameter, a caller handing in roster entries
+ * keeps a `RosterEntry` handler and a caller handing in formes gets a `MegaForme` one.
+ * `SegmentedControl` already establishes the generic-component shape in this codebase.
+ */
+export type PoolSubject = RosterEntry | MegaForme;
+
+export interface MonCardProps<T extends PoolSubject> {
+  /**
+   * A draftable row OR a single Mega forme.
+   *
+   * A WIDENING, not a second mode: `MegaForme` carries `id`, `name`, `types` and
+   * `baseStats` exactly as `RosterEntry` does, which is every field this cell reads. Nothing
+   * below asks which of the two it was handed, and a forme's own art, typing and stats are
+   * what render — `Charizard-Mega-X` is Fire/Dragon where Charizard is Fire/Flying, and a
+   * cell that merged the two formes would have to hide one of them (03-UI-SPEC).
+   */
+  entry: T;
   /** The measured sprite inventory; the only correct source of a sprite filename. */
   spriteMeta: SpriteMeta;
   /** Decides both the token scale and how much of the entry is rendered. */
   density: Density;
-  onPick: (entry: RosterEntry) => void;
+  onPick: (entry: T) => void;
   /**
    * `null` outside ban mode: the cell carries no pressed state and no struck name.
    *
@@ -97,7 +119,7 @@ export interface MonCardProps {
  * `TypePill` does it: the 18-entry map is closed, and a type with no entry contributes
  * nothing instead of leaking a snapshot value into the name.
  */
-function accessibleName(entry: RosterEntry): string {
+function accessibleName(entry: PoolSubject): string {
   const types = entry.types
     .map((type) => typeDisplay(type)?.name)
     .filter((name): name is string => name !== undefined);
@@ -105,7 +127,13 @@ function accessibleName(entry: RosterEntry): string {
   return types.length > 0 ? `${entry.name}, ${types.join(' ')}` : entry.name;
 }
 
-export function MonCard({ entry, spriteMeta, density, onPick, banned }: MonCardProps) {
+export function MonCard<T extends PoolSubject>({
+  entry,
+  spriteMeta,
+  density,
+  onPick,
+  banned,
+}: MonCardProps<T>) {
   const showDetail = density !== 'minimal';
 
   // The array-join conditional-class pattern, not template-literal concatenation: a

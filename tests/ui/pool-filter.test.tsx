@@ -71,6 +71,29 @@ function mountPool(density = 'standard'): void {
   });
 }
 
+/** The same pool, with the Mega control carrying a caller-supplied inert reason. */
+function mountPoolWithMegaReason(reason: string | null): void {
+  localStorage.setItem(VIEW_KEY, JSON.stringify({ density: 'standard', pane: 'split' }));
+  act(() => {
+    render(
+      <PoolGrid
+        entries={ENTRIES}
+        spriteMeta={SPRITE_META}
+        onPick={() => undefined}
+        bannedIds={null}
+        megaInertReason={reason}
+      />,
+      host,
+    );
+  });
+}
+
+function megaWrapper(): HTMLElement {
+  const element = host.querySelector<HTMLElement>('.filter-bar__mega');
+  if (element === null) throw new Error('the Mega capability control is not on the screen');
+  return element;
+}
+
 function toolbar(): HTMLElement {
   const element = host.querySelector<HTMLElement>('[role="toolbar"]');
   if (element === null) throw new Error('the type toolbar is not on the screen');
@@ -461,5 +484,73 @@ describe('Clear filters', () => {
     expect(matchAll().checked).toBe(false);
     expect(megaOption('all').checked).toBe(true);
     expect(cards()).toHaveLength(ENTRIES.length);
+  });
+});
+
+describe('the Mega control, made inert with a reason', () => {
+  /*
+   * Two callers by construction: the Mega-forme ban grid (this plan) and a Mega round
+   * (03-06). The behaviour tested here is the part both need and neither should re-derive —
+   * the ARIA goes on, the click is refused, the rendered state does not lie about it, and
+   * the ARIA comes back OFF rather than going to `'false'`.
+   */
+
+  const REASON = 'This list is Mega formes only';
+
+  it('renders no aria-disabled at all when there is no reason', () => {
+    mountPool();
+
+    // Absent, never `'false'`. Plenty of assistive technology reads the mere presence of
+    // the attribute as disabled, so the two are not interchangeable (WR-04).
+    expect(megaWrapper().getAttribute('aria-disabled')).toBe(null);
+    expect(host.querySelector('.filter-bar__mega-reason')).toBe(null);
+  });
+
+  it('carries the ARIA and the reason when one is supplied', () => {
+    mountPoolWithMegaReason(REASON);
+
+    expect(megaWrapper().getAttribute('aria-disabled')).toBe('true');
+
+    const line = host.querySelector('.filter-bar__mega-reason');
+    expect(line).not.toBe(null);
+    // The separator is markup beside the copy, so the whole visible line is one string —
+    // and the reason the caller passes excludes it.
+    expect(line?.textContent).toBe(`— ${REASON}`);
+  });
+
+  it('refuses the change and puts the radio back where the state says it is', () => {
+    mountPoolWithMegaReason(REASON);
+
+    chooseMega('mega');
+
+    expect(megaOption('mega').checked).toBe(false);
+    expect(megaOption('all').checked).toBe(true);
+    // The grid is the real assertion: an inert control that still filtered would be a rule
+    // the host had switched off.
+    expect(cards()).toHaveLength(ENTRIES.length);
+  });
+
+  it('sheds the ARIA the moment the reason lifts', () => {
+    mountPoolWithMegaReason(REASON);
+    expect(megaWrapper().getAttribute('aria-disabled')).toBe('true');
+
+    mountPoolWithMegaReason(null);
+
+    expect(megaWrapper().getAttribute('aria-disabled')).toBe(null);
+    expect(host.querySelector('.filter-bar__mega-reason')).toBe(null);
+
+    chooseMega('mega');
+    expect(megaOption('mega').checked).toBe(true);
+    expect(cards().length).toBeLessThan(ENTRIES.length);
+  });
+
+  it('leaves the search field and the type toolbar live', () => {
+    mountPoolWithMegaReason(REASON);
+
+    pressType('Water');
+    expect(cards()).toHaveLength(withType('Water'));
+
+    typeSearch('wash');
+    expect(cardNames()).toEqual(['Rotom-Wash']);
   });
 });

@@ -1,4 +1,4 @@
-import type { RosterEntry } from '../../core/roster/types';
+import type { PoolSubject } from './MonCard';
 
 import './BanChipList.css';
 
@@ -33,13 +33,33 @@ import './BanChipList.css';
  * shows them an empty ban field.
  */
 
-export interface BanChipListProps {
-  /** Already name-sorted by `bannedEntries`. This component does not sort. */
-  banned: readonly RosterEntry[];
-  onRemove: (entry: RosterEntry) => void;
+/**
+ * Which list a chip removes from, named so the accessible name stays one construction.
+ *
+ * The species banlist is `banlist` and the Mega-forme banlist is `Mega-forme banlist`, which
+ * are the two strings 02-UI-SPEC §4 and 03-UI-SPEC §3 give. Only the NOUN PHRASE varies — the
+ * sentence around it is composed once below, so two surfaces cannot end up naming their chips
+ * in two different shapes.
+ */
+const DEFAULT_LIST_NAME = 'banlist';
+
+export interface BanChipListProps<T extends PoolSubject> {
+  /**
+   * Already name-sorted by `bannedEntries` or `bannedMegaFormes`. This component does not sort.
+   *
+   * A WIDENING, not a second mode: a chip reads `id` and `name`, and `MegaForme` carries both.
+   */
+  banned: readonly T[];
+  onRemove: (entry: T) => void;
+  /** The list named in every chip's accessible name. Defaults to `banlist`. */
+  listName?: string;
 }
 
-export function BanChipList({ banned, onRemove }: BanChipListProps) {
+export function BanChipList<T extends PoolSubject>({
+  banned,
+  onRemove,
+  listName = DEFAULT_LIST_NAME,
+}: BanChipListProps<T>) {
   if (banned.length === 0) return null;
 
   return (
@@ -49,7 +69,7 @@ export function BanChipList({ banned, onRemove }: BanChipListProps) {
           <button
             type="button"
             class="ban-chip"
-            aria-label={`Remove ${entry.name} from the banlist`}
+            aria-label={`Remove ${entry.name} from the ${listName}`}
             onClick={() => onRemove(entry)}
           >
             <span class="ban-chip__name">{entry.name}</span>

@@ -334,3 +334,55 @@ describe('hasActiveFilters', () => {
     expect(selected({ ...NO_FILTERS, matchAll: true })).toHaveLength(ENTRIES.length);
   });
 });
+
+describe('the predicates over a Mega forme', () => {
+  /*
+   * The widening RULE-04 needs, tested at the module rather than through the grid.
+   *
+   * A `MegaForme` satisfies `FilterableEntry` structurally, so the Mega-forme ban surface
+   * reuses this matcher instead of growing a second one — the exact drift this module's
+   * opening paragraph exists to prevent, arriving a second time on a second surface.
+   *
+   * The forme's own typing is the point: `Charizard-Mega-X` is Fire/Dragon where Charizard
+   * is Fire/Flying, so a grid that filtered formes by their base species' types would
+   * answer a Dragon query with nothing.
+   */
+
+  const CHARIZARD = entry('charizard');
+  const MEGA_X = CHARIZARD.megaFormes.find((forme) => forme.forme === 'Mega-X');
+
+  it('matches a forme by its own name', () => {
+    expect(MEGA_X).toBeDefined();
+    if (MEGA_X === undefined) return;
+
+    expect(matchesName(MEGA_X, toSearchKey('mega x'))).toBe(true);
+    expect(matchesName(MEGA_X, toSearchKey('charizard'))).toBe(true);
+    expect(matchesName(MEGA_X, toSearchKey('venusaur'))).toBe(false);
+  });
+
+  it('matches a type query against the formes own types, not its species', () => {
+    expect(MEGA_X).toBeDefined();
+    if (MEGA_X === undefined) return;
+
+    // Measured: the forme is Fire/Dragon and the base species is Fire/Flying.
+    expect(CHARIZARD.types).not.toEqual(MEGA_X.types);
+
+    const dragon = compileFilters({ ...NO_FILTERS, types: ['Dragon'] });
+    expect(matchesFilters(MEGA_X, dragon)).toBe(true);
+    expect(matchesFilters(CHARIZARD, dragon)).toBe(false);
+
+    const flying = compileFilters({ ...NO_FILTERS, types: ['Flying'] });
+    expect(matchesFilters(MEGA_X, flying)).toBe(false);
+  });
+
+  it('passes every forme at the neutral Mega mode, and reads an absent flag as not capable', () => {
+    for (const forme of ENTRIES.flatMap((candidate) => candidate.megaFormes)) {
+      expect(matchesMega(forme, 'all'), `${forme.id} at all`).toBe(true);
+      // A forme is not a species that CAN Mega — it IS the Mega. The ban grid renders the
+      // control inert for exactly this reason rather than leaving the host a mode that
+      // empties the grid.
+      expect(matchesMega(forme, 'mega'), `${forme.id} at mega`).toBe(false);
+      expect(matchesMega(forme, 'nonMega'), `${forme.id} at nonMega`).toBe(true);
+    }
+  });
+});

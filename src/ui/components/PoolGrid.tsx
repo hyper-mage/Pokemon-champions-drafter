@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { SpriteMeta } from '../../adapters/roster-source';
 import { loadViewPrefs, saveViewPrefs, type Density } from '../../adapters/view-prefs';
-import type { RosterEntry } from '../../core/roster/types';
 import {
   compileFilters,
   hasActiveFilters,
@@ -13,7 +12,7 @@ import {
 
 import { FilterBar } from './FilterBar';
 import { announce } from './LiveRegion';
-import { MonCard } from './MonCard';
+import { MonCard, type PoolSubject } from './MonCard';
 import { SegmentedControl, type SegmentedOption } from './SegmentedControl';
 
 import './PoolGrid.css';
@@ -46,8 +45,17 @@ import './PoolGrid.css';
  * descendant of this element, so it cannot inherit the redeclared tokens — a density that
  * reached the board would have to be written into a second selector to get there.
  */
-export interface PoolGridProps {
-  entries: readonly RosterEntry[];
+export interface PoolGridProps<T extends PoolSubject> {
+  /**
+   * The rows to render. Draftable entries on the draft screen and in the species ban grid;
+   * Mega formes in the Mega-forme ban grid.
+   *
+   * A WIDENING, not a second mode. Every surface below — the cell, the filters, the sprite
+   * lookup, the keyed reconciliation — reads only fields both shapes carry, so a forme grid
+   * costs no branch here. It DOES mean a dual-Mega species contributes two rows and the
+   * count line says so; that is what per-forme banning means (03-UI-SPEC).
+   */
+  entries: readonly T[];
   spriteMeta: SpriteMeta;
   /**
    * What activating a cell does. On the draft screen that is picking; in ban mode the config
@@ -60,7 +68,7 @@ export interface PoolGridProps {
    * one including 02-07's ban toggle, is unaffected: TypeScript assigns a 1-argument
    * function to a 2-argument parameter, so no call site had to be edited for this.
    */
-  onPick: (entry: RosterEntry, meta: { filtersCleared: boolean }) => void;
+  onPick: (entry: T, meta: { filtersCleared: boolean }) => void;
   /**
    * `null` on the draft screen. A set of banned ids puts the grid in ban mode: no heading,
    * the count line becomes `{n} of {total} banned`, and every cell reports a pressed state.
@@ -70,6 +78,27 @@ export interface PoolGridProps {
    * `MonChip`'s `showName`, where one derived local drives two things that must not drift.
    */
   bannedIds: ReadonlySet<string> | null;
+  /**
+   * What the ban count line counts, in the plural. Omitted means bare `{n} of {total} banned`.
+   *
+   * Only the NOUN varies — `Mega formes` is the one value 03-UI-SPEC §3 adds — because the
+   * line itself is composed once, so the species grid and the forme grid cannot drift into
+   * two shapes of one sentence. Ignored outside ban mode, where there is no count to name.
+   */
+  banSubject?: string;
+  /**
+   * Forwarded to `FilterBar`. `null` leaves the Mega-capability control live.
+   *
+   * This component is the only mounter of `FilterBar`, so a caller that needs the control
+   * inert can only reach it through here. It is a pass-through and nothing else: no
+   * behaviour on this component depends on it, and in particular it does not imply ban mode.
+   *
+   * OPTIONAL, defaulting to `null`, and the default is load-bearing rather than a
+   * convenience: `FilterBar` treats any non-null value as a reason, so an omitted prop
+   * arriving as `undefined` would read as "inert with the reason `undefined`". The default
+   * is applied here, once, so that value can never reach the control.
+   */
+  megaInertReason?: string | null;
 }
 
 /**
@@ -97,8 +126,9 @@ function densityLabel(density: Density): string {
  * carries; a roster figure typed as a literal would be worse still (D-17), because it dates
  * the moment the regulation rotates. Both follow a filter for free the day one exists.
  */
-function banCountLine(banned: number, total: number): string {
-  return `${banned} of ${total} banned`;
+function banCountLine(banned: number, total: number, subject: string | undefined): string {
+  const noun = subject === undefined ? '' : `${subject} `;
+  return `${banned} of ${total} ${noun}banned`;
 }
 
 /*
@@ -143,7 +173,14 @@ function filterAnnouncement(matching: number, total: number): string {
   return `${matching} of ${total} Pokémon match.`;
 }
 
-export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridProps) {
+export function PoolGrid<T extends PoolSubject>({
+  entries,
+  spriteMeta,
+  onPick,
+  bannedIds,
+  banSubject,
+  megaInertReason = null,
+}: PoolGridProps<T>) {
   // Read synchronously on the first render, in a state initializer rather than an
   // effect. An effect runs after the first paint, so the host would watch the pool draw
   // itself at standard density and then jump to their actual choice on every reload.
@@ -237,7 +274,7 @@ export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridPro
    * is delivered instead by the `Filters cleared.` suffix `TurnBanner` appends — which is
    * precisely why 02-UI-SPEC composes ONE string there rather than firing two from here.
    */
-  function handleActivate(entry: RosterEntry): void {
+  function handleActivate(entry: T): void {
     const filtersCleared = bannedIds === null && hasActiveFilters(filters);
 
     // UNCONDITIONAL, and the ban grid is why. Every activation produces an announcement of
@@ -400,7 +437,7 @@ export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridPro
 
         <p class="pool__count">
           {banMode
-            ? banCountLine(bannedCount, visible.length)
+            ? banCountLine(bannedCount, visible.length, banSubject)
             : filtered
               ? `${visible.length} of ${entries.length} available`
               : `${visible.length} available`}
@@ -421,7 +458,12 @@ export function PoolGrid({ entries, spriteMeta, onPick, bannedIds }: PoolGridPro
           promise. In ban mode it sits above `.pool--ban`'s capped scroll region, never
           inside it, so it cannot scroll away from the grid it filters.
         */}
-        <FilterBar value={filters} onChange={setFilters} density={density} />
+        <FilterBar
+          value={filters}
+          onChange={setFilters}
+          density={density}
+          megaInertReason={megaInertReason}
+        />
       </header>
 
       {empty !== null ? (

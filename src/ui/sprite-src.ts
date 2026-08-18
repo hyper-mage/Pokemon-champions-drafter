@@ -14,6 +14,9 @@
  * map is the single source of truth, and `tests/ui/sprite-resolution.test.ts` checks
  * every committed row against the files actually on disk.
  *
+ * The same map holds every Mega forme id as well as every draftable row, so a forme
+ * resolves its own art through exactly this lookup and needs no second code path.
+ *
  * Every URL is prefixed with `import.meta.env.BASE_URL`. A path that merely starts with
  * `/` resolves to the domain root: it works perfectly on localhost and 404s on the
  * deployed project sub-path.
@@ -22,7 +25,19 @@
 import type { JSX } from 'preact';
 
 import type { SpriteMeta } from '../adapters/roster-source';
-import type { RosterEntry } from '../core/roster/types';
+
+/**
+ * The structural minimum a sprite lookup reads.
+ *
+ * A `RosterEntry` satisfies it and so does a `MegaForme`. `spriteMissing` is OPTIONAL
+ * because a forme carries no such field, and the optionality is what makes `undefined` mean
+ * "the build did not flag this row" rather than a type error at every forme call site.
+ * Note what is NOT here: `spriteId`. Nothing resolves a URL from it — see the trap above.
+ */
+export interface SpriteSubject {
+  id: string;
+  spriteMissing?: boolean;
+}
 
 const SPRITE_DIRECTORY = 'sprites/';
 
@@ -45,8 +60,8 @@ const SPRITE_FILE_PATTERN = /^[0-9]+\.png$/;
  *
  * Exported for the test that walks every committed row against the real files.
  */
-export function resolveSpriteFile(entry: RosterEntry, spriteMeta: SpriteMeta): string {
-  if (entry.spriteMissing) return PLACEHOLDER_FILE;
+export function resolveSpriteFile(entry: SpriteSubject, spriteMeta: SpriteMeta): string {
+  if (entry.spriteMissing === true) return PLACEHOLDER_FILE;
 
   const reference = spriteMeta.byRosterId[entry.id];
   if (reference === undefined) return PLACEHOLDER_FILE;
@@ -60,7 +75,7 @@ function spriteUrl(file: string): string {
 }
 
 /** The `src` for a roster row's art, base path included. */
-export function spriteSrc(entry: RosterEntry, spriteMeta: SpriteMeta): string {
+export function spriteSrc(entry: SpriteSubject, spriteMeta: SpriteMeta): string {
   return spriteUrl(resolveSpriteFile(entry, spriteMeta));
 }
 

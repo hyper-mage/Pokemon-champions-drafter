@@ -1,7 +1,8 @@
 import { useState } from 'preact/hooks';
 
 import { matchesName, toSearchKey } from '../../core/search';
-import type { RosterEntry } from '../../core/roster/types';
+
+import type { PoolSubject } from './MonCard';
 
 import './TypeaheadField.css';
 
@@ -60,22 +61,47 @@ import './TypeaheadField.css';
 const MAX_RESULTS = 8;
 
 /**
- * Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen.
+ * What this field searches over, in the singular, for the no-match line.
+ *
+ * `Pokémon` is the species banlist's subject and the default, so no existing call site
+ * changed. The Mega-forme banlist passes `Mega forme`, which is the only other subject the
+ * copywriting contract names. It is a NOUN and never a sentence: the sentence is composed
+ * once, below, so the two surfaces cannot drift into two different shapes of the same line.
+ */
+const DEFAULT_SUBJECT = 'Pokémon';
+
+/**
+ * Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen, and 03-UI-SPEC §3 for the
+ * Mega-forme subject.
  *
  * A composer rather than an inline template, per S-5: the quoted query is the one piece of
  * host-authored text on this surface, and it reaches the DOM as a text child of a paragraph.
  */
-function noMatchMessage(query: string): string {
-  return `No Pokémon matches "${query}".`;
+function noMatchMessage(subject: string, query: string): string {
+  return `No ${subject} matches "${query}".`;
 }
 
-export interface TypeaheadFieldProps {
+export interface TypeaheadFieldProps<T extends PoolSubject> {
   /** Visually hidden. */
   label: string;
   placeholder: string;
-  /** What the host may still choose. The caller decides what belongs here. */
-  candidates: readonly RosterEntry[];
-  onSelect: (entry: RosterEntry) => void;
+  /**
+   * What the host may still choose. The caller decides what belongs here.
+   *
+   * A WIDENING, not a second mode. `MegaForme` carries the `id` this component keys and
+   * addresses options by and the `name` the shared predicate matches, which is everything
+   * read here — so the Mega-forme banlist gets the same combobox rather than a second one
+   * that can drift from it.
+   */
+  candidates: readonly T[];
+  onSelect: (entry: T) => void;
+  /**
+   * The singular noun in the no-match line. Defaults to `Pokémon`.
+   *
+   * The whole sentence is NOT the prop, so the two surfaces cannot end up phrasing it
+   * differently — only the noun varies, and the shape is one composer above.
+   */
+  subject?: string;
   /**
    * Unique prefix for the input, the listbox and every option id. Required, because the
    * input addresses an option by id and two fields on one page that shared a prefix would
@@ -84,13 +110,14 @@ export interface TypeaheadFieldProps {
   id: string;
 }
 
-export function TypeaheadField({
+export function TypeaheadField<T extends PoolSubject>({
   label,
   placeholder,
   candidates,
   onSelect,
   id,
-}: TypeaheadFieldProps) {
+  subject = DEFAULT_SUBJECT,
+}: TypeaheadFieldProps<T>) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
   const [dismissed, setDismissed] = useState(false);
@@ -116,7 +143,7 @@ export function TypeaheadField({
     Entry ids are Showdown `toID` form — lowercase alphanumeric (`roster/types.ts`) — so they
     are valid HTML ids as they stand and need no escaping.
   */
-  function optionId(entry: RosterEntry): string {
+  function optionId(entry: T): string {
     return `${id}-option-${entry.id}`;
   }
 
@@ -126,7 +153,7 @@ export function TypeaheadField({
     setDismissed(false);
   }
 
-  function select(entry: RosterEntry): void {
+  function select(entry: T): void {
     onSelect(entry);
     reset();
   }
@@ -231,7 +258,7 @@ export function TypeaheadField({
       */}
       {showEmpty && (
         <p class="typeahead__empty" role="status">
-          {noMatchMessage(query)}
+          {noMatchMessage(subject, query)}
         </p>
       )}
     </div>

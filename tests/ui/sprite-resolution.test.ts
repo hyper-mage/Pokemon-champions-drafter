@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 import committedSnapshot from '../../public/data/roster.mb.json';
 import committedSpriteMeta from '../../public/data/sprite-meta.json';
 import type { SpriteMeta } from '../../src/adapters/roster-source';
-import type { MegaForme, RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
+import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import { resolveSpriteFile } from '../../src/ui/sprite-src';
 
 const snapshot = committedSnapshot as unknown as RosterSnapshot;
@@ -32,22 +32,14 @@ const spriteDirectory = join(repositoryRoot, 'public', 'sprites');
 
 const PLACEHOLDER_FILE = '_placeholder.png';
 
-/** `resolveSpriteFile` takes a full entry, so a Mega forme is adapted to that shape. */
-function asEntry(mega: MegaForme): RosterEntry {
-  return {
-    id: mega.id,
-    name: mega.name,
-    num: 0,
-    types: mega.types,
-    baseStats: mega.baseStats,
-    baseSpeciesId: mega.id,
-    forme: mega.forme,
-    megaCapable: false,
-    megaFormes: [],
-    spriteId: mega.spriteId,
-    spriteMissing: false,
-  };
-}
+/*
+ * A Mega forme is passed to `resolveSpriteFile` AS ITSELF.
+ *
+ * It used to be adapted into a synthetic `RosterEntry` here, which quietly made this test
+ * prove something the application never does. `SpriteSubject` is the structural minimum the
+ * lookup reads — an `id` and an optional `spriteMissing` — so the forme the grid renders and
+ * the forme this test resolves are now the same value going through the same call.
+ */
 
 describe('sprite resolution', () => {
   it('resolves every draftable entry to a sprite file that exists on disk', () => {
@@ -69,7 +61,7 @@ describe('sprite resolution', () => {
     const unresolved: string[] = [];
 
     for (const mega of megaFormes) {
-      const file = resolveSpriteFile(asEntry(mega), spriteMeta);
+      const file = resolveSpriteFile(mega, spriteMeta);
       if (!existsSync(join(spriteDirectory, file))) {
         unresolved.push(`${mega.id} -> ${file}`);
       }
@@ -77,6 +69,31 @@ describe('sprite resolution', () => {
 
     expect(megaFormes.length).toBe(snapshot.counts.megaFormes);
     expect(unresolved).toEqual([]);
+  });
+
+  it('resolves a dual-Mega forme to its own art, from the map and not from a slug', () => {
+    // The forme the Mega-forme ban grid renders first, and the one D-12's rejected merged
+    // cell would have had to hide. Its file is whatever `byRosterId` says and nothing else.
+    const megaX = snapshot.entries
+      .flatMap((entry) => entry.megaFormes)
+      .find((mega) => mega.id === 'charizardmegax');
+
+    expect(megaX, 'charizardmegax in the snapshot').toBeDefined();
+    if (megaX === undefined) return;
+
+    const file = resolveSpriteFile(megaX, spriteMeta);
+
+    expect(file).toBe(spriteMeta.byRosterId['charizardmegax']?.file);
+    expect(file).not.toBe(PLACEHOLDER_FILE);
+    expect(existsSync(join(spriteDirectory, file))).toBe(true);
+  });
+
+  it('never resolves a real Mega forme to the placeholder either', () => {
+    const placeheld = snapshot.entries
+      .flatMap((entry) => entry.megaFormes)
+      .filter((mega) => resolveSpriteFile(mega, spriteMeta) === PLACEHOLDER_FILE);
+
+    expect(placeheld).toEqual([]);
   });
 
   it('never resolves a real entry to the placeholder while the inventory is complete', () => {
