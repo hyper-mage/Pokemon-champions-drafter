@@ -11,9 +11,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CARDS_PLAYED,
+  cardsPlayed,
   DRAFT_PICK_MADE,
   draftStarted,
   isScheduleCompiledAction,
+  ORDER_RESOLVED,
+  orderResolved,
   pickMade,
   pickUndone,
   poolBuilt,
@@ -24,6 +28,7 @@ import {
   type Intent,
   type RoundSpec,
 } from '../../src/core/actions';
+import { resolvePickOrder } from '../../src/core/cards';
 import {
   initialState,
   SCHEMA_VERSION,
@@ -33,9 +38,14 @@ import {
 import { apply, canApply, fold } from '../../src/core/reduce';
 import {
   selectAvailablePool,
+  selectCardPlayOrder,
+  selectCardsPlayedThisRound,
+  selectCurrentRound,
   selectCurrentTurn,
+  selectHand,
   selectIsComplete,
   selectPickCount,
+  selectResolvedOrder,
   selectRoundKind,
   selectSchedule,
   selectTeams,
@@ -801,5 +811,302 @@ describe('the tournament document', () => {
       expect(Number.isInteger(action.at), `log[${index}].at`).toBe(true);
       expect(action.actorId, `log[${index}].actorId`).toBe('host');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cards/played and order/resolved — CARD-01, CARD-03, CARD-06, D-19, D-22
+// ---------------------------------------------------------------------------
+
+/** `max(seq) + 1`, the way `store.ts` allocates it. Never `log.length`; gaps are legal. */
+function nextSeqOf(log: readonly Action[]): number {
+  return log.reduce((highest, action) => Math.max(highest, action.seq), -1) + 1;
+}
+
+/** One card play per player, in that round's play order, values given in the same order. */
+function withCardPlays(log: Action[], round: number, values: readonly number[]): Action[] {
+  const extended = [...log];
+  const order = selectCardPlayOrder(fold(makeDoc(extended)), round);
+
+  order.forEach((playerId, index) => {
+    extended.push(
+      stamp(cardsPlayed({ playerId, value: values[index] ?? 1, round }), nextSeqOf(extended)),
+    );
+  });
+
+  return extended;
+}
+
+/** The card plays, then the resolution the last one triggers. */
+function withResolvedCardRound(log: Action[], round: number, values: readonly number[]): Action[] {
+  const extended = withCardPlays(log, round, values);
+  const plays = selectCardsPlayedThisRound(fold(makeDoc(extended)), round);
+
+  extended.push(stamp(orderResolved(round, resolvePickOrder(plays)), nextSeqOf(extended)));
+  return extended;
+}
+
+describe('apply cards/played', () => {
+  it('records the play, carrying the seq of the action that made it', () => {
+    const log = [...openingLog(), stamp(cardsPlayed({ playerId: 'p1', value: 3, round: 1 }), 3)];
+    const state = fold(makeDoc(log));
+
+    expect(state.cardsPlayed).toEqual([{ playerId: 'p1', value: 3, round: 1, seq: 3 }]);
+  });
+
+  it('folds a payload with no value to an unchanged cardsPlayed array', () => {
+    // The whole reason the structural guard exists. An imported log that says `cards/played`
+    // while carrying no value must fold to "ignored", never to a play of `undefined` that
+    // would then be subtracted from somebody's hand.
+    const before = fold(makeDoc(openingLog()));
+    const malformed = {
+      type: CARDS_PLAYED,
+      playerId: 'p1',
+      round: 1,
+      seq: 3,
+      at: CREATED_AT + 3,
+      actorId: 'host',
+    } as unknown as AnyAction;
+
+    expect(apply(before, malformed)).toEqual(before);
+    expect(apply(before, malformed).cardsPlayed).toEqual([]);
+  });
+
+  it('folds a payload whose playerId is not a string to an unchanged array', () => {
+    const before = fold(makeDoc(openingLog()));
+    const malformed = {
+      type: CARDS_PLAYED,
+      playerId: 42,
+      value: 3,
+      round: 1,
+      seq: 3,
+      at: CREATED_AT + 3,
+      actorId: 'host',
+    } as unknown as AnyAction;
+
+    expect(apply(before, malformed).cardsPlayed).toEqual([]);
+  });
+
+  it('keeps the plays in log order across rounds', () => {
+    const log = withCardPlays(withResolvedCardRound(openingLog(), 1, [4, 2]), 2, [1, 5]);
+    const state = fold(makeDoc(log));
+
+    expect(state.cardsPlayed.map((play) => [play.playerId, play.value, play.round])).toEqual([
+      ['p1', 4, 1],
+      ['p2', 2, 1],
+      ['p2', 1, 2],
+      ['p1', 5, 2],
+    ]);
+  });
+
+  it('leaves every hand derived rather than stored', () => {
+    const state = fold(makeDoc(withResolvedCardRound(openingLog(), 1, [4, 2])));
+
+    expect(selectHand(state, 'p1')).toEqual([1, 2, 3, 5, 6]);
+    expect(selectHand(state, 'p2')).toEqual([1, 3, 4, 5, 6]);
+  });
+
+  it('gives every recorded play a distinct seq', () => {
+    const log = withCardPlays(withResolvedCardRound(openingLog(), 1, [4, 2]), 2, [1, 5]);
+    const seqs = fold(makeDoc(log)).cardsPlayed.map((play) => play.seq);
+
+    expect(new Set(seqs).size).toBe(seqs.length);
+  });
+});
+
+describe('apply order/resolved', () => {
+  it('records the round’s order', () => {
+    const state = fold(makeDoc(withResolvedCardRound(openingLog(), 1, [4, 2])));
+
+    // p2 played the lower card, so p2 picks first.
+    expect(state.resolvedOrders).toEqual([{ round: 1, order: ['p2', 'p1'] }]);
+    expect(selectResolvedOrder(state, 1)).toEqual(['p2', 'p1']);
+  });
+
+  it('does not share an array with the log entry it folded from', () => {
+    const log = withResolvedCardRound(openingLog(), 1, [4, 2]);
+    const state = fold(makeDoc(log));
+
+    state.resolvedOrders[0]?.order.push('p9');
+
+    const entry = log[log.length - 1];
+    expect(entry?.type).toBe(ORDER_RESOLVED);
+    if (entry === undefined || entry.type !== ORDER_RESOLVED) return;
+    expect(entry.order).toEqual(['p2', 'p1']);
+  });
+
+  it('replaces nothing when a second resolution for the same round is folded', () => {
+    // `apply` is not a validator. A duplicate is `canApply`'s to refuse; here it appends,
+    // and the selector answers with the FIRST, so a hand-edited file cannot rewrite a
+    // round the room already played by appending a second opinion about it.
+    const log = withResolvedCardRound(openingLog(), 1, [4, 2]);
+    log.push(stamp(orderResolved(1, ['p1', 'p2']), nextSeqOf(log)));
+
+    const state = fold(makeDoc(log));
+    expect(state.resolvedOrders).toHaveLength(2);
+    expect(selectResolvedOrder(state, 1)).toEqual(['p2', 'p1']);
+  });
+
+  it('folds a payload with no order to an unchanged array', () => {
+    const before = fold(makeDoc(openingLog()));
+    const malformed = {
+      type: ORDER_RESOLVED,
+      round: 1,
+      seq: 3,
+      at: CREATED_AT + 3,
+      actorId: 'host',
+    } as unknown as AnyAction;
+
+    expect(apply(before, malformed).resolvedOrders).toEqual([]);
+  });
+});
+
+describe('canApply cards/played', () => {
+  const started = fold(makeDoc(openingLog()));
+
+  function attempt(state = started, playerId = 'p1', value = 3, round = 1) {
+    return canApply(state, stamp(cardsPlayed({ playerId, value, round }), 99));
+  }
+
+  it('accepts the player at the front of the round’s play order', () => {
+    expect(attempt()).toEqual({ ok: true });
+  });
+
+  it('rejects a payload missing its value', () => {
+    const malformed = {
+      type: CARDS_PLAYED,
+      playerId: 'p1',
+      round: 1,
+      seq: 99,
+      at: CREATED_AT,
+      actorId: 'host',
+    } as unknown as AnyAction;
+
+    expect(canApply(started, malformed)).toEqual({ ok: false, reason: 'malformedPayload' });
+  });
+
+  it('rejects a value outside 1..config.rounds as malformed', () => {
+    // The structural guard types the field in isolation and cannot see `config.rounds`,
+    // so the range is checked here — where the state is in hand.
+    for (const value of [0, -1, CONFIG.rounds + 1, 4000000000]) {
+      expect(attempt(started, 'p1', value), `value ${value}`).toEqual({
+        ok: false,
+        reason: 'malformedPayload',
+      });
+    }
+  });
+
+  it('rejects a play before the draft has started', () => {
+    const noDraft = fold(makeDoc([openingLog()[0] as Action]));
+    expect(attempt(noDraft)).toEqual({ ok: false, reason: 'draftNotStarted' });
+  });
+
+  it('rejects a player who is not on the card clock', () => {
+    expect(attempt(started, 'p2')).toEqual({ ok: false, reason: 'notYourTurn' });
+  });
+
+  it('moves the clock to the next player once the first has played', () => {
+    const afterFirst = fold(makeDoc(withCardPlays(openingLog(), 1, [4])));
+
+    expect(attempt(afterFirst, 'p2', 2)).toEqual({ ok: true });
+    expect(attempt(afterFirst, 'p1', 5)).toEqual({ ok: false, reason: 'notYourTurn' });
+  });
+
+  it('rejects a play stamped for a round the draft is not standing in', () => {
+    expect(attempt(started, 'p1', 3, 2)).toEqual({ ok: false, reason: 'wrongSlot' });
+  });
+
+  it('rejects a card that player has already spent', () => {
+    // Round 1 resolved, both picks made, so round 2 is on the clock and p2 leads it.
+    const log = withPicks(withResolvedCardRound(openingLog(), 1, [4, 2]), 2);
+    const roundTwo = fold(makeDoc(log));
+
+    expect(selectCurrentRound(roundTwo)).toBe(2);
+    expect(attempt(roundTwo, 'p2', 2, 2)).toEqual({ ok: false, reason: 'cardAlreadySpent' });
+    expect(attempt(roundTwo, 'p2', 3, 2)).toEqual({ ok: true });
+  });
+
+  it('rejects a play into a round that has already resolved', () => {
+    // Only reachable from a hand-edited or imported log: this one resolved round 1 while
+    // p2 still had a card to play, which `fold` reproduces because it runs no `canApply`.
+    const log = withCardPlays(openingLog(), 1, [4]);
+    log.push(stamp(orderResolved(1, ['p1']), nextSeqOf(log)));
+
+    expect(attempt(fold(makeDoc(log)), 'p2', 2)).toEqual({
+      ok: false,
+      reason: 'roundAlreadyResolved',
+    });
+  });
+});
+
+describe('canApply order/resolved', () => {
+  function attempt(state: ReturnType<typeof fold>, round: number, order: readonly string[]) {
+    return canApply(state, stamp(orderResolved(round, order), 99));
+  }
+
+  it('rejects a payload whose order is not an array of strings', () => {
+    const malformed = {
+      type: ORDER_RESOLVED,
+      round: 1,
+      order: 'p1,p2',
+      seq: 99,
+      at: CREATED_AT,
+      actorId: 'host',
+    } as unknown as AnyAction;
+
+    expect(canApply(fold(makeDoc(openingLog())), malformed)).toEqual({
+      ok: false,
+      reason: 'malformedPayload',
+    });
+  });
+
+  it('rejects a resolution before the draft has started', () => {
+    const noDraft = fold(makeDoc([openingLog()[0] as Action]));
+    expect(attempt(noDraft, 1, ['p1', 'p2'])).toEqual({ ok: false, reason: 'draftNotStarted' });
+  });
+
+  it('rejects a round nobody has bid in', () => {
+    expect(attempt(fold(makeDoc(openingLog())), 1, ['p1', 'p2'])).toEqual({
+      ok: false,
+      reason: 'roundNotComplete',
+    });
+  });
+
+  it('rejects a round where one player still holds their card', () => {
+    const partial = fold(makeDoc(withCardPlays(openingLog(), 1, [4])));
+    expect(attempt(partial, 1, ['p1', 'p2'])).toEqual({ ok: false, reason: 'roundNotComplete' });
+  });
+
+  it('accepts a round every player has bid in', () => {
+    const complete = fold(makeDoc(withCardPlays(openingLog(), 1, [4, 2])));
+    expect(attempt(complete, 1, ['p2', 'p1'])).toEqual({ ok: true });
+  });
+
+  it('rejects a second resolution for the same round', () => {
+    const resolved = fold(makeDoc(withResolvedCardRound(openingLog(), 1, [4, 2])));
+    expect(attempt(resolved, 1, ['p1', 'p2'])).toEqual({
+      ok: false,
+      reason: 'roundAlreadyResolved',
+    });
+  });
+});
+
+describe('a card round folds without canApply', () => {
+  it('reproduces an imported document’s unusual card data rather than repairing it', () => {
+    // Sync rule 11 and the reason `fold` never calls `canApply`: a document written by a
+    // newer build, or migrated from one, must still open. Here both players played the
+    // same value and the round resolved out of the rotation's order.
+    const log = [...openingLog()];
+    log.push(stamp(cardsPlayed({ playerId: 'p2', value: 5, round: 1 }), 3));
+    log.push(stamp(cardsPlayed({ playerId: 'p1', value: 5, round: 1 }), 9));
+    log.push(stamp(orderResolved(1, ['p2', 'p1']), 11));
+
+    const state = fold(makeDoc(log));
+
+    expect(state.cardsPlayed).toHaveLength(2);
+    expect(selectHand(state, 'p1')).toEqual([1, 2, 3, 4, 6]);
+    expect(selectResolvedOrder(state, 1)).toEqual(['p2', 'p1']);
+    // The seq gap is preserved, and the tiebreak reads it rather than array position.
+    expect(resolvePickOrder(selectCardsPlayedThisRound(state, 1))).toEqual(['p2', 'p1']);
   });
 });

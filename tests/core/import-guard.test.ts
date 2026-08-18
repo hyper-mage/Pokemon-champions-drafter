@@ -1462,3 +1462,142 @@ describe('isValidTournament', () => {
     expect(isValidTournament(doc)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// cards/played and order/resolved at the untrusted boundary — T-03-25 / T-03-26
+// ---------------------------------------------------------------------------
+
+/**
+ * A document whose log carries card entries, with DELIBERATE `seq` gaps.
+ *
+ * The gaps are the point rather than incidental colouring. `store.ts` allocates
+ * `max(seq) + 1`, so a log this app wrote itself has gaps the moment an undo removes an
+ * entry from the middle — and `resolvePickOrder` breaks its ties on `seq`, so a guard that
+ * demanded contiguity would refuse a file this build produced and a reducer that treated
+ * `seq` as an index would reorder a round after an unrelated undo.
+ */
+function cardDoc(entries: readonly Record<string, unknown>[]): string {
+  const doc = validDoc() as unknown as Record<string, unknown>;
+  const log = doc['log'] as Record<string, unknown>[];
+  log.push(...entries);
+  return JSON.stringify(doc);
+}
+
+const CARD_ENTRIES: readonly Record<string, unknown>[] = [
+  {
+    type: 'cards/played',
+    playerId: 'p1',
+    value: 4,
+    round: 1,
+    seq: 40,
+    at: 1_770_000_000_005,
+    actorId: 'host',
+  },
+  {
+    type: 'cards/played',
+    playerId: 'p2',
+    value: 2,
+    round: 1,
+    seq: 77,
+    at: 1_770_000_000_006,
+    actorId: 'host',
+  },
+  {
+    type: 'order/resolved',
+    round: 1,
+    order: ['p2', 'p1'],
+    seq: 900,
+    at: 1_770_000_000_007,
+    actorId: 'host',
+  },
+];
+
+/** `CARD_ENTRIES` with one field of one entry replaced. */
+function cardDocWith(index: number, patch: Record<string, unknown>): string {
+  return cardDoc(
+    CARD_ENTRIES.map((entry, position) =>
+      position === index ? { ...entry, ...patch } : { ...entry },
+    ),
+  );
+}
+
+describe('a cards/played log entry', () => {
+  it('survives the round trip field by field, gaps in seq and all', () => {
+    // This file rebuilds payloads field by field, so a field it does not name is dropped
+    // SILENTLY. A dropped `value` is a card that was spent and is still in the hand.
+    const result = parse(cardDoc(CARD_ENTRIES));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const state = fold(result.doc);
+    expect(state.cardsPlayed).toEqual([
+      { playerId: 'p1', value: 4, round: 1, seq: 40 },
+      { playerId: 'p2', value: 2, round: 1, seq: 77 },
+    ]);
+    expect(state.resolvedOrders).toEqual([{ round: 1, order: ['p2', 'p1'] }]);
+  });
+
+  it('refuses a play with no value rather than folding a play of undefined', () => {
+    const missing = CARD_ENTRIES.map((entry, position) => {
+      if (position !== 0) return { ...entry };
+      const copy = { ...entry };
+      delete copy['value'];
+      return copy;
+    });
+
+    expect(rejection(parse(cardDoc(missing)))).toBe('wrongShape');
+  });
+
+  it('refuses a value or a round past the round cap', () => {
+    // T-03-25. A card value reaches the board as a pip per card in every hand strip, so
+    // `"value": 4000000000` is an allocation failure wearing a small number's clothes.
+    expect(rejection(parse(cardDocWith(0, { value: MAX_ROUNDS + 1 })))).toBe('wrongShape');
+    expect(rejection(parse(cardDocWith(0, { round: MAX_ROUNDS + 1 })))).toBe('wrongShape');
+    expect(parse(cardDocWith(0, { value: MAX_ROUNDS, round: MAX_ROUNDS })).ok).toBe(true);
+  });
+
+  it('refuses a value or a round that is not a positive integer', () => {
+    for (const value of [0, -1, 1.5, '4', null]) {
+      expect(rejection(parse(cardDocWith(0, { value }))), `value ${String(value)}`).toBe(
+        'wrongShape',
+      );
+    }
+    for (const round of [0, -1, 1.5, '1', null]) {
+      expect(rejection(parse(cardDocWith(0, { round }))), `round ${String(round)}`).toBe(
+        'wrongShape',
+      );
+    }
+  });
+
+  it('refuses a playerId that is not a string', () => {
+    expect(rejection(parse(cardDocWith(0, { playerId: 42 })))).toBe('wrongShape');
+  });
+});
+
+describe('an order/resolved log entry', () => {
+  it('refuses an order of five thousand players', () => {
+    // T-03-25. The size gate does not constrain this — five thousand short ids is well
+    // under 5 MB — and the order reaches the board as a row apiece.
+    const huge = Array.from({ length: 5000 }, (_, index) => `p${index}`);
+    expect(rejection(parse(cardDocWith(2, { order: huge })))).toBe('wrongShape');
+  });
+
+  it('accepts an order exactly at the player cap and refuses the one past it', () => {
+    const atCap = Array.from({ length: MAX_PLAYERS }, (_, index) => `p${index}`);
+    expect(parse(cardDocWith(2, { order: atCap })).ok).toBe(true);
+    expect(rejection(parse(cardDocWith(2, { order: [...atCap, 'one-too-many'] })))).toBe(
+      'wrongShape',
+    );
+  });
+
+  it('refuses an order that is not an array of strings', () => {
+    for (const order of ['p1,p2', 42, null, [null], [{ id: 'p1' }]]) {
+      expect(rejection(parse(cardDocWith(2, { order })))).toBe('wrongShape');
+    }
+  });
+
+  it('refuses a round past the round cap or below 1', () => {
+    expect(rejection(parse(cardDocWith(2, { round: MAX_ROUNDS + 1 })))).toBe('wrongShape');
+    expect(rejection(parse(cardDocWith(2, { round: 0 })))).toBe('wrongShape');
+  });
+});
