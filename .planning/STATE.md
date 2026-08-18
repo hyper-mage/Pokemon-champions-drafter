@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-03 — the schedule preview and its reorder
-last_updated: "2026-08-18T03:53:49.355Z"
-last_activity: 2026-08-18 -- Phase 03 plan 03 complete
+stopped_at: Completed 03-02 — the compiled schedule, in the log and on the board
+last_updated: "2026-08-18T14:50:29.946Z"
+last_activity: 2026-08-18
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 36
   completed_plans: 27
-  percent: 75
+  percent: 40
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-08-03)
 ## Current Position
 
 Phase: 03 (compiled-rules-priority-cards-swaps) — EXECUTING
-Plan: 4 of 12
+Plan: 5 of 12
 Plans: 8 of 8 written, 6 waves
-Status: Executing Phase 03 — 03-03 complete, 03-04 next
-Last activity: 2026-08-18 -- Phase 03 plan 03 complete
+Status: Ready to execute
+Last activity: 2026-08-18
 
 Progress: [████████░░] 75%
 
@@ -64,6 +64,7 @@ Progress: [████████░░] 75%
 *Updated after each plan completion*
 | Phase 03 P02 | 28min | 3 tasks | 18 files |
 | Phase 03 P03 | 14min | 2 tasks | 6 files |
+| Phase 03 P04 | 35min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,9 @@ Recent decisions affecting current work:
 - [Phase 03]: The reorder is discarded by the Megas-required input handler, compared on the parsed value — one authority, and 2 to 3 to 2 genuinely discards
 - [Phase 03]: A rule line whose condition can never be false renders unconditionally, with the reasoning recorded where the branch would have gone
 - [Phase 03]: A schedule move swaps kinds between fixed round numbers and re-indexes, so the ordinal stays the row identity
+- [Phase 03]: isMegaEligible is one pure predicate with four named consumers; the X/Y pin compares MegaForme.forme and never a name
+- [Phase 03]: Pool cell, grid, typeahead and chip list widened over a PoolSubject type parameter rather than a bare union, so existing narrow call sites keep narrow handlers
+- [Phase 03]: PoolGrid and FilterBar take an idPrefix — two grids now mount on one screen, which falsified 02-08's fixed-id assumption
 
 ### Pending Todos
 
@@ -121,7 +125,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-18T03:53:11.835Z
+Last session: 2026-08-18T14:50:00.722Z
 Stopped at: Completed 03-02 — the compiled schedule, in the log and on the board
 Resume file: None
 
