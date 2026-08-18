@@ -16,6 +16,7 @@
  * component."
  */
 
+import type { RoundKind, RoundSpec } from './actions';
 import type { DraftState } from './model';
 import { nextInt } from './rng';
 
@@ -76,6 +77,59 @@ export function selectTeams(state: DraftState): Record<string, (string | null)[]
   }
 
   return teams;
+}
+
+/**
+ * The compiled round schedule — RULE-02, and the one answer every round-typed surface reads.
+ *
+ * Returns the stored schedule when its length matches the configured round count, and
+ * `config.rounds` all-open specs otherwise.
+ *
+ * That fallback is not a default that guesses. A schema-2 tournament was drafted before the
+ * compiler existed and ran flat rounds; `migrateV2ToV3` performs no log surgery, so its log
+ * carries no `schedule/compiled` and its folded schedule is empty. All-open is what that
+ * draft actually was, and the log is right about it. The length check is the same statement
+ * about a schedule that disagrees with its own document — a hand-edited file can carry four
+ * specs for a six-round tournament, and two rounds with no answer is worse than six with an
+ * honest one.
+ *
+ * Freshly built, like everything in this file: a caller cannot reach `state.schedule`
+ * through the return value.
+ */
+export function selectSchedule(state: DraftState): RoundSpec[] {
+  if (state.schedule.length === state.config.rounds) {
+    return state.schedule.map((spec) => ({ index: spec.index, kind: spec.kind }));
+  }
+
+  return Array.from({ length: state.config.rounds }, (_, position) => ({
+    index: position + 1,
+    kind: 'open' as const,
+  }));
+}
+
+/**
+ * What round `round` (1-based) is filtered by. `'open'` for anything out of range.
+ *
+ * Out of range answers rather than throws for the same reason `apply` tolerates an action
+ * type it does not know: this is read while rendering, and a selector that threw on a round
+ * number a caller computed badly would take the whole screen down over a header cell.
+ */
+export function selectRoundKind(state: DraftState, round: number): RoundKind {
+  return selectSchedule(state)[round - 1]?.kind ?? 'open';
+}
+
+/**
+ * What slot `slotIndex` (0-based) of a team accepts — D-08.
+ *
+ * The inverse of the join `selectTeams` already makes: a round-`r` pick is filed into slot
+ * `r - 1`, so slot `i` is typed by round `i + 1`. Derived rather than stored, and that is
+ * the decision rather than the implementation: a `slotKind` field on `DraftPick` would be a
+ * SECOND copy of the constraint, free to disagree with the schedule after a migration — and
+ * the runtime validator that would have caught the disagreement is the thing this phase
+ * exists to remove. Recovery is a single array read, so there is nothing to buy by storing it.
+ */
+export function selectSlotKind(state: DraftState, slotIndex: number): RoundKind {
+  return selectRoundKind(state, slotIndex + 1);
 }
 
 /** True exactly when every player holds a full set of `rounds` picks. */
