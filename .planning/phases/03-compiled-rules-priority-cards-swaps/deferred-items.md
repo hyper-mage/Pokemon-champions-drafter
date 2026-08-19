@@ -124,3 +124,61 @@ in `src/` reads a roster figure from a literal.
 
 **Suggested fix when someone owns it:** reword each to name the derivation instead of the
 number, in whichever plan next edits that file.
+
+---
+
+## 5. `swap/made` is not on `isUndoable`'s allow-list yet
+
+**Found during:** 03-10 Task 1
+**Owner:** 03-11 — the plan that adds `swap/passed`
+**Severity:** UX gap, not a correctness bug
+
+`src/core/undo.ts`'s `isUndoable` allows `draft/pickMade`, `cards/played` and
+`order/resolved`. `swap/made` is deliberately not added here, so `Undo last move` currently
+steps PAST a swap to the last pick and the swap survives.
+
+**Why this plan did not do it.** 03-09's own "Notes for the Next Plan" states the shape:
+*"`isUndoable`'s allow-list is where `swap/made` and `swap/passed` attach … `undoRemoval`
+gains two `kind` members."* The two attach together, and the second does not exist until
+03-11. Doing half of it here means `UndoRemoval` — whose `monId` is a single field — gets
+reshaped once for swaps and again for passes, and 03-UI-SPEC's `Undo, swap` announcement
+(`Undid the swap — {in} is back in the pool and {out} returns to {name}'s round {r} slot.`)
+needs BOTH ids, so the field has to change either way. `undo.ts` is also not in 03-10's
+`files_modified`.
+
+**Why it is safe to leave.** Nothing corrupts. Undoing past the pick a swap targeted removes
+that pick, and `apply(SWAP_MADE)` then finds no matching `(playerId, round, outMonId)` and
+folds to a no-op — the T-03-38 containment doing exactly what it was built for. The document
+stays consistent at every step; the only loss is that the swap cannot be walked back
+directly.
+
+**What 03-11 needs to do:** add `isSwapMadeAction` (and the pass guard) to `isUndoable`,
+widen `UndoRemoval.kind` to include `'swap'` and `'pass'`, carry both mon ids on the removal,
+and wire the two unused announcement rows in 03-UI-SPEC §Live-region announcements.
+
+---
+
+## 6. 03-UI-SPEC's swap-count copy slots are not pluralised
+
+**Found during:** 03-10 Task 3
+**Owner:** 03-11 for the swap-panel line; 03-10 already fixed the pool-header one
+**Severity:** copy defect in the most common configuration
+
+03-UI-SPEC writes the budget slots literally as `{name} has {n} swaps left` (§10, pool header)
+and `{playerName} has {n} swaps left.` (§11, swap panel). Rendered verbatim at one remaining
+swap they read `Ada has 1 swaps left`, and `swapBudget: 1` is the most likely setting a host
+picks — every budget also passes through 1 on its way to being spent, so this is the common
+case rather than an edge.
+
+**What 03-10 did.** Pluralised the §10 pool-header line inside `PoolGrid`'s `swapBudgetLine`,
+and pluralised the swap confirm's `{n} swaps` slot via a `swaps()` helper in
+`confirm-copy.ts`, matching the four helpers that module has carried since Phase 1 for exactly
+this class of slot (`picks`, `players`, `bans`, `steps`). `confirm-copy.ts` states the reason:
+a visible grammar error in a dialog reads as a tool that was not finished.
+
+**What is left.** §11's swap-panel line is 03-11's surface and should take the same treatment.
+Consider exporting one `swaps(count)` helper rather than a third private copy.
+
+**What it is not.** Not a deviation from the spec's substance — the numbers, the subject and
+the sentence order are unchanged. Only the plural agreement differs, and the spec's own
+copywriting contract is what requires the change.
