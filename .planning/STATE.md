@@ -131,7 +131,17 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Human verification | 03-12 — three-metre legibility pass over the card surfaces (DRFT-14 assertions 9–12) | blocked, not started | 2026-08-19 |
+| Human verification | 03-12 — screen-reader pass on the four focus-moving transitions (WR-02) | blocked, not started | 2026-08-19 |
+| Human verification | 03-12 — playtest the rotation and low-plays-first with real players (ROADMAP Notes) | blocked, not started | 2026-08-19 |
+
+**Why blocked:** all three are `checkpoint:human-verify` tasks that no agent can perform —
+they need a physical screen measured at three metres, a real screen reader, and real players.
+The host was asked on 2026-08-19 and none could be run at that time. No `03-12-SUMMARY.md` was
+written, deliberately: a summary marks the plan complete, and there are no results to record.
+
+**To resume:** `npm run dev`, then `/gsd-execute-phase 3 --wave 12`. Phase 03 stays open and
+unverified until then — plans 03-01 through 03-11 are complete and green.
 
 ## Session Continuity
 
