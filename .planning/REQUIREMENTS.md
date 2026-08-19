@@ -49,7 +49,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **DRFT-01**: Host configures a tournament — player count, player names, format label, tournament depth
 - [ ] **DRFT-02**: Tool auto-sizes the draft pool from player count, leaving enough surplus for swaps
 - [ ] **DRFT-03**: Host can override the computed pool size
-- [ ] **DRFT-04**: Draft runs the compiled number of pick rounds until every player has a team of six
+- [x] **DRFT-04**: Draft runs the compiled number of pick rounds until every player has a team of six
 - [ ] **DRFT-05**: Pool displays each Pokémon with sprite, typing, and base stats
 - [ ] **DRFT-06**: Host toggles display density between minimal, standard, and full
 - [ ] **DRFT-07**: Drafted Pokémon leave the pool immediately and cannot be picked again
@@ -65,14 +65,14 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Priority Cards
 
-- [ ] **CARD-01**: Each player holds priority cards numbered `1..R`, where R is the compiled pick-round count
+- [x] **CARD-01**: Each player holds priority cards numbered `1..R`, where R is the compiled pick-round count
 - [x] **CARD-02**: The full round schedule, including which rounds are Mega rounds, is visible before the first card is played
-- [ ] **CARD-03**: Cards are played open and sequentially in a rotating order, so later players see what has already been played
+- [x] **CARD-03**: Cards are played open and sequentially in a rotating order, so later players see what has already been played
 - [x] **CARD-04**: When players are fewer than or equal to rounds, a value already played this round cannot be played again
-- [ ] **CARD-05**: When players outnumber rounds, ties resolve by an explicit, visible, deterministic rule — never a silent sort
-- [ ] **CARD-06**: A played card is spent and unavailable for the remaining rounds
-- [ ] **CARD-07**: Every player's remaining cards are visible to everyone
-- [ ] **CARD-08**: The resolved pick order for the round is displayed before picking begins
+- [x] **CARD-05**: When players outnumber rounds, ties resolve by an explicit, visible, deterministic rule — never a silent sort
+- [x] **CARD-06**: A played card is spent and unavailable for the remaining rounds
+- [x] **CARD-07**: Every player's remaining cards are visible to everyone
+- [x] **CARD-08**: The resolved pick order for the round is displayed before picking begins
 
 ### Composition Rules
 
@@ -80,7 +80,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **RULE-02**: Composition requirements compile into a round schedule before the draft starts, rather than validating picks afterward
 - [x] **RULE-03**: A requirement of N Mega Evolutions produces N Mega-only rounds where the pool is filtered to Mega-capable Pokémon
 - [x] **RULE-04**: Host maintains a Mega-ban list of Mega-capable Pokémon not permitted to Mega this tournament
-- [ ] **RULE-05**: Compiled rounds type the resulting team slots, so a slot's constraint survives swaps
+- [x] **RULE-05**: Compiled rounds type the resulting team slots, so a slot's constraint survives swaps
 - [x] **RULE-06**: Host can reorder the derived round schedule
 - [ ] **RULE-07**: A feasibility check runs at config time and disables Start with a stated reason when the rules, player count, bans, and roster cannot all be satisfied
 - [ ] **RULE-08**: Feasibility is re-checked after the ban reveal, since bans change the arithmetic
@@ -100,12 +100,12 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Swaps
 
 - [x] **SWAP-01**: Host sets a swap budget per player
-- [ ] **SWAP-02**: Player can spend a swap mid-draft to replace a team member with a Pokémon from the pool
-- [ ] **SWAP-03**: Host can enable dedicated swap rounds after the pick rounds
-- [ ] **SWAP-04**: Swap rounds use an explicit pick-order source, since every priority card is spent by then
-- [ ] **SWAP-05**: A swap can only take a Pokémon that satisfies the target slot's own filter
-- [ ] **SWAP-06**: The leftover pool view during a swap is filtered by the target slot's predicate
-- [ ] **SWAP-07**: Player can pass on a swap round
+- [x] **SWAP-02**: Player can spend a swap mid-draft to replace a team member with a Pokémon from the pool
+- [x] **SWAP-03**: Host can enable dedicated swap rounds after the pick rounds
+- [x] **SWAP-04**: Swap rounds use an explicit pick-order source, since every priority card is spent by then
+- [x] **SWAP-05**: A swap can only take a Pokémon that satisfies the target slot's own filter
+- [x] **SWAP-06**: The leftover pool view during a swap is filtered by the target slot's predicate
+- [x] **SWAP-07**: Player can pass on a swap round
 
 ### Tournament
 
@@ -219,7 +219,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DRFT-01 | Phase 2 | Complete |
 | DRFT-02 | Phase 2 | Complete |
 | DRFT-03 | Phase 2 | Complete |
-| DRFT-04 | Phase 3 | Pending |
+| DRFT-04 | Phase 3 | Complete |
 | DRFT-05 | Phase 2 | Complete |
 | DRFT-06 | Phase 2 | Complete |
 | DRFT-07 | Phase 2 | Complete |
@@ -232,19 +232,19 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DRFT-14 | Phase 2 | Complete |
 | DRFT-15 | Phase 2 | Complete |
 | DRFT-16 | Phase 2 | Complete |
-| CARD-01 | Phase 3 | Pending |
+| CARD-01 | Phase 3 | Complete |
 | CARD-02 | Phase 3 | Complete |
-| CARD-03 | Phase 3 | Pending |
+| CARD-03 | Phase 3 | Complete |
 | CARD-04 | Phase 3 | Complete |
-| CARD-05 | Phase 3 | Pending |
-| CARD-06 | Phase 3 | Pending |
-| CARD-07 | Phase 3 | Pending |
-| CARD-08 | Phase 3 | Pending |
+| CARD-05 | Phase 3 | Complete |
+| CARD-06 | Phase 3 | Complete |
+| CARD-07 | Phase 3 | Complete |
+| CARD-08 | Phase 3 | Complete |
 | RULE-01 | Phase 3 | Complete |
 | RULE-02 | Phase 3 | Complete |
 | RULE-03 | Phase 3 | Complete |
 | RULE-04 | Phase 3 | Complete |
-| RULE-05 | Phase 3 | Pending |
+| RULE-05 | Phase 3 | Complete |
 | RULE-06 | Phase 3 | Complete |
 | RULE-07 | Phase 2 | Complete |
 | RULE-08 | Phase 4 | Pending |
@@ -258,12 +258,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 | BAN-07 | Phase 4 | Pending |
 | BAN-08 | Phase 2 | Complete |
 | SWAP-01 | Phase 3 | Complete |
-| SWAP-02 | Phase 3 | Pending |
-| SWAP-03 | Phase 3 | Pending |
-| SWAP-04 | Phase 3 | Pending |
-| SWAP-05 | Phase 3 | Pending |
-| SWAP-06 | Phase 3 | Pending |
-| SWAP-07 | Phase 3 | Pending |
+| SWAP-02 | Phase 3 | Complete |
+| SWAP-03 | Phase 3 | Complete |
+| SWAP-04 | Phase 3 | Complete |
+| SWAP-05 | Phase 3 | Complete |
+| SWAP-06 | Phase 3 | Complete |
+| SWAP-07 | Phase 3 | Complete |
 | TOUR-01 | Phase 5 | Pending |
 | TOUR-02 | Phase 5 | Pending |
 | TOUR-03 | Phase 5 | Pending |
