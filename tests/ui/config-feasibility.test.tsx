@@ -66,8 +66,8 @@ import {
   selectCardsPlayedThisRound,
   selectCurrentRound,
   selectCurrentTurn,
-  selectHand,
   selectPhase,
+  selectPlayableCards,
 } from '../../src/core/selectors';
 import { dispatch, getDoc, getState } from '../../src/store';
 import { announce } from '../../src/ui/components/LiveRegion';
@@ -732,8 +732,14 @@ describe('the Mega requirement reaching the draw', () => {
  *
  * A draft with a compiled schedule opens in the card phase and there is no turn until the
  * round resolves (D-17), so a test that drives real picks has to bid first — which is what
- * the card panel does for the host. Everyone plays the lowest card still in hand, so each
- * round is a tie on value and `resolvePickOrder` settles it on `seq`.
+ * the card panel does for the host.
+ *
+ * Everyone plays the lowest card the OFFER still carries, not simply the lowest card in
+ * hand. CARD-04 forbids repeating a value inside one round, so the second player down can
+ * no longer take the 1 the first just played — this helper used to do exactly that and
+ * relied on the resulting tie being settled on `seq`. With `players <= rounds` a tie on
+ * value is now unreachable, which is precisely why CARD-05 scopes its tiebreak clause to
+ * `players > rounds`.
  */
 function bidCurrentRound(): void {
   const state = getState();
@@ -746,7 +752,7 @@ function bidCurrentRound(): void {
     const live = getState();
     if (live === null) throw new Error('no draft state');
 
-    const value = selectHand(live, playerId)[0];
+    const value = selectPlayableCards(live, playerId)[0];
     if (value === undefined) throw new Error(`${playerId} has no card left in round ${round}`);
 
     expect(dispatch(cardsPlayed({ playerId, value, round })).ok).toBe(true);

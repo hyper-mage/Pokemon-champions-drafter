@@ -58,6 +58,27 @@ function stillToPlayCopy(names: readonly string[]): string {
   return `Still to play: ${names.join(' · ')}`;
 }
 
+/**
+ * The rule behind the struck-through faces — 03-UI-SPEC §8, and only when one is struck.
+ *
+ * It names a SHAPE rather than a colour, which is the point: the card itself carries the
+ * reason in its accessible name, and this line is what a host reading the screen sees
+ * without hovering or tabbing anything.
+ */
+const UNPLAYABLE_RULE_COPY =
+  'A struck-through card would leave a later player with no legal card.';
+
+/**
+ * The deadlock escape — the honest failure mode of "constrain the offer" (T-03-33).
+ *
+ * Reachable only from an imported or hand-edited log that arrived already deadlocked. Every
+ * card is offered rather than none, because a screen with zero legal actions is worse than
+ * a stated exception, and the exception says out loud that the rule was suspended so that
+ * nobody thinks the tool forgot it.
+ */
+const CONSTRAINT_LIFTED_COPY =
+  'The no-repeat rule is lifted for this play: every card left would otherwise strand a later player.';
+
 /** One card already on the table, with the player who put it there. */
 export interface PlayedCard {
   /** Identity — the key, and never the name (CLAUDE.md §Identity). */
@@ -73,6 +94,21 @@ export interface CardPanelProps {
   /** That player's remaining values, ascending — `selectHand`'s answer, not recomputed. */
   hand: readonly number[];
   /**
+   * The subset of `hand` that may go down now — `selectPlayableCards`'s answer (CARD-04,
+   * D-21). Everything in `hand` and not in here renders inert with a reason.
+   *
+   * A subset rather than a per-card flag because the rule is about the round as a whole:
+   * whether 3 is playable depends on what the other hands hold, which is a fact this
+   * component must not be in a position to work out.
+   */
+  playable: readonly number[];
+  /**
+   * True only when the constraint was LIFTED because nothing was legal — never when it was
+   * suspended by pigeonhole. The two produce an identical `playable` list and only one of
+   * them puts a line on screen, so the panel cannot tell them apart without being told.
+   */
+  constraintLifted: boolean;
+  /**
    * What is already down this round, in PLAY order — `selectCardPlayOrder` and
    * `selectCardsPlayedThisRound` composed upstream. Never re-sorted here.
    */
@@ -82,7 +118,15 @@ export interface CardPanelProps {
   onPlay: (value: number) => void;
 }
 
-export function CardPanel({ playerName, hand, played, stillToPlay, onPlay }: CardPanelProps) {
+export function CardPanel({
+  playerName,
+  hand,
+  playable,
+  constraintLifted,
+  played,
+  stillToPlay,
+  onPlay,
+}: CardPanelProps) {
   const handGroupRef = useRef<HTMLDivElement | null>(null);
 
   /**
@@ -96,17 +140,24 @@ export function CardPanel({ playerName, hand, played, stillToPlay, onPlay }: Car
   const activatedCardRef = useRef<HTMLButtonElement | null>(null);
 
   /**
-   * Hand focus to the first card of the NEW hand — and only when the card the host
-   * activated has left the document.
+   * Hand focus on when the card the host activated is no longer something they can use.
    *
-   * A played card leaves the hand and the panel re-renders for the next player, so the
-   * button that was pressed is gone and focus falls to `<body>`. That is the correct
-   * markup rather than a bug to route around, so the fix is to pass focus on.
+   * TWO ways that happens, and the second is D-21's doing:
    *
-   * `isConnected` rather than keying the effect on `played.length`: the effect then states
-   * its own precondition instead of encoding a map from prop changes to outcomes that a
-   * later change would silently invalidate. It also means a play dispatched by anything
-   * other than a click here — an import, an undo — moves no focus at all.
+   *   GONE.   A played card leaves the hand and the panel re-renders for the next player,
+   *           so the button that was pressed is detached and focus falls to `<body>`. That
+   *           is correct markup rather than a bug to route around, so the fix is to pass
+   *           focus on.
+   *   INERT.  Preact's keyed diff REUSES the node when the next player's hand contains the
+   *           same value — Ada spends her 1 and Bo still holds his, so the button survives
+   *           with focus intact. Since CARD-04, that surviving node is very often the one
+   *           value nobody may now play, because Ada just put it down. Focus would sit on
+   *           a control whose click emits nothing.
+   *
+   * `isConnected` and the live attribute, rather than keying the effect on `played.length`:
+   * the effect states its own preconditions instead of encoding a map from prop changes to
+   * outcomes that a later change would silently invalidate. It also means a play dispatched
+   * by anything other than a click here — an import, an undo — moves no focus at all.
    *
    * No dependency array on purpose: it runs after every render and always clears its own
    * state, so a recorded card can never survive into a later, unrelated render.
@@ -116,9 +167,25 @@ export function CardPanel({ playerName, hand, played, stillToPlay, onPlay }: Car
     activatedCardRef.current = null;
 
     if (activated === null) return;
-    if (activated.isConnected) return;
+    if (activated.isConnected && !activated.hasAttribute('aria-disabled')) return;
 
-    handGroupRef.current?.querySelector('button')?.focus();
+    /*
+      The first PLAYABLE card, not the first card. An inert face keeps its tab stop on
+      purpose (WR-04), so `querySelector('button')` would happily hand the keyboard a
+      value the host cannot play — a handoff that exists to keep them moving, landing them
+      somewhere that does nothing.
+
+      The fallback is the deadlock escape: when the constraint has been lifted every card
+      is playable and carries no `aria-disabled`, so the first selector matches. It only
+      matters for a hand where every face is inert, which the escape makes unreachable —
+      and if it ever is reached, a focused card beats focus on `<body>`.
+    */
+    const group = handGroupRef.current;
+    const next =
+      group?.querySelector<HTMLButtonElement>('button:not([aria-disabled])') ??
+      group?.querySelector<HTMLButtonElement>('button');
+
+    next?.focus();
   });
 
   /**
@@ -137,6 +204,13 @@ export function CardPanel({ playerName, hand, played, stillToPlay, onPlay }: Car
     onPlay(value);
   }
 
+  /*
+    Membership, not a scan per card. Computation-local and never stored — the document
+    holds no `Set` (CLAUDE.md §Serializability).
+  */
+  const playableValues = new Set(playable);
+  const anyInert = hand.some((value) => !playableValues.has(value));
+
   return (
     <section class="card-panel">
       <h2 class="card-panel__heading">{PANEL_HEADING}</h2>
@@ -148,9 +222,23 @@ export function CardPanel({ playerName, hand, played, stillToPlay, onPlay }: Car
         ref={handGroupRef}
       >
         {hand.map((value) => (
-          <CardFace key={value} value={value} state="playable" onPlay={handlePlay} />
+          <CardFace
+            key={value}
+            value={value}
+            state={playableValues.has(value) ? 'playable' : 'unplayable'}
+            onPlay={handlePlay}
+          />
         ))}
       </div>
+
+      {/*
+        Both lines are conditional, and neither is the other's fallback. The rule line
+        explains faces that ARE struck; the lifted line explains why none of them are when
+        the room might reasonably expect some. They cannot both be true — a lifted
+        constraint offers the whole hand.
+      */}
+      {anyInert && <p class="card-panel__rule">{UNPLAYABLE_RULE_COPY}</p>}
+      {constraintLifted && <p class="card-panel__rule">{CONSTRAINT_LIFTED_COPY}</p>}
 
       {played.length === 0 ? (
         <p class="card-panel__empty">{emptyPlayedCopy(playerName)}</p>

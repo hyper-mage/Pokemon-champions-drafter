@@ -44,3 +44,27 @@
 .card-face--played {
   background: var(--color-surface-raised);
 }
+
+/*
+ * The unplayable state (D-21) — TWO rules, applied together and tested as two.
+ *
+ * The same pairing, and the same class names, as `.hand-strip__pip--dimmed` plus
+ * `--struck` and as the ban grid's `.mon-card--banned`. 0.45 is this project's disabled
+ * opacity throughout; dimming alone is the ordinary disabled convention and would read as
+ * "not your turn yet", while the strike is what says "this particular value is the
+ * problem". 03-UI-SPEC §Colour: colour is never the only signal.
+ *
+ * Two classes rather than one so the pairing is visible in the DOM and a test can assert
+ * it — happy-dom performs no layout and applies no stylesheet, so the class list is the
+ * only place this contract is checkable at all.
+ *
+ * No colour is introduced. The accent reservation stays at exactly three uses, and a red
+ * card face would be a fourth signal competing with the one the room is actually reading.
+ */
+.card-face--dimmed {
+  opacity: 0.45;
+}
+
+.card-face--struck {
+  text-decoration: line-through;
+}

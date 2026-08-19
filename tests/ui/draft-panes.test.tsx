@@ -961,7 +961,22 @@ describe('pane availability while a round is being bid', () => {
 // The round resolves itself — D-17, D-19
 // ---------------------------------------------------------------------------
 
+/**
+ * The cards the host can actually play, inert ones filtered out — CARD-04, D-21.
+ *
+ * Every caller below means "the player on the clock plays a card", and since 03-09 the
+ * lowest value in a hand is frequently NOT playable: the previous player in the round put
+ * it down, so it renders `aria-disabled` and its click emits nothing. Clicking it would
+ * hang the round rather than fail loudly, so the filter belongs in the helper rather than
+ * at eleven call sites.
+ */
 function cardButtons(): HTMLButtonElement[] {
+  const hand = host.querySelector<HTMLElement>('.card-panel__hand');
+  return Array.from(hand?.querySelectorAll<HTMLButtonElement>('button:not([aria-disabled])') ?? []);
+}
+
+/** Every face in the hand, inert included — for asserting on the inert ones themselves. */
+function allCardButtons(): HTMLButtonElement[] {
   const hand = host.querySelector<HTMLElement>('.card-panel__hand');
   return Array.from(hand?.querySelectorAll('button') ?? []);
 }
@@ -1046,18 +1061,21 @@ describe('playing the last card of a round', () => {
     await focusAndClick(cardButtons()[0]);
 
     /*
-      Focus is on a live card in the hand group, and NOT on the pool — the panel is still
-      mounted and the next thing to do is another card.
+      Focus is on a PLAYABLE card in the hand group, and NOT on the pool — the panel is
+      still mounted and the next thing to do is another card.
 
-      Which mechanism put it there is deliberately not asserted. Ada spent her 1 and Bo
-      still holds his, so the vnode keyed `1` survives the re-render and Preact reuses the
-      very node that was pressed; the handoff has nothing to do because focus never left a
-      correct control. Asserting `isConnected === false` here would be asserting an
-      implementation detail of Preact's keyed diff, and it would fail for a hand where the
-      two players' cards happen to line up — which is most of them.
+      Which mechanism put it there is deliberately not asserted, and since CARD-04 there
+      are two. Ada spent her 1 and Bo still holds his, so the vnode keyed `1` survives the
+      re-render and Preact reuses the very node that was pressed — but that node is now
+      inert, because the 1 is down and D-21 will not let Bo repeat it. So the handoff
+      fires on the inert branch rather than having nothing to do.
+
+      Asserting which branch ran would be asserting an implementation detail of Preact's
+      keyed diff. What matters is the property: focus is somewhere the host can act.
     */
     expect(document.activeElement).not.toBe(document.body);
     expect(cardButtons()).toContain(document.activeElement);
+    expect(document.activeElement).not.toBe(allCardButtons()[0]);
     expect(host.querySelector('.card-panel')).not.toBeNull();
   });
 });

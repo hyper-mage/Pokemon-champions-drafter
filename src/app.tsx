@@ -27,13 +27,14 @@ import { claimOwnership, disposeTabLock, notifyAbandoned } from './adapters/tab-
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
 import { cardsPlayed, orderResolved, pickMade } from './core/actions';
 import { bannedEntries } from './core/bans';
-import { resolvePickOrder } from './core/cards';
+import { resolvePickOrder, type CardOffer } from './core/cards';
 import { checkFeasibility } from './core/feasibility';
 import { parseTournamentFile } from './core/import-guard';
 import type { TournamentDoc } from './core/model';
 import type { RosterEntry } from './core/roster/types';
 import {
   selectAvailablePool,
+  selectCardOffer,
   selectCardPlayOrder,
   selectCardsPlayedThisRound,
   selectCardTurn,
@@ -673,6 +674,19 @@ export function App() {
         playerName: selectPlayerName(state, playerId) ?? playerId,
         value: byPlayer.get(playerId) ?? 0,
       }));
+  }, [state, cardTurn]);
+
+  /*
+    What the player on the clock may actually put down — CARD-04, D-21.
+
+    A RULE, so it is `selectCardOffer`'s answer and never the panel's. `CardPanel` imports
+    nothing from `src/core`; it is handed the playable subset and renders everything else
+    in the hand inert. `lifted` rides along because a suspended rule and a lifted one
+    produce the same subset and only one of them says anything on screen.
+  */
+  const cardOffer = useMemo<CardOffer>(() => {
+    if (state === null || cardTurn === null) return { values: [], lifted: false };
+    return selectCardOffer(state, cardTurn.playerId);
   }, [state, cardTurn]);
 
   /*
@@ -1479,8 +1493,10 @@ export function App() {
                 phase === 'cards' ? (
                   <CardPanel
                     playerName={bannerPlayerName ?? ''}
-                    // Rules, all four of them, and not one is worked out in a component.
+                    // Rules, all six of them, and not one is worked out in a component.
                     hand={cardTurn === null ? [] : selectHand(state, cardTurn.playerId)}
+                    playable={cardOffer.values}
+                    constraintLifted={cardOffer.lifted}
                     played={playedThisRound}
                     stillToPlay={stillToPlay}
                     onPlay={handleCardPlay}

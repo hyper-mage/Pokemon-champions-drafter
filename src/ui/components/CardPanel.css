@@ -67,3 +67,17 @@
   font: var(--text-body);
   color: var(--color-text-muted);
 }
+
+/*
+ * The line under the hand that explains a struck-through card, and the one that explains
+ * why none are struck when the constraint had to be lifted (D-21).
+ *
+ * Full ink rather than `--color-text-muted`: this states a RULE the host is being held to,
+ * not an aside like `Still to play`. Muting it would put the explanation for an
+ * unclickable card in the quietest type on the panel.
+ */
+.card-panel__rule {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}

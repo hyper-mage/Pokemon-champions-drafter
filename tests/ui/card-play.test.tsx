@@ -49,11 +49,16 @@ afterEach(() => {
 });
 
 function mountPanel(props: Partial<Parameters<typeof CardPanel>[0]> = {}): void {
+  const hand = props.hand ?? [1, 2, 3, 4, 5, 6];
+
   act(() => {
     render(
       <CardPanel
         playerName={props.playerName ?? 'Ada'}
-        hand={props.hand ?? [1, 2, 3, 4, 5, 6]}
+        hand={hand}
+        // Everything playable unless a test says otherwise, which is the ordinary round.
+        playable={props.playable ?? hand}
+        constraintLifted={props.constraintLifted ?? false}
         played={props.played ?? []}
         stillToPlay={props.stillToPlay ?? ['Bo', 'Cy']}
         onPlay={props.onPlay ?? (() => undefined)}
@@ -252,6 +257,185 @@ describe('CardPanel — focus after a card is played', () => {
     });
 
     expect(document.activeElement).toBe(document.body);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The unplayable card — CARD-04, D-21, WR-04
+// ---------------------------------------------------------------------------
+
+describe('CardFace — the unplayable state', () => {
+  it('is still a button, and still focusable', () => {
+    // Inert, not disabled. A `disabled` attribute would take the tab stop, and the reason
+    // lives in the accessible name — which is only reachable if the control is.
+    act(() => {
+      render(<CardFace value={2} state="unplayable" />, host);
+    });
+
+    const button = host.querySelector('button');
+    expect(button).not.toBeNull();
+    expect(button?.hasAttribute('disabled')).toBe(false);
+
+    button?.focus();
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('carries the reason in its accessible name, in full', () => {
+    act(() => {
+      render(<CardFace value={2} state="unplayable" />, host);
+    });
+
+    expect(host.querySelector('button')?.getAttribute('aria-label')).toBe(
+      'Play 2 — this would leave a later player with no legal card',
+    );
+  });
+
+  it('marks itself aria-disabled', () => {
+    act(() => {
+      render(<CardFace value={2} state="unplayable" />, host);
+    });
+
+    expect(host.querySelector('button')?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('carries both the dimmed and the struck class, never one alone', () => {
+    // 03-UI-SPEC §Colour: colour — and opacity — is never the only signal. Dimming alone
+    // is the ordinary disabled convention and would say "not your turn yet".
+    act(() => {
+      render(<CardFace value={2} state="unplayable" />, host);
+    });
+
+    const button = host.querySelector('button');
+    expect(button?.classList.contains('card-face--dimmed')).toBe(true);
+    expect(button?.classList.contains('card-face--struck')).toBe(true);
+  });
+
+  it('emits nothing when clicked', () => {
+    const onPlay = vi.fn();
+    act(() => {
+      render(<CardFace value={2} state="unplayable" onPlay={onPlay} />, host);
+    });
+
+    act(() => {
+      host.querySelector('button')?.click();
+    });
+
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it('sheds the inert ARIA entirely when the value becomes playable again', () => {
+    // WR-04, and the reason it is `toBeNull` rather than `toBe('false')`: a reused button
+    // must SHED the attribute, because `aria-disabled="false"` is not the same thing as no
+    // `aria-disabled` at all to every assistive technology.
+    act(() => {
+      render(<CardFace value={2} state="unplayable" />, host);
+    });
+    expect(host.querySelector('button')?.getAttribute('aria-disabled')).toBe('true');
+
+    act(() => {
+      render(<CardFace value={2} state="playable" />, host);
+    });
+
+    const button = host.querySelector('button');
+    expect(button?.getAttribute('aria-disabled')).toBeNull();
+    expect(button?.getAttribute('aria-label')).toBe('Play 2');
+  });
+
+  it('keeps the same DOM node across the transition, so focus survives it', () => {
+    // One `<button>` vnode across both states. A Fragment or a `<span>` in one branch
+    // would unmount the subtree and drop focus to `<body>` — the 02-11 regression.
+    act(() => {
+      render(<CardFace value={2} state="unplayable" />, host);
+    });
+    const before = host.querySelector('button');
+    before?.focus();
+
+    act(() => {
+      render(<CardFace value={2} state="playable" />, host);
+    });
+
+    expect(host.querySelector('button')).toBe(before);
+    expect(document.activeElement).toBe(before);
+  });
+});
+
+describe('CardPanel — what an inert card says', () => {
+  it('renders the values outside the offer as unplayable and the rest as ordinary cards', () => {
+    mountPanel({ hand: [1, 2, 3], playable: [1, 3] });
+
+    expect(handButtons().map((button) => button.getAttribute('aria-disabled'))).toEqual([
+      null,
+      'true',
+      null,
+    ]);
+  });
+
+  it('states the rule once beneath the hand when something is struck', () => {
+    mountPanel({ hand: [1, 2, 3], playable: [1, 3] });
+
+    expect(textOf('.card-panel__rule')).toBe(
+      'A struck-through card would leave a later player with no legal card.',
+    );
+  });
+
+  it('says nothing beneath the hand when every card is playable', () => {
+    mountPanel({ hand: [1, 2, 3], playable: [1, 2, 3] });
+
+    expect(host.querySelector('.card-panel__rule')).toBeNull();
+  });
+
+  it('dispatches nothing when an unplayable card is clicked', () => {
+    const onPlay = vi.fn();
+    mountPanel({ hand: [1, 2, 3], playable: [1, 3], onPlay });
+
+    act(() => {
+      handButtons()[1]?.click();
+    });
+
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it('still plays an ordinary card while a sibling is inert', () => {
+    const onPlay = vi.fn();
+    mountPanel({ hand: [1, 2, 3], playable: [1, 3], onPlay });
+
+    act(() => {
+      handButtons()[2]?.click();
+    });
+
+    expect(onPlay).toHaveBeenCalledExactlyOnceWith(3);
+  });
+
+  it('offers every card and states the exception when the constraint is lifted', () => {
+    // The deadlock escape (T-03-33) — an imported log that arrived already deadlocked.
+    // Every card is offered rather than none, and the panel says the rule was suspended
+    // so nobody reads it as the tool having forgotten it.
+    mountPanel({ hand: [1, 2], playable: [1, 2], constraintLifted: true });
+
+    expect(handButtons().map((button) => button.getAttribute('aria-disabled'))).toEqual([
+      null,
+      null,
+    ]);
+    expect(textOf('.card-panel__rule')).toBe(
+      'The no-repeat rule is lifted for this play: every card left would otherwise strand a later player.',
+    );
+  });
+
+  it('hands focus to the first PLAYABLE card after a play, never to an inert one', () => {
+    // The handoff exists to keep a keyboard host moving. Landing them on a card they
+    // cannot play would be the same dead end it was written to avoid.
+    mountPanel({ hand: [1, 2, 3], playable: [1, 2, 3] });
+
+    act(() => {
+      handButtons()[0]?.focus();
+      handButtons()[0]?.click();
+    });
+    act(() => {
+      mountPanel({ hand: [2, 3], playable: [3] });
+    });
+
+    expect(document.activeElement).toBe(handButtons()[1]);
+    expect(handButtons()[1]?.getAttribute('aria-disabled')).toBeNull();
   });
 });
 
