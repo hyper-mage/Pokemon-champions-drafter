@@ -210,6 +210,65 @@ export function selectRoundEligibleIds(
 }
 
 /**
+ * How many swaps `playerId` still has — SWAP-01, D-29.
+ *
+ * `config.swapBudget` minus the swaps that player has actually made. ONE budget, spent
+ * either mid-draft or in a dedicated swap round: a swap round is a structured opportunity
+ * to spend the same allowance, not a second one.
+ *
+ * DERIVED, never stored (rule 3). A `swapsLeft` field on the config or on a player would
+ * be a second copy of a fact the log already asserts — free to drift after an undo, and
+ * free to disagree with the number the pool header prints. `state.swaps` is the log's own
+ * record and undo removes from it by re-folding, so the two cannot come apart.
+ *
+ * Clamped at zero, and the clamp is about where this is read rather than about the
+ * arithmetic. A document this build creates can never overspend — `canApply` refuses
+ * `noSwapsLeft` — but a hand-edited or imported one can, and this runs on every render of
+ * the pool header, where a negative would reach the host as `has -1 swaps left`. Reported
+ * as "none", never as a negative; the disagreement itself is the adoption notice's to
+ * mention, not this sentence's.
+ *
+ * A player id this tournament has never heard of gets the full budget rather than an error,
+ * for the reason {@link selectHand} gives: this is read while rendering.
+ */
+export function selectSwapsRemaining(state: DraftState, playerId: string): number {
+  const spent = state.swaps.filter((swap) => swap.playerId === playerId).length;
+  return Math.max(0, state.config.swapBudget - spent);
+}
+
+/**
+ * What may fill slot `slotIndex` (0-based) — SWAP-05, SWAP-06, RULE-05, D-27.
+ *
+ * ## Slot first, then pool
+ *
+ * This is the mechanism that makes "a Mega slot cannot be swapped into a non-Mega Pokémon"
+ * true BY CONSTRUCTION. The slot is armed before anything is clickable, this answers what
+ * that slot admits, and the pool renders only those ids — so the illegal swap is never
+ * offered rather than rejected after the fact. `canApply` structurally cannot check it (see
+ * its `swap/made` arm), which is precisely why the offer has to be right on the first frame.
+ *
+ * ## It DELEGATES rather than restating the predicate
+ *
+ * A slot's kind is its round's kind — `selectTeams` files a round-`r` pick into slot
+ * `r - 1`, and `selectSlotKind` is that same join — so "what may fill slot `i`" and "what
+ * may be picked in round `i + 1`" are the same question and get the same answer here.
+ * Composing `selectAvailablePool` with `isMegaEligible` a second time would type-check and
+ * would be a SECOND authority on Mega-eligibility, free to disagree with the pick offer
+ * about one species after a change to either. RULE-05 asks that a slot's constraint survive
+ * a swap; one function answering both is what makes that survival structural.
+ *
+ * A slot index the schedule does not reach answers as open, for the reason
+ * {@link selectRoundKind} answers out of range: this is read while rendering.
+ */
+export function selectSwapTargets(
+  state: DraftState,
+  entries: readonly RosterEntry[],
+  slotIndex: number,
+): string[] {
+  return selectRoundEligibleIds(state, entries, slotIndex + 1);
+}
+
+/**
  * The stone a slot's pick exports with, or `null` for a bare species — D-04.
  *
  * **The SLOT decides whether a stone is emitted, never the species.** A Mega-capable species

@@ -734,6 +734,43 @@ function buildLogEntry(value: unknown): Action | null {
       return { type: 'order/resolved', round, order, ...envelope };
     }
 
+    case 'swap/made': {
+      // Every field NAMED, `swapRound` included, and that is the whole point of this arm.
+      // Payloads are rebuilt field by field here, so a field this switch does not mention
+      // is dropped SILENTLY on every round trip. `swapRound` has no consumer until 03-11's
+      // dedicated swap rounds, which is exactly the condition under which it would be
+      // forgotten — and a dropped `swapRound` turns a swap-round move into a mid-draft one
+      // in a document nobody would think to re-check.
+      const playerId = raw['playerId'];
+      const outMonId = raw['outMonId'];
+      const inMonId = raw['inMonId'];
+      const round = raw['round'];
+      const swapRound = raw['swapRound'];
+
+      if (typeof playerId !== 'string') return null;
+      if (typeof outMonId !== 'string' || typeof inMonId !== 'string') return null;
+
+      // `round` is a PICK round and `swapRound` is not, so they take different bounds from
+      // different constants — the same independence `MAX_SWAP_ROUNDS`' own comment argues
+      // for. Both are allocation bounds rather than integrity checks: whether this
+      // document actually ran that many rounds is `canApply`'s question, asked against a
+      // state this function cannot see.
+      if (!isPositiveInteger(round) || round > MAX_ROUNDS) return null;
+      // Zero is the mid-draft spend and is therefore legal, which is why this is the
+      // non-negative check and `round` above is the positive one.
+      if (!isNonNegativeInteger(swapRound) || swapRound > MAX_SWAP_ROUNDS) return null;
+
+      return {
+        type: 'swap/made',
+        playerId,
+        round,
+        outMonId,
+        inMonId,
+        swapRound,
+        ...envelope,
+      };
+    }
+
     default:
       // Envelope only. The cast is honest about what is happening: `TournamentDoc.log` is
       // typed as actions this build understands, and this is an action it does not.

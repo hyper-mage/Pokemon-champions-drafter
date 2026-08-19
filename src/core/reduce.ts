@@ -31,9 +31,11 @@ import {
   isPickUndoneAction,
   isPoolBuiltAction,
   isScheduleCompiledAction,
+  isSwapMadeAction,
   ORDER_RESOLVED,
   POOL_BUILT,
   SCHEDULE_COMPILED,
+  SWAP_MADE,
   type AnyAction,
 } from './actions';
 import { initialState, type DraftState, type TournamentDoc } from './model';
@@ -48,6 +50,7 @@ import {
   selectPhase,
   selectPlayableCards,
   selectResolvedOrder,
+  selectSwapsRemaining,
 } from './selectors';
 
 /**
@@ -96,7 +99,18 @@ export type RejectionReason =
    * Before this existed the null turn fell through to `draftComplete`, which does not
    * merely under-describe the state — it names the opposite end of the draft.
    */
-  | 'cardsNotResolved';
+  | 'cardsNotResolved'
+  /**
+   * The named slot is empty, or it does not hold the species the swap says it does.
+   *
+   * ONE reason for both, deliberately. They are the same failure from the host's side —
+   * the action describes a slot this document does not have — and splitting them would
+   * report the difference between "you have not picked there yet" and "somebody edited
+   * the file", which is not a distinction anyone can act on differently.
+   */
+  | 'nothingToSwap'
+  /** That player has spent their whole `config.swapBudget`, or never had one (SWAP-01). */
+  | 'noSwapsLeft';
 
 export type CanApplyResult = { ok: true } | { ok: false; reason: RejectionReason };
 
@@ -203,6 +217,72 @@ export function apply(state: DraftState, action: AnyAction): DraftState {
         resolvedOrders: [
           ...state.resolvedOrders,
           { round: action.round, order: [...action.order] },
+        ],
+      };
+    }
+
+    case SWAP_MADE: {
+      if (!isSwapMadeAction(action)) return state;
+
+      // ---------------------------------------------------------------------
+      // THIS ARM REPLACES A PICK. IT DOES NOT APPEND ONE.
+      //
+      // The analog in this file is `DRAFT_PICK_UNDONE` above — filter and rebuild — and
+      // NOT `DRAFT_PICK_MADE`, which is the obvious neighbour and the wrong one. Both
+      // halves of the argument matter, and both fail SILENTLY on the board, because
+      // `selectTeams` assigns last-write-wins into `slots[round - 1]` and would render the
+      // right team under either implementation:
+      //
+      //   D-26 needs replacement. `selectAvailablePool` subtracts every `picks[].monId`,
+      //   so an appended second pick would leave `outMonId` in the taken set and the
+      //   swapped-out Pokémon would never come back to the pool for anyone.
+      //
+      //   D-25 needs replacement. `selectPickCount` is `picks.length` and drives
+      //   `selectCurrentTurn`'s `pickIndex`, so an append would advance the turn — the
+      //   swap would eat the pick it is supposed to leave untouched, and the team would
+      //   finish one short of `config.rounds`.
+      //
+      // The replaced entry keeps its ORIGINAL `seq`: it is still the same slot-filling
+      // event, and `draft/pickUndone` targets that identity.
+      // ---------------------------------------------------------------------
+      let replaced = false;
+      const picks = state.picks.map((pick) => {
+        // First match only. A log carrying two picks for one slot is already malformed;
+        // rewriting both would turn one swap into two and strand an id in the pool.
+        if (replaced) return pick;
+        if (pick.playerId !== action.playerId) return pick;
+        if (pick.round !== action.round) return pick;
+        // Self-describing, so a disagreeing log cannot swap the wrong slot (T-03-38).
+        if (pick.monId !== action.outMonId) return pick;
+
+        replaced = true;
+        return {
+          playerId: pick.playerId,
+          monId: action.inMonId,
+          round: pick.round,
+          pickIndex: pick.pickIndex,
+          seq: pick.seq,
+        };
+      });
+
+      // No match is a NO-OP in every respect, including the budget. Recording a swap that
+      // changed nothing would spend an allowance for an event that did not happen.
+      if (!replaced) return state;
+
+      return {
+        ...state,
+        picks,
+        swaps: [
+          ...state.swaps,
+          {
+            playerId: action.playerId,
+            round: action.round,
+            outMonId: action.outMonId,
+            inMonId: action.inMonId,
+            swapRound: action.swapRound,
+            // Off the ENVELOPE, never off the array's length — the log may legally have gaps.
+            seq: action.seq,
+          },
         ],
       };
     }
@@ -363,6 +443,54 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
       if (selectResolvedOrder(state, action.round) !== null) {
         return reject('roundAlreadyResolved');
       }
+      return OK;
+    }
+
+    case SWAP_MADE: {
+      if (!isSwapMadeAction(action)) return reject('malformedPayload');
+      if (state.order.length === 0) return reject('draftNotStarted');
+
+      // D-25: a mid-draft swap is spent BY the player on the clock, and the turn still
+      // ends with that round's pick. `selectCurrentTurn` is null during the card phase and
+      // once every team is full, and both of those are correctly out of turn for a
+      // `swapRound: 0` spend.
+      //
+      // A dedicated swap round (`swapRound >= 1`) runs when the picks are complete and the
+      // pick clock is therefore null, so 03-11 widens THIS check — the swap-round clock is
+      // a different selector — rather than adding a second `canApply` arm beside it.
+      const turn = selectCurrentTurn(state);
+      if (turn === null || action.playerId !== turn.playerId) return reject('notYourTurn');
+
+      // BEFORE the pool and the budget. All three can be wrong at once, and a host told
+      // "you have no swaps left" about a slot that was never theirs has been sent to the
+      // wrong problem entirely.
+      const target = state.picks.find(
+        (pick) => pick.playerId === action.playerId && pick.round === action.round,
+      );
+      if (target === undefined || target.monId !== action.outMonId) {
+        return reject('nothingToSwap');
+      }
+
+      if (!selectAvailablePool(state).includes(action.inMonId)) return reject('notInPool');
+
+      // Derived from counted `swap/made` entries rather than from a stored figure, so a
+      // document cannot claim an allowance it has already spent (T-03-41).
+      if (selectSwapsRemaining(state, action.playerId) <= 0) return reject('noSwapsLeft');
+
+      // WHAT THIS DELIBERATELY DOES NOT CHECK: whether `inMonId` satisfies the target
+      // slot's predicate.
+      //
+      // It cannot, and the reason is structural rather than an omission. Round eligibility
+      // is a fact about a roster ENTRY (`entry.megaFormes`); `DraftState` holds no roster
+      // and must not, because the fold is a cache of the log; and D-07 declines to
+      // materialize eligible id lists into the log, so there is nothing stored to read
+      // either. This is exactly the position `draft/pickMade` is in.
+      //
+      // So the constraint is enforced by the OFFER instead: `selectSwapTargets` filters the
+      // pool by the armed slot's own predicate BEFORE anything is clickable, which makes
+      // SWAP-05 true by construction rather than by rejection (D-27). A hand-edited
+      // document can still carry a violating swap; that is T-03-39, accepted and reported
+      // by the non-blocking adoption notice, never repaired here.
       return OK;
     }
 

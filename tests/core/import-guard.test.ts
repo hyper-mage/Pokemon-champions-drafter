@@ -1601,3 +1601,119 @@ describe('an order/resolved log entry', () => {
     expect(rejection(parse(cardDocWith(2, { round: 0 })))).toBe('wrongShape');
   });
 });
+
+// ---------------------------------------------------------------------------
+// swap/made — 03-10
+// ---------------------------------------------------------------------------
+
+/**
+ * A `swap/made` entry with a deliberate `seq` gap ahead of it, for `cardDoc`'s reason.
+ *
+ * It targets `p1`'s round-1 `venusaur` from {@link validDoc} and replaces it with
+ * `rotomwash`, which is in that document's pool and unpicked.
+ */
+const SWAP_ENTRY: Record<string, unknown> = {
+  type: 'swap/made',
+  playerId: 'p1',
+  round: 1,
+  outMonId: 'venusaur',
+  inMonId: 'rotomwash',
+  swapRound: 0,
+  seq: 610,
+  at: 1_770_000_000_010,
+  actorId: 'host',
+};
+
+function swapDoc(patch: Record<string, unknown> = {}): string {
+  return cardDoc([{ ...SWAP_ENTRY, ...patch }]);
+}
+
+/** `SWAP_ENTRY` with one field deleted outright, which is not the same as a bad value. */
+function swapDocWithout(field: string): string {
+  const copy = { ...SWAP_ENTRY };
+  delete copy[field];
+  return cardDoc([copy]);
+}
+
+describe('a swap/made log entry', () => {
+  it('survives the round trip field by field, swapRound and all', () => {
+    const result = parse(swapDoc());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const state = fold(result.doc);
+
+    // The POOL half is what catches a dropped field, not the board: the swap took effect,
+    // so the slot holds the incoming species and `picks` did not grow.
+    expect(state.picks).toHaveLength(2);
+    expect(state.picks[0]?.monId).toBe('rotomwash');
+    expect(state.picks[0]?.seq).toBe(2);
+    expect(state.swaps).toEqual([
+      {
+        playerId: 'p1',
+        round: 1,
+        outMonId: 'venusaur',
+        inMonId: 'rotomwash',
+        swapRound: 0,
+        seq: 610,
+      },
+    ]);
+  });
+
+  it('carries a non-zero swapRound through, though nothing reads it yet', () => {
+    // The field 03-11 consumes. A guard that dropped it would turn a swap-round move into
+    // a mid-draft one, silently, in a document nobody would think to re-check.
+    const result = parse(swapDoc({ swapRound: 2 }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(fold(result.doc).swaps[0]?.swapRound).toBe(2);
+  });
+
+  it('refuses an entry missing any of its five payload fields', () => {
+    for (const field of ['playerId', 'round', 'outMonId', 'inMonId', 'swapRound']) {
+      expect(rejection(parse(swapDocWithout(field))), field).toBe('wrongShape');
+    }
+  });
+
+  it('refuses a round past the round cap, and a swapRound past its own', () => {
+    // Two bounds from two constants, because the two numbers answer different questions.
+    // Both are allocation bounds; neither is an integrity check.
+    expect(rejection(parse(swapDoc({ round: MAX_ROUNDS + 1 })))).toBe('wrongShape');
+    expect(rejection(parse(swapDoc({ swapRound: MAX_SWAP_ROUNDS + 1 })))).toBe('wrongShape');
+    expect(parse(swapDoc({ round: MAX_ROUNDS, swapRound: MAX_SWAP_ROUNDS })).ok).toBe(true);
+  });
+
+  it('accepts swapRound 0 and refuses round 0', () => {
+    // Zero IS the mid-draft spend, so the two fields take different checks rather than one
+    // shared helper that would have to be wrong for one of them.
+    expect(parse(swapDoc({ swapRound: 0 })).ok).toBe(true);
+    expect(rejection(parse(swapDoc({ round: 0 })))).toBe('wrongShape');
+  });
+
+  it('refuses ids and a player that are not strings', () => {
+    for (const value of [42, null, ['venusaur'], { id: 'venusaur' }]) {
+      expect(rejection(parse(swapDoc({ outMonId: value })))).toBe('wrongShape');
+      expect(rejection(parse(swapDoc({ inMonId: value })))).toBe('wrongShape');
+      expect(rejection(parse(swapDoc({ playerId: value })))).toBe('wrongShape');
+    }
+  });
+
+  it('refuses a round or swapRound that is not a safe integer', () => {
+    for (const value of [1.5, '1', null, Number.NaN]) {
+      expect(rejection(parse(swapDoc({ round: value })))).toBe('wrongShape');
+      expect(rejection(parse(swapDoc({ swapRound: value })))).toBe('wrongShape');
+    }
+  });
+
+  it('folds a swap naming a slot the document does not hold to a no-op', () => {
+    // A bound is not an integrity check, and this file does no referential integrity.
+    // Containment is the REDUCER's: the entry is accepted here and changes nothing there.
+    const result = parse(swapDoc({ outMonId: 'kommoo' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const state = fold(result.doc);
+    expect(state.picks[0]?.monId).toBe('venusaur');
+    expect(state.swaps).toEqual([]);
+  });
+});

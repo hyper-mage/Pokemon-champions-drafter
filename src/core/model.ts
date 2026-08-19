@@ -328,6 +328,50 @@ export interface DraftState {
    * which dealt no cards and ran strict alternation instead.
    */
   resolvedOrders: ResolvedOrder[];
+  /**
+   * Every swap that actually took effect, in log order, recorded by `swap/made`.
+   *
+   * ## Why this exists at all, when "nothing derived is stored"
+   *
+   * It is not derived — it is the only surviving trace of the event. `apply(SWAP_MADE)`
+   * REPLACES a pick in place rather than appending one, which is what returns the outgoing
+   * species to the pool and what keeps the turn where it was. The consequence is that after
+   * the fold `picks` looks exactly as it would have if the player had drafted the incoming
+   * species in the first place, so the swap is unrecoverable from `picks` and the budget it
+   * spent would be unrecoverable with it.
+   *
+   * `selectSwapsRemaining` counts these; nothing stores a remaining count. That is the part
+   * rule 3 is about — a stored `swapsLeft` would be free to disagree with the log after an
+   * undo, and this array cannot, because undo removes the entry and re-folds.
+   *
+   * An ARRAY rather than a `Record<playerId, number>` for {@link CardPlay}'s reason: 03-11
+   * advances a swap round by counting the moves recorded for that `swapRound`, which is
+   * order- and identity-sensitive, and sync rule 14 forbids deriving either from a key set.
+   */
+  swaps: SwapRecord[];
+}
+
+/**
+ * One swap, as the fold remembers it.
+ *
+ * `seq` carries the same justification {@link DraftPick}'s does — it is the sequence number
+ * of the action that recorded the swap, which is what a compensating action would target —
+ * and it is deliberately NOT the seq of the pick that was replaced. That pick keeps its own,
+ * because it is still the same slot-filling event.
+ *
+ * Both ids are kept. `outMonId` is what an undo announcement names as returning to the slot
+ * and `inMonId` is what returns to the pool, and a record holding only one of them would
+ * make that sentence unwritable without re-reading the log.
+ */
+export interface SwapRecord {
+  playerId: string;
+  /** 1-based pick round whose slot was replaced. */
+  round: number;
+  outMonId: string;
+  inMonId: string;
+  /** `0` for a mid-draft spend; 1-based for a dedicated swap round (03-11). */
+  swapRound: number;
+  seq: number;
 }
 
 /**
@@ -375,5 +419,6 @@ export function initialState(config: TournamentConfig): DraftState {
     schedule: [],
     cardsPlayed: [],
     resolvedOrders: [],
+    swaps: [],
   };
 }

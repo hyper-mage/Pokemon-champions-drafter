@@ -22,6 +22,12 @@
  * six places apiece. They are also the phase's clearest illustration of why the split
  * between a structural guard and `canApply` is worth keeping: a guard can say `value` is an
  * integer, and only `canApply` can say it is a card that player still holds.
+ *
+ * `swap/made` is the eighth, and it extends that illustration by one rung: a guard can say
+ * `inMonId` is a string, `canApply` can say it is still in the pool, and NEITHER can say it
+ * satisfies the target slot's predicate — that is a fact about a roster entry, and no
+ * roster is in reach of either. The constraint is enforced by the OFFER instead
+ * (`selectSwapTargets`), which is the same posture picks already take.
  */
 
 export const POOL_BUILT = 'pool/built';
@@ -31,6 +37,7 @@ export const DRAFT_PICK_MADE = 'draft/pickMade';
 export const DRAFT_PICK_UNDONE = 'draft/pickUndone';
 export const CARDS_PLAYED = 'cards/played';
 export const ORDER_RESOLVED = 'order/resolved';
+export const SWAP_MADE = 'swap/made';
 
 /**
  * What `dispatch` adds to every intent.
@@ -224,6 +231,42 @@ export interface OrderResolvedPayload {
   order: string[];
 }
 
+/**
+ * One filled slot, replaced — SWAP-02, SWAP-05, D-25, D-26.
+ *
+ * ## It replaces; it never fills a new slot
+ *
+ * `apply` maps over `picks` and rewrites one entry rather than appending a second. Both
+ * halves of that argument are in `reduce.ts` above the arm, because getting it wrong fails
+ * SILENTLY on the board — `selectTeams` renders the right team either way.
+ *
+ * ## Why `outMonId` is carried at all
+ *
+ * The same reason {@link PickUndonePayload} carries `targetSeq`: the action is
+ * SELF-DESCRIBING. `playerId` and `round` alone would name a slot and let whatever happens
+ * to be sitting in it be replaced, so a hand-edited or reordered log could swap out a
+ * species nobody chose. Requiring all three to agree means a log that disagrees with itself
+ * folds to a no-op rather than to a different swap (T-03-38).
+ *
+ * ## Why `swapRound` is here before anything reads it
+ *
+ * `0` for a mid-draft spend, 1-based for a dedicated swap round. The dedicated case is
+ * 03-11's, and the field has to exist NOW because `buildLogEntry` rebuilds payloads field
+ * by field: a field added later is a field every document written before then does not
+ * carry, and one omitted from the guard is dropped silently on every round trip.
+ */
+export interface SwapMadePayload {
+  type: typeof SWAP_MADE;
+  playerId: string;
+  /** 1-based; identifies the slot, and therefore its predicate, via `selectSlotKind`. */
+  round: number;
+  /** Self-describing, so a disagreeing log folds to a no-op rather than swapping the wrong slot. */
+  outMonId: string;
+  inMonId: string;
+  /** `0` for a mid-draft spend; 1-based for a dedicated swap round (03-11). */
+  swapRound: number;
+}
+
 export type Intent =
   | PoolBuiltPayload
   | ScheduleCompiledPayload
@@ -231,7 +274,8 @@ export type Intent =
   | PickMadePayload
   | PickUndonePayload
   | CardsPlayedPayload
-  | OrderResolvedPayload;
+  | OrderResolvedPayload
+  | SwapMadePayload;
 
 export type PoolBuiltAction = PoolBuiltPayload & ActionEnvelope;
 export type ScheduleCompiledAction = ScheduleCompiledPayload & ActionEnvelope;
@@ -240,6 +284,7 @@ export type PickMadeAction = PickMadePayload & ActionEnvelope;
 export type PickUndoneAction = PickUndonePayload & ActionEnvelope;
 export type CardsPlayedAction = CardsPlayedPayload & ActionEnvelope;
 export type OrderResolvedAction = OrderResolvedPayload & ActionEnvelope;
+export type SwapMadeAction = SwapMadePayload & ActionEnvelope;
 
 /** A stamped action this build understands. */
 export type Action = Intent & ActionEnvelope;
@@ -337,6 +382,31 @@ export function cardsPlayed(play: {
  */
 export function orderResolved(round: number, order: readonly string[]): OrderResolvedPayload {
   return { type: ORDER_RESOLVED, round, order: [...order] };
+}
+
+/**
+ * Every field named explicitly, `swapRound` included.
+ *
+ * A spread of the caller's object would type-check and would silently carry whatever else
+ * that object held into a log entry — which is the rule every creator in this file already
+ * follows, and the one place it matters most is the payload with a field no consumer reads
+ * yet.
+ */
+export function swapMade(swap: {
+  playerId: string;
+  round: number;
+  outMonId: string;
+  inMonId: string;
+  swapRound: number;
+}): SwapMadePayload {
+  return {
+    type: SWAP_MADE,
+    playerId: swap.playerId,
+    round: swap.round,
+    outMonId: swap.outMonId,
+    inMonId: swap.inMonId,
+    swapRound: swap.swapRound,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -438,4 +508,28 @@ export function isCardsPlayedAction(action: AnyAction): action is CardsPlayedAct
 export function isOrderResolvedAction(action: AnyAction): action is OrderResolvedAction {
   if (action.type !== ORDER_RESOLVED || !isRecord(action)) return false;
   return isSafeInteger(action['round']) && isStringArray(action['order']);
+}
+
+/**
+ * Types only — and `swapRound` is checked even though nothing reads it until 03-11.
+ *
+ * The omissions are the design, exactly as they are for {@link isCardsPlayedAction}.
+ * Whether the slot actually holds `outMonId`, whether `inMonId` is still in the pool, and
+ * whether this player is on the clock are all questions about the STATE, which this
+ * function does not see; they live in `canApply`. Whether `inMonId` satisfies the slot's
+ * predicate is a question about the ROSTER, which neither of them sees — see the arm in
+ * `reduce.ts` for why that is stated rather than fixed.
+ *
+ * A payload missing `swapRound` is refused rather than defaulted to `0`. Defaulting would
+ * make an imported swap-round swap fold as a mid-draft one, which is a different event.
+ */
+export function isSwapMadeAction(action: AnyAction): action is SwapMadeAction {
+  if (action.type !== SWAP_MADE || !isRecord(action)) return false;
+  return (
+    typeof action['playerId'] === 'string' &&
+    typeof action['outMonId'] === 'string' &&
+    typeof action['inMonId'] === 'string' &&
+    isSafeInteger(action['round']) &&
+    isSafeInteger(action['swapRound'])
+  );
 }
