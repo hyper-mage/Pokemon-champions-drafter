@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'preact/hooks';
 
 import { downloadJson, readJsonFile, tournamentFilename } from './adapters/file-io';
 import {
@@ -18,19 +25,27 @@ import {
 } from './adapters/roster-source';
 import { claimOwnership, disposeTabLock, notifyAbandoned } from './adapters/tab-lock';
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
-import { pickMade } from './core/actions';
+import { cardsPlayed, orderResolved, pickMade } from './core/actions';
 import { bannedEntries } from './core/bans';
+import { resolvePickOrder } from './core/cards';
 import { checkFeasibility } from './core/feasibility';
 import { parseTournamentFile } from './core/import-guard';
 import type { TournamentDoc } from './core/model';
 import type { RosterEntry } from './core/roster/types';
 import {
   selectAvailablePool,
+  selectCardPlayOrder,
+  selectCardsPlayedThisRound,
+  selectCardTurn,
+  selectCurrentRound,
   selectCurrentTurn,
+  selectDealsCards,
   selectHand,
   selectIsComplete,
+  selectPhase,
   selectPickCount,
   selectPlayerName,
+  selectResolvedOrder,
   selectRoundEligibleIds,
   selectRoundKind,
   selectSchedule,
@@ -49,12 +64,13 @@ import {
 } from './store';
 import { ABANDON_CONFIRM, UNDO_BOUNDARY_CONFIRM } from './ui/confirm-copy';
 import { BoardGrid } from './ui/components/BoardGrid';
+import { CardPanel, type PlayedCard } from './ui/components/CardPanel';
 import { ConfirmDialog } from './ui/components/ConfirmDialog';
 import { ImportConfirmDialog } from './ui/components/ImportConfirmDialog';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { PoolGrid, type MegaRoundRestriction } from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
-import { SplitPanes } from './ui/components/SplitPanes';
+import { CARD_PHASE_EXPAND_REASON, SplitPanes } from './ui/components/SplitPanes';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
 import { CompletedDraft } from './ui/screens/CompletedDraft';
@@ -264,6 +280,69 @@ function handlePick(entry: RosterEntry): void {
       pickIndex: turn.pickIndex,
     }),
   );
+}
+
+/**
+ * One click plays a priority card, and the round resolves itself when the last one lands
+ * (CARD-03, D-17, D-19).
+ *
+ * Same shape as `handlePick` above and the same boundaries: it does not decide whose card
+ * is on the clock, does not decide whether the value is legal, and does not touch the log.
+ * The clock comes from `selectCardTurn` and legality is `dispatch`'s, because a UI
+ * component may not own a game rule.
+ *
+ * ## The resolution is automatic, and that is a decision rather than a convenience
+ *
+ * The instant every player has played, `order/resolved` is dispatched from here — no
+ * button, no "start picking" step. An explicit click would cost one per round, and it
+ * would put the screen's mode partly in the UI at the precise moment `selectPhase` is
+ * meant to be the one place it is decided. It is also what makes "played but not yet
+ * resolved" unreachable: the two actions are committed in the same tick, so there is no
+ * render between them for the screen to be caught in.
+ *
+ * The order is computed by `resolvePickOrder` and MATERIALIZED into the action, following
+ * the same pattern `draft/started` uses for the shuffle. Replay reads the recorded order;
+ * it never re-sorts. A later change to the tiebreak therefore cannot reinterpret a round
+ * the room already played.
+ *
+ * Returns what was announced, so the caller can compose it into the turn line rather than
+ * firing a second `announce` the turn change would immediately overwrite.
+ */
+function handlePlayCard(value: number): string | null {
+  const state = getState();
+  if (state === null) return null;
+
+  const cardTurn = selectCardTurn(state);
+  if (cardTurn === null) return null;
+
+  const playerName = selectPlayerName(state, cardTurn.playerId);
+  const played = dispatch(
+    cardsPlayed({ playerId: cardTurn.playerId, value, round: cardTurn.round }),
+  );
+  if (!played.ok) return null;
+
+  const move = playerName === null ? null : `${playerName} plays ${value}.`;
+
+  // Re-read: the play is in the log now, and whether it completed the round is a question
+  // about the state it produced rather than the one it was dispatched against.
+  const after = getState();
+  if (after === null) return move;
+
+  const plays = selectCardsPlayedThisRound(after, cardTurn.round);
+  if (plays.length < after.order.length) return move;
+
+  const order = resolvePickOrder(plays);
+  const resolved = dispatch(orderResolved(cardTurn.round, order));
+  if (!resolved.ok) return move;
+
+  const names = order.map((playerId) => selectPlayerName(after, playerId) ?? playerId);
+  const positions = names.map((name, index) => `${index + 1} ${name}`).join(', ');
+  const resolution = `Round ${cardTurn.round} pick order: ${positions}.`;
+
+  // Both, in the order they happened. The last card and the resolution it triggered are one
+  // tick and `announce` writes one signal, so returning only the resolution would silently
+  // drop the play — and only the play would drop the thing CARD-08 exists to say.
+  return move === null ? resolution : `${move} ${resolution}`;
 }
 
 export function App() {
@@ -514,11 +593,105 @@ export function App() {
   const turn = state === null ? null : selectCurrentTurn(state);
   const complete = state !== null && selectIsComplete(state);
 
+  /*
+    Which mode the screen is in — read, never computed (D-17).
+
+    Every branch below asks this local rather than re-deriving the question from picks,
+    cards or resolutions. That is the whole of what makes "played but not yet resolved"
+    unrepresentable on screen: there is one answer, and the panel, the banner and the pane
+    scoping all read the same one.
+
+    `'picking'` with no state is the pre-draft answer `selectPhase` gives for a document
+    that has not started, and it keeps the landing and config screens on the path they had.
+  */
+  const phase = state === null ? 'picking' : selectPhase(state);
+
+  /*
+    Whose card is on the clock, and only while a card IS on the clock.
+
+    Gated on the phase rather than on `selectCardTurn` alone, because that selector
+    deliberately does not ask whether the round has resolved — `canApply` needs it not to.
+    The gate is the caller's, and this is the caller that wants "is the screen bidding".
+  */
+  const cardTurn = state === null || phase !== 'cards' ? null : selectCardTurn(state);
+
   // One local, two consumers: the turn banner's sentence and the board's empty state.
   // Written twice they are two expressions that can be changed independently, and the
   // board would then name a different player from the banner directly above it.
   const turnPlayerName =
     state === null || turn === null ? null : selectPlayerName(state, turn.playerId);
+
+  /*
+    What the sticky head names. During card play there is no turn at all — that is the
+    point of D-17 — so the round and the player come from the card clock instead, and the
+    banner goes on being one sentence about one person rather than falling silent for the
+    whole of the bidding.
+  */
+  const bannerRound = phase === 'cards' ? (cardTurn?.round ?? null) : (turn?.round ?? null);
+  const bannerPlayerName =
+    phase === 'cards'
+      ? state === null || cardTurn === null
+        ? null
+        : selectPlayerName(state, cardTurn.playerId)
+      : turnPlayerName;
+
+  /*
+    The resolved order as names — CARD-08's phase line, for as long as picking lasts.
+
+    Read from `order/resolved` through `selectResolvedOrder`, never re-sorted from the
+    plays: the log carries the order the room played to, and this line is that record on
+    screen rather than a second opinion about it. Empty for a migrated schema-2 draft,
+    which resolved nothing and whose phase line is therefore simply absent.
+  */
+  const pickOrderNames = useMemo<string[]>(() => {
+    if (state === null || phase !== 'picking') return [];
+    const resolved = selectResolvedOrder(state, selectCurrentRound(state));
+    if (resolved === null) return [];
+    return resolved.map((playerId) => selectPlayerName(state, playerId) ?? playerId);
+  }, [state, phase]);
+
+  /*
+    What is already down this round, in PLAY order, with each player's name attached.
+
+    `selectCardsPlayedThisRound` answers in LOG order, which is the same order for every
+    document this build writes. It is composed against `selectCardPlayOrder` anyway, so an
+    imported document whose array arrived in some other order still renders the row the
+    rotation says — and the row is the tiebreak rule made visible (D-22, CARD-05), so it
+    has to be right about a document it did not write.
+  */
+  const playedThisRound = useMemo<PlayedCard[]>(() => {
+    if (state === null || cardTurn === null) return [];
+
+    const byPlayer = new Map(
+      selectCardsPlayedThisRound(state, cardTurn.round).map((play) => [play.playerId, play.value]),
+    );
+
+    return selectCardPlayOrder(state, cardTurn.round)
+      .filter((playerId) => byPlayer.has(playerId))
+      .map((playerId) => ({
+        playerId,
+        playerName: selectPlayerName(state, playerId) ?? playerId,
+        value: byPlayer.get(playerId) ?? 0,
+      }));
+  }, [state, cardTurn]);
+
+  /*
+    Who is still to come after the player on the clock — the remaining rotation (D-18).
+
+    The rotation minus everyone who has played and minus the player currently holding it,
+    which is exactly "still to play" and not "yet to play including you".
+  */
+  const stillToPlay = useMemo<string[]>(() => {
+    if (state === null || cardTurn === null) return [];
+
+    const done = new Set(
+      selectCardsPlayedThisRound(state, cardTurn.round).map((play) => play.playerId),
+    );
+
+    return selectCardPlayOrder(state, cardTurn.round)
+      .filter((playerId) => !done.has(playerId) && playerId !== cardTurn.playerId)
+      .map((playerId) => selectPlayerName(state, playerId) ?? playerId);
+  }, [state, cardTurn]);
 
   /*
     The host's stored pane preference, read synchronously in a state initializer so the
@@ -538,11 +711,28 @@ export function App() {
   const poolExpandable = complete;
 
   /*
+    Amendment 3: while a round's cards are being played, `board-full` is unavailable too.
+
+    The reason is not the pool's. `pool-full` is refused because it would put the board
+    behind a toggle; `board-full` is refused because the pool pane holds the ONLY control
+    that can play a card, and a state that hides the only available action is not a
+    preference. Both come back the moment the round resolves — inert ARIA is always shed
+    (WR-04), and this phase is its fourth consumer.
+  */
+  const cardPhase = phase === 'cards';
+  const boardExpandable = !cardPhase;
+  const phaseReason = cardPhase ? CARD_PHASE_EXPAND_REASON : null;
+
+  /*
     The rendered pane. A stored `pool` is silently forced to `split` while a draft is
     running: no warning, no announcement, nothing for the host to dismiss. That is the
     second, independent half of the T-02-24 mitigation — `loadViewPrefs` already refuses
     any value outside the union, and this refuses a legitimate value in the one situation
     where honouring it would hide the board.
+
+    A stored `board` is coerced the same way, and only during card play. Silently, for the
+    same reason: the host chose a legitimate state and the app is declining it for the
+    duration of one round, which is a smaller event than a message about it would be.
 
     Derived here rather than inside `SplitPanes`, which must never hold an opinion about
     which of its states are available; and derived rather than coerced in the initializer
@@ -553,7 +743,10 @@ export function App() {
     The two values cannot drift at a write: `handlePaneChange` persists the value it was
     handed, which is always the value about to render.
   */
-  const pane: PaneState = storedPane === 'pool' && !poolExpandable ? 'split' : storedPane;
+  const pane: PaneState =
+    (storedPane === 'pool' && !poolExpandable) || (storedPane === 'board' && !boardExpandable)
+      ? 'split'
+      : storedPane;
 
   const handlePaneChange = useCallback((next: PaneState) => {
     setStoredPane(next);
@@ -670,12 +863,18 @@ export function App() {
    * confident lie about a draft that never had them. Anything else deals cards, including a
    * Phase 3 draft standing at round 1 with every hand still full.
    *
+   * That gate is `selectDealsCards` rather than the two clauses written out here, and it
+   * moved into the core when `selectPhase` and `selectCurrentTurn` became its other two
+   * readers. Three copies of "does this document deal cards" would be free to disagree, and
+   * the disagreement would show as a board rendering hands for a draft the turn selector was
+   * running without them.
+   *
    * The hand itself is `selectHand`'s answer and never this file's. `HandStrip` decides
    * nothing either; it renders the pips and composes the sentence.
    */
   const hands = useMemo<Record<string, number[]> | null>(() => {
     if (state === null) return null;
-    if (state.schedule.length === 0 && state.cardsPlayed.length === 0) return null;
+    if (!selectDealsCards(state)) return null;
 
     const byPlayer: Record<string, number[]> = {};
     for (const player of state.config.players) {
@@ -770,8 +969,63 @@ export function App() {
     // Before the dispatch, so the flag and the turn it describes land in one render
     // rather than in two, the first of which would announce the turn without its suffix.
     setFiltersCleared(meta.filtersCleared);
+    setLastMove(null);
     handlePick(entry);
   }, []);
+
+  /**
+   * The card play, and the resolution it may have triggered, as one sentence.
+   *
+   * The same shape as `filtersCleared` above and for the same reason: it travels ON the
+   * turn announcement rather than as a second one that would overwrite it. `announce`
+   * writes a single signal, and a card play changes the turn in the same tick.
+   *
+   * Cleared by every pick, so a pick never re-announces the card that preceded it.
+   */
+  const [lastMove, setLastMove] = useState<string | null>(null);
+
+  /**
+   * Armed when a card play resolves the round, and consumed by the effect below.
+   *
+   * The card panel handles the ordinary case itself — the played card leaves the hand and
+   * focus moves to the next one. The LAST card of a round is different in kind: the whole
+   * panel unmounts, so there is no successor inside it and the panel's own effect never
+   * runs. Focus would fall to `<body>` on the one transition where the next thing to do is
+   * in a pane that just appeared.
+   */
+  const focusPoolAfterResolveRef = useRef(false);
+
+  const handleCardPlay = useCallback((value: number) => {
+    // Read BEFORE the dispatch: after it, the button is already gone from the document.
+    // The same `activeElement` precondition `SplitPanes` uses — a pointer user who clicked
+    // without focusing keeps their focus where they left it.
+    const active = document.activeElement;
+    const wasOnACard =
+      active instanceof HTMLElement && active.closest('.card-panel__hand') !== null;
+
+    setLastMove(handlePlayCard(value));
+
+    const after = getState();
+    focusPoolAfterResolveRef.current =
+      wasOnACard && after !== null && selectPhase(after) === 'picking';
+  }, []);
+
+  /**
+   * Hand focus to the pool grid's first cell when the card panel has just unmounted.
+   *
+   * The same shape `SplitPanes` uses for the expand that removes the button that was
+   * pressed: the markup is correct — there is genuinely nothing left to focus where the
+   * host was standing — so the fix is to pass focus on rather than to keep the node.
+   *
+   * No dependency array, and it always clears its own flag, so an armed handoff can never
+   * survive into a later, unrelated render.
+   */
+  useLayoutEffect(() => {
+    if (!focusPoolAfterResolveRef.current) return;
+    focusPoolAfterResolveRef.current = false;
+
+    document.querySelector<HTMLButtonElement>('.pool__grid .mon-card')?.focus();
+  });
 
   /**
    * The single gate both undo paths pass through — D-37, and the mitigation for Pitfall 6.
@@ -1159,13 +1413,22 @@ export function App() {
                 would report the same figure by a longer route that can disagree with it.
               */}
               <TurnBanner
-                round={turn === null ? null : turn.round}
+                round={bannerRound}
                 rounds={state.config.rounds}
-                playerName={turnPlayerName}
+                playerName={bannerPlayerName}
                 complete={complete}
                 picks={selectPickCount(state)}
                 teams={state.config.players.length}
                 filtersCleared={filtersCleared}
+                // The mode, read from the one place it is decided. The banner branches on
+                // it; it does not work it out.
+                phase={phase}
+                pickOrder={pickOrderNames}
+                // CARD-05 scopes the tie clause to the case where a tie is possible at all.
+                // Config is read here, which is why the arithmetic is here rather than in a
+                // component that would have to be handed both numbers to do it.
+                tiePossible={state.config.players.length > state.config.rounds}
+                lastMove={lastMove}
               />
 
               {feasibilityNotice !== null && (
@@ -1210,8 +1473,19 @@ export function App() {
               pane={pane}
               onPaneChange={handlePaneChange}
               poolExpandable={poolExpandable}
+              boardExpandable={boardExpandable}
+              phaseReason={phaseReason}
               pool={
-                complete ? (
+                phase === 'cards' ? (
+                  <CardPanel
+                    playerName={bannerPlayerName ?? ''}
+                    // Rules, all four of them, and not one is worked out in a component.
+                    hand={cardTurn === null ? [] : selectHand(state, cardTurn.playerId)}
+                    played={playedThisRound}
+                    stillToPlay={stillToPlay}
+                    onPlay={handleCardPlay}
+                  />
+                ) : complete ? (
                   <CompletedDraft
                     players={state.config.players}
                     // The fold itself, not `selectTeams(state)`. The stone a Mega slot

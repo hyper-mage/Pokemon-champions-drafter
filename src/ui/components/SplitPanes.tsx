@@ -98,7 +98,22 @@ const POOL_EXPAND_REASON = 'Available once the draft is complete';
  * The union is the enforcement. An unavailable expand without its explanation is no longer
  * a bug to be caught in review — it does not type-check.
  */
-type PaneAvailability = { available: true } | { available: false; reason: string };
+export type PaneAvailability = { available: true } | { available: false; reason: string };
+
+/**
+ * Why BOTH expands are unavailable while a round's cards are being played — Amendment 3.
+ *
+ * `board-full` is unavailable for a reason `pool-full` never had: the pool pane holds the
+ * only control that can play a card, and a state that hides the only available action is
+ * not a preference. `pool-full` is unavailable for its usual reason — it would put the
+ * board behind a toggle — but says THIS instead, because "once the draft is complete" is a
+ * wait the host is not currently in.
+ *
+ * Exported so `app.tsx` can name the same string it scopes the states with. The pane
+ * component must never hold an opinion about which of its states are available; it holds
+ * the copy for the reasons it renders.
+ */
+export const CARD_PHASE_EXPAND_REASON = "Available once the round's cards are played";
 
 /**
  * `side()`'s parameters, named.
@@ -135,11 +150,39 @@ export interface SplitPanesProps {
    * left the host unable to tell "unavailable" from "broken".
    */
   poolExpandable: boolean;
+  /**
+   * False only while a round's cards are being played (Amendment 3).
+   *
+   * The board's expand was the one that could never be inert, and it is now: during card
+   * play the pool pane holds the only control that can act, so hiding it is not a
+   * preference this app can honour. It goes back to always-available the moment the round
+   * resolves — WR-04's rule that inert ARIA is always shed.
+   */
+  boardExpandable: boolean;
+  /**
+   * The reason BOTH expands are unavailable when the PHASE is what makes them so, or null
+   * when the phase is not the reason.
+   *
+   * Paired with the two booleans above rather than replacing them, so the pair
+   * "unavailable, no reason given" — the exact defect UAT test 9 reported and
+   * `PaneAvailability` exists to prevent — stays unrepresentable: when this is null the
+   * fallback reasons below are used, and there is no branch that produces an inert control
+   * with nothing to say.
+   */
+  phaseReason: string | null;
   pool: ComponentChildren;
   board: ComponentChildren;
 }
 
-export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: SplitPanesProps) {
+export function SplitPanes({
+  pane,
+  onPaneChange,
+  poolExpandable,
+  boardExpandable,
+  phaseReason,
+  pool,
+  board,
+}: SplitPanesProps) {
   /**
    * Report the pane change, then announce it.
    *
@@ -415,9 +458,13 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
         restoreLabel: RESTORE_POOL_LABEL,
         expandedMessage: POOL_EXPANDED_MESSAGE,
         // The one asymmetry between the two sides, and it is scoped rather than structural.
+        //
+        // `phaseReason` wins when there is one: during card play the pool's expand is
+        // unavailable for its usual reason, but "once the draft is complete" names a wait
+        // the host is not currently in, and the nearer answer is the useful one.
         availability: poolExpandable
           ? { available: true }
-          : { available: false, reason: POOL_EXPAND_REASON },
+          : { available: false, reason: phaseReason ?? POOL_EXPAND_REASON },
       })}
 
       {side({
@@ -427,9 +474,13 @@ export function SplitPanes({ pane, onPaneChange, poolExpandable, pool, board }: 
         expandLabel: EXPAND_BOARD_LABEL,
         restoreLabel: RESTORE_BOARD_LABEL,
         expandedMessage: BOARD_EXPANDED_MESSAGE,
-        // The board's expand is never inert, so it never needs a reason — and now it
-        // cannot supply one.
-        availability: { available: true },
+        // The board's expand WAS never inert. Amendment 3 made it so for the duration of a
+        // round's card play, and `CARD_PHASE_EXPAND_REASON` is the only reason it can carry
+        // — which is why the fallback is that constant rather than a second string: an
+        // unavailable board expand outside the card phase is not a state this app has.
+        availability: boardExpandable
+          ? { available: true }
+          : { available: false, reason: phaseReason ?? CARD_PHASE_EXPAND_REASON },
       })}
     </div>
   );

@@ -29,6 +29,15 @@ export interface Turn {
   pickIndex: number;
 }
 
+/** The player whose CARD is on the clock, and the round being bid. `round` is 1-based. */
+export interface CardTurn {
+  round: number;
+  playerId: string;
+}
+
+/** Which mode the screen is in. See `selectPhase`. */
+export type DraftPhase = 'cards' | 'picking' | 'swapRounds' | 'complete';
+
 /** How many picks have been recorded so far. Also the index of the next one. */
 export function selectPickCount(state: DraftState): number {
   return state.picks.length;
@@ -362,6 +371,41 @@ export function selectCardsPlayedThisRound(state: DraftState, round: number): Ca
 }
 
 /**
+ * Whose card is on the clock — the first player in this round's rotation who has not
+ * played yet (D-18, CARD-03).
+ *
+ * The rotation reads only `state.order` and the round number, so nothing a player does
+ * except PLAYING can move this. That is what makes D-18's fairness mechanism
+ * unmanipulable, and it is why the answer is the same one whether the caller is
+ * `canApply` refusing an out-of-turn play or the card panel deciding whose hand to show.
+ *
+ * It lives here rather than in either of those because it is a rule, and `canApply` used
+ * to hold the only copy of it — which left the panel with a choice between importing from
+ * the reducer and working the rotation out a second time. A second copy of "who is on the
+ * clock" is a second thing that can disagree with the log about whose turn it is.
+ *
+ * `null` when the draft has not started, and when every player has already played this
+ * round. The second is not a defensive branch: an imported document can sit there, because
+ * `fold` runs no `canApply` and resolution is only automatic in a live session.
+ *
+ * It deliberately does NOT ask whether the round has resolved. A document whose round
+ * resolved while somebody still held a card must reach `canApply`'s `roundAlreadyResolved`
+ * arm with that player named, rather than being turned away as out of turn. Callers that
+ * want "is the screen bidding" ask `selectPhase`.
+ */
+export function selectCardTurn(state: DraftState): CardTurn | null {
+  if (state.order.length === 0) return null;
+
+  const round = selectCurrentRound(state);
+  const alreadyPlayed = new Set(
+    selectCardsPlayedThisRound(state, round).map((play) => play.playerId),
+  );
+  const playerId = selectCardPlayOrder(state, round).find((id) => !alreadyPlayed.has(id));
+
+  return playerId === undefined ? null : { round, playerId };
+}
+
+/**
  * Round `round`'s recorded pick order, or `null` if it has not resolved yet.
  *
  * `null` is the state D-17 makes representable: every card can be down without an order
@@ -418,7 +462,7 @@ export function selectDealsCards(state: DraftState): boolean {
  * started has no rotation to put anybody on the clock, so a card panel there would name
  * nobody. Both keep exactly the behaviour they had before the card phase existed.
  */
-export function selectPhase(state: DraftState): 'cards' | 'picking' | 'swapRounds' | 'complete' {
+export function selectPhase(state: DraftState): DraftPhase {
   if (selectIsComplete(state)) {
     return state.config.swapRounds > 0 ? 'swapRounds' : 'complete';
   }

@@ -1,5 +1,7 @@
+import { Fragment } from 'preact';
 import { useEffect } from 'preact/hooks';
 
+import type { DraftPhase } from '../../core/selectors';
 import { announce } from './LiveRegion';
 
 import './TurnBanner.css';
@@ -40,6 +42,40 @@ export interface TurnBannerProps {
   /** Teams in the tournament — one per player. Read on completion. */
   teams: number;
   /**
+   * `selectPhase`'s answer. This component BRANCHES on it and never computes it (D-17).
+   *
+   * Only consulted while the draft is running: `complete` short-circuits ahead of it, which
+   * is what keeps `Draft complete — {picks} picks, {teams} teams` on the one code path it
+   * has always had.
+   */
+  phase: DraftPhase;
+  /**
+   * The resolved pick order as NAMES, in order — the phase line during picking (CARD-08).
+   *
+   * On screen for the whole of picking rather than in a panel that disappears, which is the
+   * whole of what CARD-08 asks for: the order has to still be readable at the fourth pick,
+   * not only at the first.
+   */
+  pickOrder: readonly string[];
+  /**
+   * Can two players play the same value at all — `players > rounds` (CARD-05, D-22).
+   *
+   * Derived by the caller from config, because that is where config is read. With
+   * `players <= rounds` the no-repeat rule makes a tie impossible and CARD-05 scopes its
+   * requirement to the case where it is not, so stating the tiebreak there would be a rule
+   * that cannot fire taking up room on the one line a room reads from across it.
+   */
+  tiePossible: boolean;
+  /**
+   * A move that has just been recorded, announced AHEAD of the new turn — never rendered.
+   *
+   * One composed string rather than a second `announce`, for the reason `CLEARED_SUFFIX`
+   * below is composed rather than announced separately: the live region is a single signal,
+   * so two writes in one tick leave only the last. A card play and the turn change it causes
+   * are committed in the same tick, so announcing them separately would silently drop one.
+   */
+  lastMove: string | null;
+  /**
    * Did the pick that caused this turn change also clear active pool filters (D-35)?
    *
    * Extends the ANNOUNCEMENT and nothing else. The banner rendered on screen is untouched
@@ -59,6 +95,47 @@ export interface TurnBannerProps {
  */
 const CLEARED_SUFFIX = '. Filters cleared.';
 
+/**
+ * The phase line during card play, and the clause that is not always true.
+ *
+ * The tie clause is appended to the SAME composed string rather than rendered as a second
+ * sentence element, which is exactly the construction `CLEARED_SUFFIX` uses above: one
+ * string means the visible line and any spoken form of it cannot come apart, and it means
+ * the conditional half is a suffix on a value rather than a branch in markup.
+ */
+const LOWEST_FIRST = 'The lowest card picks first.';
+const TIE_CLAUSE = ' Ties go to whoever played the value first.';
+
+function cardPhaseCopy(tiePossible: boolean): string {
+  return tiePossible ? `${LOWEST_FIRST}${TIE_CLAUSE}` : LOWEST_FIRST;
+}
+
+const PICK_ORDER_PREFIX = 'Pick order: ';
+const PICK_ORDER_SEPARATOR = ' · ';
+
+/**
+ * `1 Ada · 2 Bo · 3 Cy` as position/name pairs.
+ *
+ * Segments rather than one finished string because 03-UI-SPEC §Colour puts positions in
+ * `--color-text-muted` and names in `--color-text` — and because the order strip is
+ * deliberately NOT accent-marked even though it names the player about to pick. The
+ * on-the-clock signal is the banner's own accent and the board's `board__cell--next`
+ * border; a third element in that reservation would dilute the one signal that must never
+ * be missed.
+ *
+ * There is still only ONE construction: the rendered line's text content is these segments
+ * joined, so a test asserting the whole sentence and the markup cannot disagree.
+ */
+function pickOrderSegments(names: readonly string[]): { position: number; name: string }[] {
+  return names.map((name, index) => ({ position: index + 1, name }));
+}
+
+function turnCopy(phase: DraftPhase, round: number, rounds: number, playerName: string): string {
+  return phase === 'cards'
+    ? `Round ${round} of ${rounds} — ${playerName} plays a card`
+    : `Round ${round} of ${rounds} — ${playerName} picks`;
+}
+
 export function TurnBanner({
   round,
   rounds,
@@ -67,13 +144,36 @@ export function TurnBanner({
   picks,
   teams,
   filtersCleared,
+  phase,
+  pickOrder,
+  tiePossible,
+  lastMove,
 }: TurnBannerProps) {
-  const spoken =
+  /*
+    The turn line, in plain text and before any markup — the order this component has
+    always built things in, because the live region is fed from the value rather than
+    reconstructed from the DOM.
+
+    `filtersCleared` is a picking-phase fact and stays scoped to that branch: a card play
+    clears no pool filters, so appending it during the card phase would announce something
+    that did not happen.
+  */
+  const turnLine =
     complete === true
       ? draftCompleteCopy(picks, teams)
       : round === null || playerName === null
         ? null
-        : `Round ${round} of ${rounds} — ${playerName} picks${filtersCleared ? CLEARED_SUFFIX : ''}`;
+        : phase === 'cards'
+          ? turnCopy(phase, round, rounds, playerName)
+          : `${turnCopy(phase, round, rounds, playerName)}${filtersCleared ? CLEARED_SUFFIX : ''}`;
+
+  /*
+    The move first, then the state it produced: `Ada plays 4. Round 1 of 6 — Bo plays a
+    card`. One string, for the reason `lastMove`'s own doc block gives — `announce` writes a
+    single signal, and the play and the turn change it causes are committed in the same tick.
+  */
+  const spoken =
+    turnLine === null ? lastMove : lastMove === null ? turnLine : `${lastMove} ${turnLine}`;
 
   // Keyed on `[spoken]` and unchanged, which is the point: appending the suffix CHANGES
   // `spoken`, so it is already the trigger. It also means the suffix cannot be announced
@@ -84,7 +184,10 @@ export function TurnBanner({
     if (spoken !== null) announce(spoken);
   }, [spoken]);
 
-  if (spoken === null) return null;
+  // `turnLine`, not `spoken`. A `lastMove` with no turn to attach to is still worth
+  // announcing — an undo back past the first card is exactly that — but there is no banner
+  // to draw for it.
+  if (turnLine === null) return null;
 
   /*
     The rendered banner deliberately carries NO suffix. The copywriting contract lists it
@@ -92,17 +195,45 @@ export function TurnBanner({
     line saying the filters went away would be copy this project has not written — and it
     would state something the host can already see, on the one element that must stay
     scannable from across a room.
+
+    The phase line is a SIBLING of the banner rather than a clause inside it. The two say
+    unrelated things — who is acting, and what rule the room is acting under — and the
+    banner has to stay one scannable line at `--text-display`.
   */
   return (
-    <p class="turn-banner">
-      {complete ? (
-        draftCompleteCopy(picks, teams)
-      ) : (
-        <>
-          Round {round} of {rounds} —{' '}
-          <span class="turn-banner__player">{playerName}</span> picks
-        </>
+    <>
+      <p class="turn-banner">
+        {complete ? (
+          draftCompleteCopy(picks, teams)
+        ) : phase === 'cards' ? (
+          <>
+            Round {round} of {rounds} —{' '}
+            <span class="turn-banner__player">{playerName}</span> plays a card
+          </>
+        ) : (
+          <>
+            Round {round} of {rounds} —{' '}
+            <span class="turn-banner__player">{playerName}</span> picks
+          </>
+        )}
+      </p>
+
+      {!complete && phase === 'cards' && (
+        <p class="turn-banner__phase">{cardPhaseCopy(tiePossible)}</p>
       )}
-    </p>
+
+      {!complete && phase === 'picking' && pickOrder.length > 0 && (
+        <p class="turn-banner__phase">
+          {PICK_ORDER_PREFIX}
+          {pickOrderSegments(pickOrder).map((segment, index) => (
+            <Fragment key={segment.name}>
+              {index > 0 && PICK_ORDER_SEPARATOR}
+              <span class="turn-banner__position">{segment.position}</span>{' '}
+              {segment.name}
+            </Fragment>
+          ))}
+        </p>
+      )}
+    </>
   );
 }

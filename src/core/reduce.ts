@@ -39,8 +39,8 @@ import {
 import { initialState, type DraftState, type TournamentDoc } from './model';
 import {
   selectAvailablePool,
-  selectCardPlayOrder,
   selectCardsPlayedThisRound,
+  selectCardTurn,
   selectCurrentRound,
   selectCurrentTurn,
   selectHand,
@@ -298,16 +298,15 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
       }
       if (state.order.length === 0) return reject('draftNotStarted');
 
-      // The card clock: the first player in this round's rotation who has not played yet.
-      // The rotation is independent of every card outcome (D-18), so this cannot be moved
-      // by anything a player does except playing.
+      // The card clock, which is `selectCardTurn`'s answer rather than this file's. It used
+      // to be worked out here, and here only, which left the card panel choosing between
+      // importing from the reducer and deriving the rotation a second time — a second copy
+      // of "who is on the clock" being a second thing that can disagree with the log.
+      //
+      // `undefined` when every player has already played, which still fails the comparison
+      // below: the empty clock is refused as out of turn, exactly as before.
       const round = selectCurrentRound(state);
-      const alreadyPlayed = new Set(
-        selectCardsPlayedThisRound(state, round).map((play) => play.playerId),
-      );
-      const onTheClock = selectCardPlayOrder(state, round).find(
-        (playerId) => !alreadyPlayed.has(playerId),
-      );
+      const onTheClock = selectCardTurn(state)?.playerId;
       if (action.playerId !== onTheClock) return reject('notYourTurn');
 
       // Stamped at the edge from `selectCurrentRound`, so a mismatch can only arrive from

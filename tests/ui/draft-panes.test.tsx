@@ -97,9 +97,19 @@ vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
 import { App } from '../../src/app';
 import { save as saveTournament } from '../../src/adapters/persistence';
 import { claimOwnership, CLAIM_WINDOW_MS, disposeTabLock } from '../../src/adapters/tab-lock';
-import { draftStarted, pickMade, poolBuilt, type Action, type Intent } from '../../src/core/actions';
+import {
+  cardsPlayed,
+  draftStarted,
+  orderResolved,
+  pickMade,
+  poolBuilt,
+  scheduleCompiled,
+  type Action,
+  type Intent,
+  type RoundSpec,
+} from '../../src/core/actions';
 import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
-import { selectPickCount } from '../../src/core/selectors';
+import { selectPhase, selectPickCount } from '../../src/core/selectors';
 import { dispatch, getState } from '../../src/store';
 import { announce } from '../../src/ui/components/LiveRegion';
 
@@ -303,7 +313,9 @@ describe('the pool and the board are on screen together', () => {
   it('renders the pool expand inert, with its reason, while a draft is running', async () => {
     await reachDraft();
 
-    // The board's control is never inert, and this change does not touch it.
+    // The board's control is not inert while PICKING, and this change does not touch it.
+    // Amendment 3 makes it inert during card play, which has its own block below; this
+    // fixture is a migrated schema-2 document and deals no cards at all.
     const boardExpand = buttonNamed('Expand the draft board');
     expect(boardExpand).toBeDefined();
     expect(boardExpand?.hasAttribute('aria-disabled')).toBe(false);
@@ -814,5 +826,238 @@ describe('a roster that has moved on from the document', () => {
     await reachDraft({ picks: 2 });
 
     expect(noticeTexts()).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Amendment 3 — pane-state availability during card play
+//
+// `board-full` becomes unavailable for a reason `pool-full` never had: the pool pane holds
+// the only control that can play a card, and a state that hides the only available action
+// is not a preference. Both come back the moment the round resolves.
+// ---------------------------------------------------------------------------
+
+const CARD_PHASE_REASON = "Available once the round's cards are played";
+
+const OPEN_SCHEDULE: RoundSpec[] = Array.from({ length: 6 }, (_, position) => ({
+  index: position + 1,
+  kind: 'open' as const,
+}));
+
+/**
+ * A v3 document: the compiled schedule is what makes it a draft that deals cards.
+ *
+ * `resolveFirstRound` carries it past the bidding into picking, which is the state the
+ * "inert ARIA is shed" half of WR-04 needs — the same document, one round further on.
+ */
+function seedCardPhaseDraft(options: { resolveFirstRound?: boolean } = {}): void {
+  const poolSize = 24;
+  const log: Action[] = [
+    stamp(
+      poolBuilt(
+        Array.from({ length: poolSize }, (_, index) => `mon-${index}`),
+        'mb',
+        'test-checksum',
+        poolSize - 1,
+        0,
+      ),
+      0,
+    ),
+    stamp(scheduleCompiled(OPEN_SCHEDULE), 1),
+    stamp(draftStarted(['p1', 'p2'], 13), 2),
+  ];
+
+  if (options.resolveFirstRound === true) {
+    log.push(stamp(cardsPlayed({ playerId: 'p1', value: 1, round: 1 }), 3));
+    log.push(stamp(cardsPlayed({ playerId: 'p2', value: 2, round: 1 }), 4));
+    log.push(stamp(orderResolved(1, ['p1', 'p2']), 5));
+  }
+
+  const doc: TournamentDoc = {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'card-phase-fixture',
+    createdAt: 1_770_000_000_000,
+    config: configOf(poolSize),
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log,
+  };
+
+  expect(saveTournament(doc)).toBe(true);
+}
+
+async function reachCardPhase(options: { resolveFirstRound?: boolean } = {}): Promise<void> {
+  seedCardPhaseDraft(options);
+  claimLock();
+  await mountApp();
+  await click(buttonNamed('Resume saved draft'));
+}
+
+describe('pane availability while a round is being bid', () => {
+  it('renders the board expand inert, with the card-phase reason', async () => {
+    await reachCardPhase();
+
+    const boardExpand = buttonNamed('Expand the draft board');
+    expect(boardExpand).toBeDefined();
+    expect(boardExpand?.getAttribute('aria-disabled')).toBe('true');
+
+    // Focusable on purpose, as everywhere in this app: a native `disabled` would put the
+    // explanation beside it out of reach of the keyboard.
+    expect(boardExpand?.hasAttribute('disabled')).toBe(false);
+
+    const reasonId = boardExpand?.getAttribute('aria-describedby') ?? '';
+    expect(reasonId).not.toBe('');
+
+    // Exact equality on the whole visible line, separator included.
+    expect(host.querySelector(`#${reasonId}`)?.textContent?.trim()).toBe(
+      `— ${CARD_PHASE_REASON}`,
+    );
+  });
+
+  it('gives the pool expand the nearer reason too, not the completion one', async () => {
+    await reachCardPhase();
+
+    const poolExpand = buttonNamed('Expand the pool');
+    expect(poolExpand?.getAttribute('aria-disabled')).toBe('true');
+
+    const reasonId = poolExpand?.getAttribute('aria-describedby') ?? '';
+    expect(host.querySelector(`#${reasonId}`)?.textContent?.trim()).toBe(
+      `— ${CARD_PHASE_REASON}`,
+    );
+
+    // "Once the draft is complete" names a wait the host is not currently in.
+    expect(host.textContent).not.toContain('Available once the draft is complete');
+  });
+
+  it('sheds the inert ARIA the moment the round resolves — WR-04', async () => {
+    await reachCardPhase({ resolveFirstRound: true });
+
+    const boardExpand = buttonNamed('Expand the draft board');
+    expect(boardExpand).toBeDefined();
+    expect(boardExpand?.hasAttribute('aria-disabled')).toBe(false);
+    expect(boardExpand?.hasAttribute('aria-describedby')).toBe(false);
+    expect(host.textContent).not.toContain(CARD_PHASE_REASON);
+  });
+
+  it('coerces a stored board-full to split, silently', async () => {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ density: 'standard', pane: 'board' }));
+    await reachCardPhase();
+
+    expect(panesRoot()?.getAttribute('data-pane')).toBe('split');
+
+    // Silently: the host chose a legitimate state and the app is declining it for one
+    // round, which is a smaller event than a message about it would be.
+    expect(liveRegionText()).not.toContain('expanded to full width');
+  });
+
+  it('honours a stored board-full again once picking begins', async () => {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ density: 'standard', pane: 'board' }));
+    await reachCardPhase({ resolveFirstRound: true });
+
+    expect(panesRoot()?.getAttribute('data-pane')).toBe('board');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The round resolves itself — D-17, D-19
+// ---------------------------------------------------------------------------
+
+function cardButtons(): HTMLButtonElement[] {
+  const hand = host.querySelector<HTMLElement>('.card-panel__hand');
+  return Array.from(hand?.querySelectorAll('button') ?? []);
+}
+
+function phaseNow(): string {
+  const state = getState();
+  if (state === null) throw new Error('no draft state');
+  return selectPhase(state);
+}
+
+describe('playing the last card of a round', () => {
+  it('resolves the order with no further interaction, and swaps the pane back to the pool', async () => {
+    await reachCardPhase();
+
+    // The pool pane holds the card panel, and the board is untouched beside it — which is
+    // the whole of why the panel goes here rather than over the whole draft region.
+    expect(host.querySelector('.card-panel')).not.toBeNull();
+    expect(host.querySelector('.pool__header')).toBeNull();
+    expect(host.querySelector('.board')).not.toBeNull();
+    expect(phaseNow()).toBe('cards');
+
+    // Ada plays, then Bo. Two clicks, and nothing else.
+    await click(cardButtons()[0]);
+    expect(phaseNow()).toBe('cards');
+
+    await click(cardButtons()[0]);
+
+    // No "start picking" control was rendered, and none was pressed. An explicit click
+    // would cost one per round and put the screen's mode partly in the UI.
+    expect(buttonNamed('Start picking')).toBeUndefined();
+    expect(phaseNow()).toBe('picking');
+
+    // The panel is gone and the pool is back in its place. The board never moved.
+    expect(host.querySelector('.card-panel')).toBeNull();
+    expect(host.querySelector('.pool__header')).not.toBeNull();
+    expect(host.querySelector('.board')).not.toBeNull();
+  });
+
+  it('records the order in the log rather than leaving it to be recomputed', async () => {
+    await reachCardPhase();
+
+    await click(cardButtons()[0]);
+    await click(cardButtons()[0]);
+
+    const state = getState();
+    expect(state?.resolvedOrders).toHaveLength(1);
+    expect(state?.resolvedOrders[0]?.round).toBe(1);
+    expect(state?.cardsPlayed).toHaveLength(2);
+  });
+
+  it('puts the resolved order in the sticky head and leaves it there', async () => {
+    await reachCardPhase();
+
+    await click(cardButtons()[0]);
+    await click(cardButtons()[0]);
+
+    // Both players played their lowest card, so the tie resolves on `seq` — Ada played
+    // first, so Ada picks first.
+    expect(host.querySelector('.turn-banner__phase')?.textContent).toBe('Pick order: 1 Ada · 2 Bo');
+  });
+
+  it('hands focus to the pool grid, because the control the host pressed is gone', async () => {
+    await reachCardPhase();
+
+    await click(cardButtons()[0]);
+
+    // The LAST card, activated from the keyboard — which is the precondition the handoff
+    // reads before it moves anything.
+    const last = cardButtons()[0];
+    await focusAndClick(last);
+
+    expect(last?.isConnected).toBe(false);
+    expect(document.activeElement).not.toBe(document.body);
+    expect((document.activeElement as HTMLElement | null)?.classList.contains('mon-card')).toBe(
+      true,
+    );
+  });
+
+  it('leaves focus in the hand while the round is still being bid', async () => {
+    await reachCardPhase();
+
+    await focusAndClick(cardButtons()[0]);
+
+    /*
+      Focus is on a live card in the hand group, and NOT on the pool — the panel is still
+      mounted and the next thing to do is another card.
+
+      Which mechanism put it there is deliberately not asserted. Ada spent her 1 and Bo
+      still holds his, so the vnode keyed `1` survives the re-render and Preact reuses the
+      very node that was pressed; the handoff has nothing to do because focus never left a
+      correct control. Asserting `isConnected === false` here would be asserting an
+      implementation detail of Preact's keyed diff, and it would fail for a hand where the
+      two players' cards happen to line up — which is most of them.
+    */
+    expect(document.activeElement).not.toBe(document.body);
+    expect(cardButtons()).toContain(document.activeElement);
+    expect(host.querySelector('.card-panel')).not.toBeNull();
   });
 });

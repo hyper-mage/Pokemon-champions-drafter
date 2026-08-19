@@ -30,3 +30,26 @@
 .turn-banner__player {
   color: var(--color-accent);
 }
+
+/*
+ * The second line of the sticky head — the rule the room is acting under.
+ *
+ * It carries the banner's own bottom margin instead, so the head grows by one 27px line
+ * rather than by a line plus a second gap. --text-body is the floor for board text that
+ * carries state, and it is what 03-UI-SPEC §8 gives for both the card-phase rule and the
+ * resolved pick order.
+ *
+ * No accent. The order strip names the player about to pick and is deliberately monochrome:
+ * the on-the-clock signal is the banner's accent and the board's next-cell border, and a
+ * third element in that reservation would dilute the one signal that must never be missed.
+ */
+.turn-banner__phase {
+  margin: calc(-1 * var(--space-5)) 0 var(--space-5);
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-text);
+  font: var(--text-body);
+}
+
+.turn-banner__position {
+  color: var(--color-text-muted);
+}
