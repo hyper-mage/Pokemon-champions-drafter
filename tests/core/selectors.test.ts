@@ -14,12 +14,16 @@ import { describe, expect, it } from 'vitest';
 
 import committedSnapshot from '../../public/data/roster.mb.json';
 import {
+  cardsPlayed,
   draftStarted,
+  orderResolved,
   pickMade,
   poolBuilt,
+  scheduleCompiled,
   type Action,
   type Intent,
   type RoundKind,
+  type RoundSpec,
 } from '../../src/core/actions';
 import {
   initialState,
@@ -36,8 +40,10 @@ import {
   selectCardsPlayedThisRound,
   selectCurrentRound,
   selectCurrentTurn,
+  selectDealsCards,
   selectHand,
   selectIsComplete,
+  selectPhase,
   selectPickCount,
   selectPlayerName,
   selectResolvedOrder,
@@ -789,6 +795,200 @@ describe('the card selectors on a document that has dealt none', () => {
     for (let round = 1; round <= CONFIG.rounds; round++) {
       expect(selectCardsPlayedThisRound(state, round), `round ${round}`).toEqual([]);
       expect(selectResolvedOrder(state, round), `round ${round}`).toBeNull();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 — the card phase, the resolved order, and the one place the mode is decided
+// ---------------------------------------------------------------------------
+
+const OPEN_SCHEDULE: RoundSpec[] = Array.from({ length: CONFIG.rounds }, (_, position) => ({
+  index: position + 1,
+  kind: 'open' as const,
+}));
+
+/**
+ * A document this build would have written: a compiled schedule, and rounds played out in
+ * the order the app plays them — cards, then the resolution the last card triggers, then
+ * picks in the resolved order.
+ *
+ * Every player plays the round's own number as their card value, so each spends 1..6 once
+ * across six rounds and every round is a TIE on value. That is deliberate: it makes the
+ * resolved order the play rotation, which for round 2 is the reverse of `state.order` —
+ * exactly the case a selector still reading `state.order` gets wrong while looking right
+ * in round 1.
+ */
+function v3Log(options: {
+  /** Rounds carried all the way through cards, resolution and every pick. */
+  fullRounds: number;
+  /** Cards put down in the round after those. */
+  cards?: number;
+  /** Whether that round then resolves. */
+  resolve?: boolean;
+  /** Picks made in that round once it has resolved. */
+  picks?: number;
+}): Action[] {
+  const { fullRounds, cards = 0, resolve = false, picks = 0 } = options;
+
+  const log: Action[] = [];
+  const push = (intent: Intent): void => {
+    log.push(stamp(intent, log.length));
+  };
+
+  push(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0));
+  push(scheduleCompiled(OPEN_SCHEDULE));
+  push(draftStarted(ORDER, 9));
+
+  // D-18's rotation, written out here rather than imported, so the fixture and the
+  // selector under test cannot agree by sharing one implementation of the thing asserted.
+  const rotation = (round: number): string[] =>
+    ORDER.map((_, offset) => ORDER[(round - 1 + offset) % ORDER.length] as string);
+
+  let pickIndex = 0;
+  const playPicks = (round: number, order: readonly string[], count: number): void => {
+    for (let taken = 0; taken < count; taken++) {
+      push(
+        pickMade({
+          playerId: order[taken] as string,
+          monId: POOL[pickIndex] as string,
+          round,
+          pickIndex,
+        }),
+      );
+      pickIndex += 1;
+    }
+  };
+
+  for (let round = 1; round <= fullRounds; round++) {
+    const order = rotation(round);
+    for (const playerId of order) push(cardsPlayed({ playerId, value: round, round }));
+    push(orderResolved(round, order));
+    playPicks(round, order, order.length);
+  }
+
+  const nextRound = fullRounds + 1;
+  if (nextRound <= CONFIG.rounds) {
+    const order = rotation(nextRound);
+    for (let played = 0; played < cards; played++) {
+      push(cardsPlayed({ playerId: order[played] as string, value: nextRound, round: nextRound }));
+    }
+    if (resolve) push(orderResolved(nextRound, order));
+    playPicks(nextRound, order, picks);
+  }
+
+  return log;
+}
+
+function v3State(options: Parameters<typeof v3Log>[0]): DraftState {
+  return fold(makeDoc(v3Log(options)));
+}
+
+describe('selectDealsCards', () => {
+  it('is false for a migrated schema-2 document — no schedule and no card ever played', () => {
+    expect(selectDealsCards(stateAfter(0))).toBe(false);
+    expect(selectDealsCards(stateAfter(7))).toBe(false);
+  });
+
+  it('is true for a document with a compiled schedule, before any card is played', () => {
+    // The half of the gate that keeps a v3 draft standing at round 1 from being read as a
+    // migrated one: both have an empty `cardsPlayed`, and only the schedule tells them apart.
+    const fresh = v3State({ fullRounds: 0 });
+
+    expect(fresh.cardsPlayed).toEqual([]);
+    expect(selectDealsCards(fresh)).toBe(true);
+  });
+});
+
+describe('selectPhase', () => {
+  it('is the card phase while the current round has no resolved order', () => {
+    expect(selectPhase(v3State({ fullRounds: 0 }))).toBe('cards');
+    expect(selectPhase(v3State({ fullRounds: 0, cards: 1 }))).toBe('cards');
+    expect(selectPhase(v3State({ fullRounds: 2 }))).toBe('cards');
+  });
+
+  it('is the picking phase from the moment the round resolves', () => {
+    expect(selectPhase(v3State({ fullRounds: 0, cards: 2, resolve: true }))).toBe('picking');
+    expect(selectPhase(v3State({ fullRounds: 0, cards: 2, resolve: true, picks: 1 }))).toBe(
+      'picking',
+    );
+  });
+
+  it('is complete once every team is full and the tournament runs no swap rounds', () => {
+    expect(CONFIG.swapRounds).toBe(0);
+    expect(selectPhase(v3State({ fullRounds: 6 }))).toBe('complete');
+  });
+
+  it('is the swap-round phase when the picks are done and swap rounds remain', () => {
+    const doc: TournamentDoc = {
+      ...makeDoc(v3Log({ fullRounds: 6 })),
+      config: { ...CONFIG, swapRounds: 2 },
+    };
+
+    expect(selectPhase(fold(doc))).toBe('swapRounds');
+  });
+
+  it('is the picking phase for a migrated schema-2 document, which deals no cards', () => {
+    expect(selectPhase(stateAfter(0))).toBe('picking');
+    expect(selectPhase(stateAfter(5))).toBe('picking');
+  });
+
+  it('is the picking phase before a draft has started', () => {
+    expect(selectPhase(initialState(CONFIG))).toBe('picking');
+  });
+});
+
+describe('selectCurrentTurn reads the resolved order', () => {
+  it('is null while the round is still being bid on', () => {
+    expect(selectCurrentTurn(v3State({ fullRounds: 0 }))).toBeNull();
+    expect(selectCurrentTurn(v3State({ fullRounds: 0, cards: 1 }))).toBeNull();
+    expect(selectCurrentTurn(v3State({ fullRounds: 2 }))).toBeNull();
+  });
+
+  it('takes the round’s resolved order rather than the starting order', () => {
+    const state = v3State({ fullRounds: 1, cards: 2, resolve: true });
+
+    expect(state.order).toEqual(['p1', 'p2']);
+    expect(selectResolvedOrder(state, 2)).toEqual(['p2', 'p1']);
+    expect(selectCurrentTurn(state)).toEqual({ round: 2, playerId: 'p2', pickIndex: 2 });
+  });
+
+  it('advances through the resolved order', () => {
+    const state = v3State({ fullRounds: 1, cards: 2, resolve: true, picks: 1 });
+    expect(selectCurrentTurn(state)).toEqual({ round: 2, playerId: 'p1', pickIndex: 3 });
+  });
+
+  it('falls back to the starting order for a migrated document that dealt no cards', () => {
+    expect(selectCurrentTurn(stateAfter(0))).toEqual({ round: 1, playerId: 'p1', pickIndex: 0 });
+    expect(selectCurrentTurn(stateAfter(3))).toEqual({ round: 2, playerId: 'p2', pickIndex: 3 });
+  });
+
+  it('is null once every team is full', () => {
+    expect(selectCurrentTurn(v3State({ fullRounds: 6 }))).toBeNull();
+  });
+});
+
+describe('DRFT-04 — the draft runs every compiled round', () => {
+  it('leaves every player holding exactly config.rounds picks', () => {
+    const state = v3State({ fullRounds: 6 });
+    const teams = selectTeams(state);
+
+    for (const player of CONFIG.players) {
+      expect(teams[player.id]?.filter((slot) => slot !== null), player.id).toHaveLength(
+        CONFIG.rounds,
+      );
+    }
+
+    expect(selectPickCount(state)).toBe(CONFIG.players.length * CONFIG.rounds);
+    expect(selectIsComplete(state)).toBe(true);
+    expect(selectPhase(state)).not.toBe('picking');
+  });
+
+  it('spends every card in every hand across the six rounds', () => {
+    const state = v3State({ fullRounds: 6 });
+
+    for (const player of CONFIG.players) {
+      expect(selectHand(state, player.id), player.id).toEqual([]);
     }
   });
 });

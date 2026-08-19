@@ -20,12 +20,16 @@ import {
   DRAFT_PICK_UNDONE,
   DRAFT_STARTED,
   POOL_BUILT,
+  cardsPlayed,
   draftStarted,
+  orderResolved,
   pickMade,
   pickUndone,
   poolBuilt,
+  scheduleCompiled,
   type Action,
   type Intent,
+  type RoundSpec,
 } from '../../src/core/actions';
 import {
   SCHEMA_VERSION,
@@ -491,5 +495,93 @@ describe('undoCrossesRoundBoundary', () => {
     undoCrossesRoundBoundary(doc, fold(doc));
 
     expect(JSON.stringify(doc)).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// undoCrossesRoundBoundary during the card phase
+//
+// The boundary check used to read the current round off `selectCurrentTurn`, falling back
+// to `config.rounds` when that came back null. That fallback was written for exactly one
+// null: the finished draft. The card phase is a SECOND null, and under the old code every
+// undo offered between two rounds would have been described to the host as reaching back
+// from round six.
+// ---------------------------------------------------------------------------
+
+const OPEN_SCHEDULE: RoundSpec[] = Array.from({ length: CONFIG.rounds }, (_, position) => ({
+  index: position + 1,
+  kind: 'open' as const,
+}));
+
+/** A v3 opening: the compiled schedule is what tells this document apart from a migrated one. */
+function v3OpeningLog(): Action[] {
+  return [
+    stamp(poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0), 0),
+    stamp(scheduleCompiled(OPEN_SCHEDULE), 1),
+    stamp(draftStarted(ORDER, 9), 2),
+  ];
+}
+
+/** Round `round`'s cards and its resolution, in `state.order`, then that round's picks. */
+function withResolvedRound(log: Action[], round: number): Action[] {
+  const extended = [...log];
+  const push = (intent: Intent): void => {
+    extended.push(stamp(intent, extended.length));
+  };
+
+  // Both players play the round's own number, so each spends 1..6 exactly once and the
+  // round is a tie on value — resolved by `seq`, which puts them back in `state.order`.
+  for (const playerId of ORDER) push(cardsPlayed({ playerId, value: round, round }));
+  push(orderResolved(round, ORDER));
+
+  const firstPickIndex = (round - 1) * ORDER.length;
+  for (const [offset, playerId] of ORDER.entries()) {
+    const pickIndex = firstPickIndex + offset;
+    push(pickMade({ playerId, monId: POOL[pickIndex] as string, round, pickIndex }));
+  }
+
+  return extended;
+}
+
+describe('undoCrossesRoundBoundary during the card phase', () => {
+  it('reports the round being bid on, not the last round of the tournament', () => {
+    // Round 1 is played out and round 2's cards are on the table: no turn is on the clock,
+    // and the draft is standing in round 2.
+    const log = withResolvedRound(v3OpeningLog(), 1);
+    log.push(stamp(cardsPlayed({ playerId: 'p2', value: 3, round: 2 }), log.length));
+
+    const doc = makeDoc(log);
+    const state = fold(doc);
+
+    expect(selectCurrentTurn(state)).toBeNull();
+
+    const crossing = undoCrossesRoundBoundary(doc, state);
+
+    expect(crossing?.currentRound).toBe(2);
+    expect(crossing?.currentRound).not.toBe(CONFIG.rounds);
+    expect(crossing?.pickRound).toBe(1);
+  });
+
+  it('does not report a crossing for an undo inside the round being picked', () => {
+    const log = withResolvedRound(v3OpeningLog(), 1);
+    const doc = makeDoc(log);
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    // Round 1's picks are in and round 2 has not been bid on, so the draft stands in
+    // round 2 and unwinding round 1's last pick genuinely does cross.
+    expect(crossing?.pickRound).toBe(1);
+    expect(crossing?.currentRound).toBe(2);
+    expect(crossing?.crosses).toBe(true);
+  });
+
+  it('still reports the last round once every team is full', () => {
+    let log = v3OpeningLog();
+    for (let round = 1; round <= CONFIG.rounds; round++) log = withResolvedRound(log, round);
+
+    const doc = makeDoc(log);
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.currentRound).toBe(CONFIG.rounds);
+    expect(crossing?.crosses).toBe(false);
   });
 });

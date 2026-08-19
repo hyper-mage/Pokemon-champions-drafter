@@ -1116,3 +1116,64 @@ describe('a card round folds without canApply', () => {
     expect(resolvePickOrder(selectCardsPlayedThisRound(state, 1))).toEqual(['p2', 'p1']);
   });
 });
+
+describe('canApply draft/pickMade during the card phase', () => {
+  /**
+   * The reason a pick is refused while cards are still on the table.
+   *
+   * Before this arm existed the null turn fell through to `draftComplete`, which is not
+   * merely imprecise — it names the OPPOSITE end of the draft. A host reading it on a
+   * round-one document would be told the tournament was finished.
+   */
+  it('rejects with cardsNotResolved before a single card is down', () => {
+    const state = fold(makeDoc(openingLog()));
+    const action = stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 0 }), 3);
+
+    expect(canApply(state, action)).toEqual({ ok: false, reason: 'cardsNotResolved' });
+  });
+
+  it('rejects with cardsNotResolved when every card is down but the round has not resolved', () => {
+    const state = fold(makeDoc(withCardPlays(openingLog(), 1, [4, 2])));
+    const action = stamp(pickMade({ playerId: 'p2', monId: 'venusaur', round: 1, pickIndex: 0 }), 9);
+
+    expect(canApply(state, action)).toEqual({ ok: false, reason: 'cardsNotResolved' });
+  });
+
+  it('accepts the resolved order’s first picker the moment the round resolves', () => {
+    // p2 played the lower card, so p2 picks first — which `state.order` would not say.
+    const state = fold(makeDoc(withResolvedCardRound(openingLog(), 1, [4, 2])));
+
+    expect(selectResolvedOrder(state, 1)).toEqual(['p2', 'p1']);
+    expect(
+      canApply(
+        state,
+        stamp(pickMade({ playerId: 'p2', monId: 'venusaur', round: 1, pickIndex: 0 }), 9),
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      canApply(
+        state,
+        stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 0 }), 9),
+      ),
+    ).toEqual({ ok: false, reason: 'notYourTurn' });
+  });
+
+  it('still reports draftComplete once every team is full', () => {
+    // The new arm sits after the completion check, so the end of the draft keeps its own
+    // reason rather than being reported as an unresolved round.
+    const state = fold(makeDoc(withPicks(openingLog(), 12)));
+    const action = stamp(
+      pickMade({ playerId: 'p1', monId: 'feraligatr', round: 7, pickIndex: 12 }),
+      40,
+    );
+
+    expect(canApply(state, action)).toEqual({ ok: false, reason: 'draftComplete' });
+  });
+
+  it('never fires for a migrated schema-2 document, which deals no cards', () => {
+    const state = fold(makeDoc(migratedOpeningLog()));
+    const action = stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 0 }), 2);
+
+    expect(canApply(state, action)).toEqual({ ok: true });
+  });
+});
