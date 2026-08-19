@@ -206,7 +206,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 03-09-PLAN.md — Hall's-condition card legality, the inert card face, and one undo stack for the whole log (CARD-04)
+- [x] 03-09-PLAN.md — Hall's-condition card legality, the inert card face, and one undo stack for the whole log (CARD-04)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
@@ -267,7 +267,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
-| 3. Compiled Rules, Priority Cards, Swaps | 8/12 | In Progress|  |
+| 3. Compiled Rules, Priority Cards, Swaps | 9/12 | In Progress|  |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
