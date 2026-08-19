@@ -116,6 +116,23 @@ export type PaneAvailability = { available: true } | { available: false; reason:
 export const CARD_PHASE_EXPAND_REASON = "Available once the round's cards are played";
 
 /**
+ * Why both expands are unavailable during a dedicated swap round — Amendment 3's third row.
+ *
+ * The same argument the card phase makes, one phase later: the pool pane holds the only
+ * control that can act — `Pass this swap`, or the armed slot's offer — and a state that
+ * hides the only available action is not a preference. The pool's expand is refused too,
+ * because the board is where a player picks the slot they are swapping out of.
+ *
+ * A separate constant rather than a reworded shared one. "Once the round's cards are
+ * played" names a wait the host is not in during a swap round, and a host reading it there
+ * would be told to wait for something that already happened.
+ *
+ * Shed the moment the round ends, like every inert reason in this file (WR-04). This is
+ * that rule's last consumer in Phase 3.
+ */
+export const SWAP_ROUND_EXPAND_REASON = 'Available once the swap round ends';
+
+/**
  * `side()`'s parameters, named.
  *
  * Plan 02-09 deliberately chose an eighth POSITIONAL parameter here, on the grounds that

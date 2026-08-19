@@ -72,6 +72,9 @@ function mount(props: Partial<TurnBannerProps>): void {
         phase={props.phase ?? 'picking'}
         pickOrder={props.pickOrder ?? []}
         tiePossible={props.tiePossible ?? false}
+        swapRound={props.swapRound === undefined ? null : props.swapRound}
+        swapRounds={props.swapRounds ?? 0}
+        swapOrderSource={props.swapOrderSource ?? 'lastRound'}
         lastMove={props.lastMove === undefined ? null : props.lastMove}
       />,
       host,
@@ -210,6 +213,9 @@ describe('what the sticky head announces', () => {
             phase={props.phase ?? 'picking'}
             pickOrder={props.pickOrder ?? []}
             tiePossible={props.tiePossible ?? false}
+            swapRound={props.swapRound === undefined ? null : props.swapRound}
+            swapRounds={props.swapRounds ?? 0}
+            swapOrderSource={props.swapOrderSource ?? 'lastRound'}
             lastMove={props.lastMove === undefined ? null : props.lastMove}
           />
         </>,

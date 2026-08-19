@@ -249,8 +249,15 @@ export const UNDO_RESOLVED_ORDER_CONFIRM = {
  * `one of {name}'s 1 swaps` is reachable the moment a host sets `swapBudget: 1`, which is
  * the most likely setting anyone picks, so this is not a defensive edge — it is the common
  * case. Same rule the module has followed since Phase 1.
+ *
+ * EXPORTED, alone among the five, and that is the deliberate exception rather than the
+ * start of a pattern. The other four are read only by the dialog bodies in this file. The
+ * swap count is read by three surfaces — the swap confirm here, `PoolGrid`'s §10 budget
+ * line and `SwapPanel`'s §11 one — and 03-10 already found the second of those writing its
+ * own copy of the rule. A third private copy is how the three end up disagreeing about the
+ * singular, which is exactly the class of defect this module exists to prevent.
  */
-function swaps(count: number): string {
+export function swaps(count: number): string {
   return count === 1 ? '1 swap' : `${count} swaps`;
 }
 

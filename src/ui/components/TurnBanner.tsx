@@ -4,6 +4,9 @@ import { useEffect } from 'preact/hooks';
 import type { DraftPhase } from '../../core/selectors';
 import { announce } from './LiveRegion';
 
+/** `selectSwapOrderSource`'s return, named so the prop and the selector cannot drift. */
+type SwapOrderSource = 'lastRound' | 'startingOrder';
+
 import './TurnBanner.css';
 
 /**
@@ -67,6 +70,19 @@ export interface TurnBannerProps {
    */
   tiePossible: boolean;
   /**
+   * The dedicated swap round in progress, or `null` when none is —
+   * `selectCurrentSwapRound`'s answer.
+   *
+   * Read only while `phase` is `'swapRounds'`. Null there would mean the phase and the
+   * clock disagree, which cannot happen: `selectPhase` returns `'swapRounds'` for exactly
+   * the states in which a swap round is running.
+   */
+  swapRound: number | null;
+  /** `config.swapRounds`, never a literal. Read on the swap-round line. */
+  swapRounds: number;
+  /** `selectSwapOrderSource`'s answer. This component branches on it; it never derives it. */
+  swapOrderSource: SwapOrderSource;
+  /**
    * A move that has just been recorded, announced AHEAD of the new turn — never rendered.
    *
    * One composed string rather than a second `announce`, for the reason `CLEARED_SUFFIX`
@@ -110,6 +126,29 @@ function cardPhaseCopy(tiePossible: boolean): string {
   return tiePossible ? `${LOWEST_FIRST}${TIE_CLAUSE}` : LOWEST_FIRST;
 }
 
+/**
+ * The swap-round phase line, and why WHICH sentence renders is not this component's call.
+ *
+ * SWAP-04 asks for the swap order to be explicit. D-28 derives it by reversing the last
+ * pick round's resolved order, and a document that has no such order — migrated from schema
+ * 2, or imported — falls back to reversing the starting order instead. Both are
+ * deterministic; what would not be explicit is a screen that said the same sentence over
+ * two different sources.
+ *
+ * So the variant is chosen by `selectSwapOrderSource`, in the core, and arrives here as a
+ * prop. Deriving it here from "is `rounds` resolved" would be a second authority on the
+ * same question, free to name a source the order did not actually come from.
+ */
+function swapPhaseCopy(source: SwapOrderSource, rounds: number): string {
+  return source === 'startingOrder'
+    ? 'Swap order reverses the starting order.'
+    : `Swap order reverses round ${rounds}.`;
+}
+
+function swapTurnCopy(swapRound: number, swapRounds: number, playerName: string): string {
+  return `Swap round ${swapRound} of ${swapRounds} — ${playerName} swaps or passes`;
+}
+
 const PICK_ORDER_PREFIX = 'Pick order: ';
 const PICK_ORDER_SEPARATOR = ' · ';
 
@@ -147,6 +186,9 @@ export function TurnBanner({
   phase,
   pickOrder,
   tiePossible,
+  swapRound,
+  swapRounds,
+  swapOrderSource,
   lastMove,
 }: TurnBannerProps) {
   /*
@@ -158,14 +200,30 @@ export function TurnBanner({
     clears no pool filters, so appending it during the card phase would announce something
     that did not happen.
   */
+  /*
+    The swap-round line is worked out FIRST and separately, because it is the one headline
+    that is not about a pick round: it counts swap rounds, not rounds, so it takes neither
+    `round` nor `rounds` and cannot be folded into `turnCopy`'s ternary without one of them
+    reaching a sentence it does not belong in.
+
+    Null when the phase is anything else, so the expression below reads as "the swap line,
+    or the ordinary one".
+  */
+  const swapLine =
+    phase === 'swapRounds' && swapRound !== null && playerName !== null
+      ? swapTurnCopy(swapRound, swapRounds, playerName)
+      : null;
+
   const turnLine =
     complete === true
       ? draftCompleteCopy(picks, teams)
-      : round === null || playerName === null
-        ? null
-        : phase === 'cards'
-          ? turnCopy(phase, round, rounds, playerName)
-          : `${turnCopy(phase, round, rounds, playerName)}${filtersCleared ? CLEARED_SUFFIX : ''}`;
+      : swapLine !== null
+        ? swapLine
+        : round === null || playerName === null
+          ? null
+          : phase === 'cards'
+            ? turnCopy(phase, round, rounds, playerName)
+            : `${turnCopy(phase, round, rounds, playerName)}${filtersCleared ? CLEARED_SUFFIX : ''}`;
 
   /*
     The move first, then the state it produced: `Ada plays 4. Round 1 of 6 — Bo plays a
@@ -205,6 +263,11 @@ export function TurnBanner({
       <p class="turn-banner">
         {complete ? (
           draftCompleteCopy(picks, teams)
+        ) : swapLine !== null ? (
+          <>
+            Swap round {swapRound} of {swapRounds} —{' '}
+            <span class="turn-banner__player">{playerName}</span> swaps or passes
+          </>
         ) : phase === 'cards' ? (
           <>
             Round {round} of {rounds} —{' '}
@@ -220,6 +283,16 @@ export function TurnBanner({
 
       {!complete && phase === 'cards' && (
         <p class="turn-banner__phase">{cardPhaseCopy(tiePossible)}</p>
+      )}
+
+      {/*
+        Gated on `swapLine` rather than on the phase alone, so the phase line and the
+        headline above it cannot appear without each other. A sentence naming the swap
+        order, sitting under a banner still announcing a pick, would be the one failure
+        this line exists to prevent.
+      */}
+      {!complete && swapLine !== null && (
+        <p class="turn-banner__phase">{swapPhaseCopy(swapOrderSource, rounds)}</p>
       )}
 
       {!complete && phase === 'picking' && pickOrder.length > 0 && (

@@ -25,7 +25,7 @@ import {
 } from './adapters/roster-source';
 import { claimOwnership, disposeTabLock, notifyAbandoned } from './adapters/tab-lock';
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
-import { cardsPlayed, orderResolved, pickMade, swapMade } from './core/actions';
+import { cardsPlayed, orderResolved, pickMade, swapMade, swapPassed } from './core/actions';
 import { bannedEntries } from './core/bans';
 import { resolvePickOrder, type CardOffer } from './core/cards';
 import { checkFeasibility } from './core/feasibility';
@@ -39,10 +39,11 @@ import {
   selectCardsPlayedThisRound,
   selectCardTurn,
   selectCurrentRound,
+  selectCurrentSwapRound,
   selectCurrentTurn,
   selectDealsCards,
   selectHand,
-  selectIsComplete,
+  selectIsTournamentComplete,
   selectPhase,
   selectPickCount,
   selectPlayerName,
@@ -51,6 +52,8 @@ import {
   selectRoundKind,
   selectSchedule,
   selectSlotKind,
+  selectSwapOrderSource,
+  selectSwapRoundPosition,
   selectSwapsRemaining,
   selectSwapTargets,
   selectTeams,
@@ -84,7 +87,12 @@ import {
   type SwapBudget,
 } from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
-import { CARD_PHASE_EXPAND_REASON, SplitPanes } from './ui/components/SplitPanes';
+import {
+  CARD_PHASE_EXPAND_REASON,
+  SplitPanes,
+  SWAP_ROUND_EXPAND_REASON,
+} from './ui/components/SplitPanes';
+import { SwapPanel } from './ui/components/SwapPanel';
 import { boardCellId } from './ui/components/TeamStrip';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
@@ -341,8 +349,13 @@ function handlePick(entry: RosterEntry): void {
  * clicked was already `selectSwapTargets`' output (D-27). A UI component may not own a game
  * rule, and neither may this handler.
  *
- * `swapRound: 0` is the mid-draft spend. The dedicated swap round is 03-11's, and it dispatches
- * the same action with a 1-based number.
+ * ## The window is READ, never chosen here
+ *
+ * `swapRound` is `0` for a mid-draft spend and the round in progress for a dedicated one,
+ * and `selectCurrentSwapRound` is what says which — the same selector `canApply` judges the
+ * action against. Deciding it here from, say, "are the picks complete" would be a second
+ * authority on the same question, and the two would disagree the moment one of them changed.
+ * There is one swap action in two windows (D-29), not two swap flows.
  *
  * Returns whether the swap landed, so the caller can decide about focus and the announcement
  * without asking the store a second time and getting a different answer.
@@ -357,9 +370,40 @@ function handleSwap(slot: { playerId: string; round: number; outMonId: string },
       round: slot.round,
       outMonId: slot.outMonId,
       inMonId,
-      swapRound: 0,
+      swapRound: selectCurrentSwapRound(state) ?? 0,
     }),
   ).ok;
+}
+
+/**
+ * Decline a dedicated swap round's turn — SWAP-07.
+ *
+ * `handlePick`'s shape and the same boundaries: it does not decide whose turn it is and
+ * does not decide whether a pass is legal. The clock is `selectCurrentSwapRound` plus
+ * `selectSwapRoundPosition`, and legality is `dispatch`'s through `canApply`.
+ *
+ * A pass is dispatched as an ACTION rather than handled as an absence, which is the whole
+ * of SWAP-07: the round advances by counting recorded moves, so a skip that left no entry
+ * would leave the clock sitting on the player forever — and undo could not tell "has not
+ * gone yet" from "went, and chose nothing".
+ *
+ * Returns the announcement, so the caller can compose it onto the turn line rather than
+ * firing a second `announce` the turn change would immediately overwrite.
+ */
+function handlePass(): string | null {
+  const state = getState();
+  if (state === null) return null;
+
+  const swapRound = selectCurrentSwapRound(state);
+  if (swapRound === null) return null;
+
+  const position = selectSwapRoundPosition(state, swapRound);
+  if (position === null) return null;
+
+  const playerName = selectPlayerName(state, position.playerId) ?? position.playerId;
+  if (!dispatch(swapPassed({ playerId: position.playerId, swapRound })).ok) return null;
+
+  return `${playerName} passes swap round ${swapRound}.`;
 }
 
 /**
@@ -671,7 +715,29 @@ export function App() {
   }, [state, entries, entryById]);
 
   const turn = state === null ? null : selectCurrentTurn(state);
-  const complete = state !== null && selectIsComplete(state);
+
+  /*
+    THE EXPORT GATE — D-31, and the one line that moves it.
+
+    This used to be `selectIsComplete`, which is PICKS-complete: every team full, the pool
+    closed, no turn on the clock. It is now `selectIsTournamentComplete`, which is that AND
+    every dedicated swap round finished — the moment the teams stop being able to change.
+
+    Every reader of this local means "the tournament is over": the turn banner's
+    `Draft complete` line, the completed-draft view, the per-player export panels, the
+    PERS-06 checkpoint and the pool pane's expand availability. Re-pointing them one at a
+    time is how one gets missed, and the one that gets missed hands somebody a paste that is
+    about to change. So the LOCAL is re-pointed and the name is kept, and the readers below
+    are untouched.
+
+    `selectIsComplete` itself is unchanged and still means what it always meant — it is read
+    inside `selectPhase`, `selectCurrentTurn` and the swap-round selectors, all of which
+    want picks-complete and are correct as they stand.
+
+    With `swapRounds: 0` the two coincide, which is what keeps a swap-free tournament
+    byte-identical to the one Phase 2 shipped.
+  */
+  const complete = state !== null && selectIsTournamentComplete(state);
 
   /*
     Which mode the screen is in — read, never computed (D-17).
@@ -695,6 +761,23 @@ export function App() {
   */
   const cardTurn = state === null || phase !== 'cards' ? null : selectCardTurn(state);
 
+  /*
+    The dedicated swap round on the clock, and who holds it.
+
+    Gated on the phase for `cardTurn`'s reason exactly: `selectCurrentSwapRound` answers
+    whenever the picks are complete and a round is unfinished, which is the same condition
+    `selectPhase` calls `'swapRounds'` — the gate makes that agreement explicit rather than
+    leaving two expressions free to drift.
+
+    Both are READ. Nothing here works out whose turn it is, and the order they walk is
+    `selectSwapRoundOrder`'s, which no component ever sees.
+  */
+  const swapRound = state === null || phase !== 'swapRounds' ? null : selectCurrentSwapRound(state);
+  const swapRoundPlayerId =
+    state === null || swapRound === null
+      ? null
+      : (selectSwapRoundPosition(state, swapRound)?.playerId ?? null);
+
   // One local, two consumers: the turn banner's sentence and the board's empty state.
   // Written twice they are two expressions that can be changed independently, and the
   // board would then name a different player from the banner directly above it.
@@ -708,12 +791,32 @@ export function App() {
     whole of the bidding.
   */
   const bannerRound = phase === 'cards' ? (cardTurn?.round ?? null) : (turn?.round ?? null);
+
+  /*
+    Who the head names, from whichever clock is running.
+
+    THREE clocks now, not two, and each turnless state has its own. `selectCurrentTurn` is
+    null during card play AND throughout the swap rounds, so a banner reading only that
+    would fall silent for the whole of both — which is the failure D-17 introduced this
+    local to prevent, arriving a second time by a second route.
+
+    `bannerRound` deliberately does NOT gain a swap-round arm. The swap-round headline
+    counts swap rounds rather than pick rounds, and it takes that number from `swapRound`
+    below; feeding a pick round into it would put `Round 6` in front of a sentence about
+    something else.
+  */
   const bannerPlayerName =
-    phase === 'cards'
-      ? state === null || cardTurn === null
-        ? null
-        : selectPlayerName(state, cardTurn.playerId)
-      : turnPlayerName;
+    state === null
+      ? null
+      : phase === 'cards'
+        ? cardTurn === null
+          ? null
+          : selectPlayerName(state, cardTurn.playerId)
+        : phase === 'swapRounds'
+          ? swapRoundPlayerId === null
+            ? null
+            : (selectPlayerName(state, swapRoundPlayerId) ?? swapRoundPlayerId)
+          : turnPlayerName;
 
   /*
     The resolved order as names — CARD-08's phase line, for as long as picking lasts.
@@ -797,24 +900,54 @@ export function App() {
   const [storedPane, setStoredPane] = useState<PaneState>(() => loadViewPrefs().pane);
 
   /*
-    All three pane states become available once the draft is over, and that is exactly
+    All three pane states become available once the TOURNAMENT is over, and that is exactly
     when eight stacked export panels want the full width. While a draft is running,
     `pool-full` would put the board behind a toggle, which ROADMAP criterion 5 forbids.
+
+    `complete` is tournament-complete since 03-11, so a pending swap round keeps this false
+    — which is Amendment 3's third row and is correct for a second reason: the export panels
+    that wanted the width are not on screen yet.
   */
   const poolExpandable = complete;
 
   /*
-    Amendment 3: while a round's cards are being played, `board-full` is unavailable too.
+    Amendment 3: while a round's cards are being played, `board-full` is unavailable too —
+    and a dedicated swap round is the third row of that table.
 
     The reason is not the pool's. `pool-full` is refused because it would put the board
     behind a toggle; `board-full` is refused because the pool pane holds the ONLY control
-    that can play a card, and a state that hides the only available action is not a
-    preference. Both come back the moment the round resolves — inert ARIA is always shed
-    (WR-04), and this phase is its fourth consumer.
+    that can act, and a state that hides the only available action is not a preference.
+    During card play that control is the hand; during a swap round it is `Pass this swap`,
+    or the armed slot's offer.
+
+    A swap round refuses `pool-full` for a second reason of its own, which is why
+    `poolExpandable` above reads `complete` rather than picks-complete: the BOARD is where a
+    player chooses the slot they are swapping out of, so hiding it removes half the flow.
+
+    Both come back the moment the phase ends — inert ARIA is always shed (WR-04), and this
+    is its last consumer in the phase.
+  */
+  /*
+    `swapRound !== null`, and NOT `phase === 'swapRounds'`.
+
+    `selectPhase` answers `'swapRounds'` for any tournament that runs them once the picks
+    are in, including after the last one has closed — its own doc block says so, and that is
+    the honest reading of "this tournament runs swap rounds". What gates a restriction is
+    whether one is still RUNNING, which is `selectCurrentSwapRound`'s question and is
+    already the local below.
+
+    Gated on the phase instead, the board's expand would stay inert for the rest of the
+    tournament's life — inert ARIA that is never shed is exactly what WR-04 exists to
+    forbid, on the screen where the export panels have just asked for the full width.
   */
   const cardPhase = phase === 'cards';
-  const boardExpandable = !cardPhase;
-  const phaseReason = cardPhase ? CARD_PHASE_EXPAND_REASON : null;
+  const swapPhase = swapRound !== null;
+  const boardExpandable = !cardPhase && !swapPhase;
+  const phaseReason = cardPhase
+    ? CARD_PHASE_EXPAND_REASON
+    : swapPhase
+      ? SWAP_ROUND_EXPAND_REASON
+      : null;
 
   /*
     The rendered pane. A stored `pool` is silently forced to `split` while a draft is
@@ -957,7 +1090,37 @@ export function App() {
 
   const [armedSlot, setArmedSlot] = useState<ArmedSlot>(null);
 
-  const disarmSwap = useCallback(() => setArmedSlot(null), []);
+  /**
+   * Where to send focus after a swap-round transition removes the control that was pressed.
+   *
+   * A CSS selector rather than a boolean, because two different transitions need two
+   * different destinations and both are the same shape of problem — the markup is correct,
+   * there is genuinely nothing left to focus where the host was standing, so the fix is to
+   * pass focus on rather than to keep a node alive. That is the shape `SplitPanes` uses for
+   * its collapse handoff and the one `focusPoolAfterResolveRef` uses below.
+   *
+   * Both transitions belong to the swap rounds specifically. Disarming a slot mid-draft
+   * leaves `PoolGrid` mounted and is unaffected.
+   */
+  const focusAfterSwapRoundRef = useRef<string | null>(null);
+
+  /**
+   * Disarm, and catch the focus that is about to fall through the floor.
+   *
+   * During a swap round the pool pane holds `PoolGrid` while a slot is armed and `SwapPanel`
+   * when none is, so disarming unmounts the whole subtree including the `Keep {species}`
+   * button that was just pressed. Preact cannot reuse a node across a vnode type, so focus
+   * would land on `<body>` — on the surface whose only remaining control is `Pass this
+   * swap`, which is exactly where it should go instead.
+   *
+   * The selector is armed unconditionally and resolved after the render. Mid-draft there is
+   * no `.swap-panel__pass` to find, the query answers null, and nothing about the existing
+   * §10 behaviour changes.
+   */
+  const disarmSwap = useCallback(() => {
+    focusAfterSwapRoundRef.current = '.swap-panel__pass';
+    setArmedSlot(null);
+  }, []);
 
   /**
    * The ONE player whose filled cells are swap-target buttons, or `null` — Amendment 1.
@@ -970,15 +1133,28 @@ export function App() {
    * of those fall out as "no swappable cells" with no clause of their own. That is the point
    * of reading the clock rather than the phase: a mid-draft swap is spent BY the player on
    * the clock (D-25), so wherever there is no clock there is no mid-draft swap.
+   *
+   * ## Two clocks, one answer — 03-11
+   *
+   * A dedicated swap round runs when the picks are complete, so the pick clock is null
+   * throughout it and reading only that would leave the board with no swappable cell on the
+   * one screen whose entire purpose is swapping. `swapRoundPlayerId` is the swap round's
+   * clock, and it is chosen by the PHASE rather than by falling back on a null — a fallback
+   * would silently make the pick clock's null mean "swap round" during the card phase too.
+   *
+   * The budget check stays where it was, below both, because it is the same check either
+   * way: ONE allowance covers both windows (D-29). At zero remaining this is null and no
+   * cell on the board is a button, in a swap round exactly as mid-draft.
    */
   const swapPlayerId = useMemo<string | null>(() => {
     if (state === null || state.config.swapBudget <= 0) return null;
 
-    const turn = selectCurrentTurn(state);
-    if (turn === null) return null;
+    const playerId =
+      phase === 'swapRounds' ? swapRoundPlayerId : (selectCurrentTurn(state)?.playerId ?? null);
+    if (playerId === null) return null;
 
-    return selectSwapsRemaining(state, turn.playerId) > 0 ? turn.playerId : null;
-  }, [state]);
+    return selectSwapsRemaining(state, playerId) > 0 ? playerId : null;
+  }, [state, phase, swapRoundPlayerId]);
 
   /**
    * The armed slot, as the pool surface needs it — SWAP-06.
@@ -1274,6 +1450,53 @@ export function App() {
   });
 
   /**
+   * Pass this player's turn in the dedicated swap round — SWAP-07.
+   *
+   * The sentence goes through `lastMove` rather than through a direct `announce`, and that
+   * is the difference between this and a mid-draft swap. A mid-draft swap does not change
+   * whose turn it is (D-25), so nothing overwrites its announcement; a pass DOES advance the
+   * swap-round clock, so the turn banner re-announces in the same tick and a second
+   * `announce` would be dropped. `lastMove` is the mechanism that composes the two into one
+   * string, which is why it exists.
+   *
+   * `focusAfterSwapRoundRef` covers the LAST pass of the LAST round: the panel holding the
+   * button that was just pressed unmounts and the completed-draft view takes its place, so
+   * focus is handed to the first control there rather than to `<body>`. Every other pass
+   * keeps `SwapPanel` mounted at the same position, so Preact reuses the node and focus
+   * survives on its own — the query below simply finds the same button again.
+   */
+  const handlePassClick = useCallback(() => {
+    const move = handlePass();
+    if (move === null) return;
+
+    setLastMove(move);
+
+    // Re-read: whether that pass finished the tournament is a question about the state it
+    // produced, not the one it was dispatched against.
+    const after = getState();
+    focusAfterSwapRoundRef.current =
+      after !== null && selectIsTournamentComplete(after)
+        ? '.pane[data-side="pool"] .pane__scroll button'
+        : '.swap-panel__pass';
+  }, []);
+
+  /**
+   * Resolve whatever handoff the swap-round transitions armed.
+   *
+   * `useLayoutEffect` with no dependency array, always clearing its own state, exactly like
+   * the two handoffs above — an armed handoff must never survive into a later, unrelated
+   * render. A selector that matches nothing is a no-op, which is what keeps this inert for
+   * every mid-draft interaction.
+   */
+  useLayoutEffect(() => {
+    const selector = focusAfterSwapRoundRef.current;
+    if (selector === null) return;
+    focusAfterSwapRoundRef.current = null;
+
+    document.querySelector<HTMLButtonElement>(selector)?.focus();
+  });
+
+  /**
    * The single gate both undo paths pass through — D-37, and the mitigation for Pitfall 6.
    *
    * `TopBar` calls this from the `Undo last move` button AND from its `document`-level
@@ -1356,22 +1579,45 @@ export function App() {
    *
    * Three things happen in one tick and the order matters. The dialog closes and the slot
    * disarms so the pool goes back to being the pool; the swap dispatches; and the focus
-   * target is armed for the layout effect below. `setLastMove(null)` is deliberate: a swap
-   * does not change whose turn it is (D-25), so the turn banner must not re-announce a card
-   * play as though it had.
+   * target is armed for the layout effect below.
+   *
+   * ## The announcement takes one of two routes, and the reason is whether the turn moved
+   *
+   * A MID-DRAFT swap does not change whose turn it is (D-25), so the turn banner does not
+   * re-render its sentence and a direct `announce` is heard. `setLastMove(null)` goes with
+   * it, so a card play from earlier in the tick is not re-announced as though the swap had
+   * caused it.
+   *
+   * A SWAP-ROUND swap advances the swap-round clock, so the banner writes its own
+   * announcement in the same tick — and `announce` is a single signal, so the direct call
+   * would be silently overwritten and the room would hear the next player's name instead of
+   * what just happened. Routing through `lastMove` composes the two into one string, which
+   * is the mechanism that field exists for.
    */
   const confirmSwap = useCallback(() => {
     if (confirm.kind !== 'swap') return;
     const { playerId, playerName, round, outMonId, outName, inMonId, inName } = confirm;
+
+    // Read BEFORE the dispatch: afterwards the move is recorded and the clock may already
+    // have moved on to the next player, or off the round entirely.
+    const before = getState();
+    const inSwapRound = before !== null && selectCurrentSwapRound(before) !== null;
 
     setConfirm({ kind: 'idle' });
     setArmedSlot(null);
 
     if (!handleSwap({ playerId, round, outMonId }, inMonId)) return;
 
-    setLastMove(null);
+    const move = `${inName} fills ${playerName}'s round ${round} slot. ${outName} is back in the pool.`;
     focusCellAfterSwapRef.current = boardCellId(playerId, round);
-    announce(`${inName} fills ${playerName}'s round ${round} slot. ${outName} is back in the pool.`);
+
+    if (inSwapRound) {
+      setLastMove(move);
+      return;
+    }
+
+    setLastMove(null);
+    announce(move);
   }, [confirm]);
 
   /**
@@ -1716,6 +1962,12 @@ export function App() {
                 // Config is read here, which is why the arithmetic is here rather than in a
                 // component that would have to be handed both numbers to do it.
                 tiePossible={state.config.players.length > state.config.rounds}
+                // The swap-round headline's two numbers and the phase line's variant.
+                // All three are read; the banner composes sentences and decides nothing —
+                // which source the order came from least of all (SWAP-04).
+                swapRound={swapRound}
+                swapRounds={state.config.swapRounds}
+                swapOrderSource={selectSwapOrderSource(state)}
                 lastMove={lastMove}
               />
 
@@ -1774,6 +2026,35 @@ export function App() {
                     played={playedThisRound}
                     stillToPlay={stillToPlay}
                     onPlay={handleCardPlay}
+                  />
+                ) : phase === 'swapRounds' && swapArming === null && swapRound !== null ? (
+                  /*
+                    THE SWAP-ROUND SURFACE, and note what the second condition does.
+
+                    `swapArming === null` means no slot is armed. The moment one IS, this
+                    branch falls through to `PoolGrid` below — the same component, the same
+                    offer and the same confirm that a mid-draft swap uses, with `swapRound`
+                    set to the round in progress rather than to 0. 03-UI-SPEC §11: "there is
+                    one swap flow, not two", and this is the line that makes that true rather
+                    than merely intended.
+
+                    Every value is a selector's. `SwapPanel` is handed the round, the budget
+                    and a name, and it renders four sentences and a button.
+                  */
+                  <SwapPanel
+                    swapRound={swapRound}
+                    swapRounds={state.config.swapRounds}
+                    playerName={
+                      swapRoundPlayerId === null
+                        ? ''
+                        : (selectPlayerName(state, swapRoundPlayerId) ?? swapRoundPlayerId)
+                    }
+                    remaining={
+                      swapRoundPlayerId === null
+                        ? 0
+                        : selectSwapsRemaining(state, swapRoundPlayerId)
+                    }
+                    onPass={handlePassClick}
                   />
                 ) : complete ? (
                   <CompletedDraft

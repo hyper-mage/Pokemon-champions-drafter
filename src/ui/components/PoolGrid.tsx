@@ -11,6 +11,8 @@ import {
   type PoolFilters,
 } from '../../core/search';
 
+import { swaps } from '../confirm-copy';
+
 import { FilterBar } from './FilterBar';
 import { announce } from './LiveRegion';
 import { MonCard, type PoolSubject } from './MonCard';
@@ -332,12 +334,17 @@ function swapDisarmLabel(outName: string): string {
  * swaps at all.
  *
  * `confirm-copy.ts` established the rule and the reason in Phase 1 — a visible grammar error
- * reads as a tool that was not finished — and has four helpers of its own doing exactly this
+ * reads as a tool that was not finished — and has five helpers of its own doing exactly this
  * to exactly this class of slot. Following the spec's letter here would break its own
  * copywriting contract.
+ *
+ * The COUNT goes through that module's `swaps` helper rather than through a copy of the
+ * rule, which is the change 03-11 made when `SwapPanel` became the third reader of it. The
+ * SENTENCE stays here, because §10's line and §11's are two rows of the copy table and
+ * differ in more than the number.
  */
 function swapBudgetLine(playerName: string, remaining: number): string {
-  return `${playerName} has ${remaining === 1 ? '1 swap' : `${remaining} swaps`} left`;
+  return `${playerName} has ${swaps(remaining)} left`;
 }
 
 const SWAP_OFFER_EMPTY_HEADING = 'Nothing can fill this slot';

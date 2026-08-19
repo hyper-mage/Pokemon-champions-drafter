@@ -1,0 +1,63 @@
+/*
+ * SwapPanel — the pool pane during a dedicated swap round.
+ *
+ * Consumes tokens only; declares no raw colour and no raw length the token table covers.
+ *
+ * Modelled on CheckpointPrompt: a surface panel with a heading, prose and one control, on
+ * --color-surface with no border and no accent stripe. The difference from that file is the
+ * button, which takes NO accent fill. 03-UI-SPEC reserves accent for three uses and spends
+ * none of them on the draft screen — the on-the-clock signal there is the turn banner's own
+ * accent and the board's next-slot border, and a filled button here would be a third
+ * element competing with the one signal that must never be missed.
+ *
+ * So `Pass this swap` is styled as ConfigScreen's `Reroll pool` is: a hairline border, a
+ * transparent fill, and --target-min in both axes.
+ */
+
+.swap-panel {
+  padding: var(--space-4);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.swap-panel__heading {
+  margin: 0 0 var(--space-2);
+  font: var(--text-heading);
+}
+
+.swap-panel__budget,
+.swap-panel__instruction {
+  margin: 0 0 var(--space-2);
+  max-width: 60ch;
+  font: var(--text-body);
+}
+
+/* Secondary, and deliberately not accent-filled — see the file header. */
+.swap-panel__pass {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  margin-top: var(--space-2);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.swap-panel__pass:hover {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * The pending-export sentence. Muted and at --text-label, because it is the one line here
+ * that is not about the move the player is being asked to make.
+ */
+.swap-panel__pending {
+  margin: var(--space-4) 0 0;
+  max-width: 60ch;
+  color: var(--color-text-muted);
+  font: var(--text-label);
+}
