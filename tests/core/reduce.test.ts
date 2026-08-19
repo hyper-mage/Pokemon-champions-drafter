@@ -1079,6 +1079,32 @@ describe('canApply cards/played', () => {
       reason: 'roundAlreadyResolved',
     });
   });
+
+  /**
+   * CARD-04's no-repeat rule, D-21's backstop — T-03-37.
+   *
+   * The rule is enforced TWICE by design, and this arm is the second half. The card panel
+   * renders a value the offer excludes as inert, so a host cannot click it; this refuses
+   * the action if one arrives anyway. A rejection reaching a user means the offer and the
+   * rule disagree, which is a bug rather than a state the copy has to explain — so there
+   * is deliberately no user-facing string for it anywhere.
+   *
+   * Note which value is refused and why it is not the arm above it: p2 still HOLDS the 4
+   * — `selectHand` is per player and p2 has spent nothing — so `cardAlreadySpent` passes
+   * and the round's used set is what refuses it.
+   */
+  it('rejects a value already down this round with cardNotPlayable', () => {
+    const afterFirst = fold(makeDoc(withCardPlays(openingLog(), 1, [4])));
+
+    expect(selectHand(afterFirst, 'p2')).toContain(4);
+    expect(attempt(afterFirst, 'p2', 4)).toEqual({ ok: false, reason: 'cardNotPlayable' });
+  });
+
+  it('accepts a value the offer still carries', () => {
+    const afterFirst = fold(makeDoc(withCardPlays(openingLog(), 1, [4])));
+
+    expect(attempt(afterFirst, 'p2', 6)).toEqual({ ok: true });
+  });
 });
 
 describe('canApply order/resolved', () => {

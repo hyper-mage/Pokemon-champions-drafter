@@ -33,7 +33,7 @@ import {
   type Intent,
   type RoundSpec,
 } from '../../src/core/actions';
-import { resolvePickOrder } from '../../src/core/cards';
+import { cardOffer, playableValues, resolvePickOrder } from '../../src/core/cards';
 import {
   SCHEMA_VERSION,
   type CardPlay,
@@ -44,10 +44,12 @@ import {
 } from '../../src/core/model';
 import { fold } from '../../src/core/reduce';
 import {
+  selectCardOffer,
   selectCardPlayOrder,
   selectCardsPlayedThisRound,
   selectCurrentRound,
   selectHand,
+  selectPlayableCards,
   selectResolvedOrder,
 } from '../../src/core/selectors';
 
@@ -106,6 +108,10 @@ function configWith(rounds: number): TournamentConfig {
 
 const CONFIG = configWith(6);
 const CONFIG_FOUR = configWith(4);
+/** Three players over three rounds — the shape 03-CONTEXT's deadlock is smallest in. */
+const CONFIG_THREE = configWith(3);
+/** Three players over two rounds — `players > rounds`, so CARD-04 suspends itself. */
+const CONFIG_TWO = configWith(2);
 
 /**
  * Deliberately NOT in id order.
@@ -490,6 +496,195 @@ describe('the properties that make the comparator total', () => {
     selectCardsPlayedThisRound(state, 1);
     selectResolvedOrder(state, 1);
     resolvePickOrder(state.cardsPlayed);
+
+    expect(doc.rng).toEqual({ seed: SEED, cursor: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// playableValues — CARD-04, D-21. The offer constraint, and the deadlock it forecloses.
+// ---------------------------------------------------------------------------
+
+/** Values 1..n, which is what a full hand is before anybody has played. */
+function fullHand(rounds: number): number[] {
+  return Array.from({ length: rounds }, (_, position) => position + 1);
+}
+
+describe('playableValues', () => {
+  /**
+   * THE test this plan exists for. 03-CONTEXT found the deadlock during discussion and
+   * required it be "a test, not a comment"; 03-RESEARCH §Priority Cards works the same
+   * sequence through and concludes the check must run per candidate at every play.
+   *
+   * 3 players, 3 rounds. R1: P1 plays 1, P2 plays 2, P3 plays 3 — so the R2 hands are
+   * P1{2,3}, P2{1,3}, P3{1,2}. Unconstrained, R2 `P1 -> 2` then `P2 -> 1` strands P3
+   * holding {1,2} with both already down and nothing legal to put on the table.
+   */
+  describe('the 03-CONTEXT three-player deadlock is unreachable', () => {
+    // Hands as they stand at the top of round 2, in play order.
+    const P1 = [2, 3];
+    const P2 = [1, 3];
+    const P3 = [1, 2];
+
+    it('lets P1 play 2, because a matching still exists for P2 and P3', () => {
+      // U becomes {2}; P3 can take 1 and P2 can take 3, so the play is legal.
+      expect(playableValues(P1, [P2, P3], new Set(), 3, 3)).toEqual([2, 3]);
+    });
+
+    it('refuses P2 the 1 that would strand P3, and offers the 3 that does not', () => {
+      // The whole deadlock, foreclosed: after P1 -> 2, U = {2}. Playing 1 would make
+      // U = {1,2}, and P3's entire hand {1,2} minus U is empty.
+      const offered = playableValues(P2, [P3], new Set([2]), 3, 3);
+
+      expect(offered).not.toContain(1);
+      expect(offered).toContain(3);
+      expect(offered).toEqual([3]);
+    });
+
+    it('leaves P3 a legal card once P2 has been steered onto 3', () => {
+      // The state the unconstrained sequence could not reach: P3 still holds something.
+      expect(playableValues(P3, [], new Set([2, 3]), 3, 3)).toEqual([1]);
+    });
+  });
+
+  it('never offers a value already down this round', () => {
+    expect(playableValues([1, 2, 3, 4], [[1, 2, 3, 4]], new Set([2]), 4, 4)).not.toContain(2);
+  });
+
+  it('suspends the rule entirely when players outnumber rounds', () => {
+    // Pigeonhole: 8 players cannot take 6 distinct values, so running the matching would
+    // mark every card unplayable. CARD-04 scopes itself to players <= rounds for this.
+    const hand = fullHand(6);
+    const remaining = Array.from({ length: 7 }, () => fullHand(6));
+
+    expect(playableValues(hand, remaining, new Set([1, 2, 3]), 8, 6)).toEqual(hand);
+  });
+
+  it('reports the pigeonhole suspension as suspended rather than as the deadlock escape', () => {
+    // Two different states with the same offer, and only one of them puts a line on
+    // screen. `lifted` is what tells them apart.
+    const hand = fullHand(6);
+    const remaining = Array.from({ length: 7 }, () => fullHand(6));
+
+    expect(cardOffer(hand, remaining, new Set([1]), 8, 6).lifted).toBe(false);
+  });
+
+  it('lifts the constraint for one play rather than offering nothing at all', () => {
+    // Reachable only from an imported or hand-edited log, which `fold` reproduces
+    // faithfully because it runs no `canApply`. Both remaining players hold nothing but
+    // the 1, so no matching exists whatever the clock plays: taking 1 strands both of
+    // them outright, and taking 2 leaves two players competing for a single value.
+    // A screen with zero legal actions is worse than a stated exception (T-03-33).
+    const offer = cardOffer([1, 2], [[1], [1]], new Set(), 3, 3);
+
+    expect(offer.values).toEqual([1, 2]);
+    expect(offer.lifted).toBe(true);
+  });
+
+  it('does not call an empty hand a lifted constraint', () => {
+    const offer = cardOffer([], [[1]], new Set([2]), 3, 3);
+
+    expect(offer.values).toEqual([]);
+    expect(offer.lifted).toBe(false);
+  });
+
+  it('leaves the hand it was handed untouched', () => {
+    const hand = [1, 2, 3];
+    playableValues(hand, [[1, 2, 3]], new Set([2]), 3, 3);
+    expect(hand).toEqual([1, 2, 3]);
+  });
+
+  it('answers the last player in a round from their own hand alone', () => {
+    expect(playableValues([1, 4, 5], [], new Set([2, 3]), 3, 6)).toEqual([1, 4, 5]);
+  });
+
+  it('finishes a full round-one offer at eight players and six rounds under 10ms', () => {
+    // T-03-34. The suspended path, which is what 8 players and 6 rounds actually takes.
+    const hand = fullHand(6);
+    const remaining = Array.from({ length: 7 }, () => fullHand(6));
+
+    const started = performance.now();
+    playableValues(hand, remaining, new Set(), 8, 6);
+    const elapsed = performance.now() - started;
+
+    expect(elapsed).toBeLessThan(10);
+  });
+
+  it('finishes the true worst case — eight players and eight rounds — under 10ms', () => {
+    // The suspension guard above means 8x6 never runs the matching at all, so the timing
+    // assertion that matters is the largest shape that DOES: players === rounds === 8,
+    // which is 2^7 - 1 = 127 subset unions per candidate across 8 candidates.
+    const hand = fullHand(8);
+    const remaining = Array.from({ length: 7 }, () => fullHand(8));
+
+    const started = performance.now();
+    playableValues(hand, remaining, new Set(), 8, 8);
+    const elapsed = performance.now() - started;
+
+    expect(elapsed).toBeLessThan(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// selectPlayableCards — the same rule, composed against a real document
+// ---------------------------------------------------------------------------
+
+describe('selectPlayableCards', () => {
+  it('offers a full hand at the top of a round, with nothing down', () => {
+    // Three players, six rounds: every value is still reachable for everyone.
+    expect(selectPlayableCards(stateWith([]), 'p2')).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('drops a value another player has already put down this round', () => {
+    const state = stateWith([{ playerId: 'p2', value: 3, round: 1, seq: 3 }]);
+    expect(selectPlayableCards(state, 'p3')).toEqual([1, 2, 4, 5, 6]);
+  });
+
+  it('reproduces the CONTEXT deadlock through the real rotation and forecloses it', () => {
+    // Three players over three rounds, played out through `selectCardPlayOrder`'s real
+    // rotation rather than through hand-picked arrays. ORDER is ['p2','p3','p1'], so
+    // round 1 plays p2, p3, p1 and round 2 plays p3, p1, p2 — the rotation moves who is
+    // first, which is exactly why the check has to run per candidate at every play rather
+    // than once against a fixed seating.
+    const roundOne = [
+      { playerId: 'p2', value: 1, round: 1, seq: 3 },
+      { playerId: 'p3', value: 2, round: 1, seq: 4 },
+      { playerId: 'p1', value: 3, round: 1, seq: 5 },
+    ];
+    // Hands entering round 2: p2 {2,3}, p3 {1,3}, p1 {1,2}. Round 2 opens with p3, who
+    // takes 3 — leaving p1 on the clock and p2 holding {2,3} behind them.
+    const roundTwo = [{ playerId: 'p3', value: 3, round: 2, seq: 10 }];
+
+    const state = {
+      ...stateWith([...roundOne, ...roundTwo], [{ round: 1, order: ['p2', 'p3', 'p1'] }], CONFIG_THREE),
+      // One full round of picks, so `selectCurrentRound` puts the draft on round 2.
+      picks: [
+        { playerId: 'p2', monId: 'venusaur', round: 1, pickIndex: 0, seq: 6 },
+        { playerId: 'p3', monId: 'charizard', round: 1, pickIndex: 1, seq: 7 },
+        { playerId: 'p1', monId: 'blastoise', round: 1, pickIndex: 2, seq: 8 },
+      ],
+    };
+
+    expect(selectCurrentRound(state)).toBe(2);
+
+    // p1 holds {1,2} with 3 already down. Playing 2 would make U = {2,3}, and p2's whole
+    // hand {2,3} minus U is empty — the deadlock, one play away. So 2 is refused.
+    const offered = selectPlayableCards(state, 'p1');
+    expect(offered).not.toContain(2);
+    expect(offered).toEqual([1]);
+  });
+
+  it('returns the whole hand when the document deals more players than rounds', () => {
+    // Three players, two rounds — pigeonhole, so CARD-04 suspends itself.
+    expect(selectPlayableCards(stateWith([], [], CONFIG_TWO), 'p1')).toEqual([1, 2]);
+  });
+
+  it('does not roll the generator', () => {
+    const doc = startedDoc();
+    const state = { ...fold(doc), cardsPlayed: roundOfPlays([1, 6, 3], 1, 3) };
+
+    selectPlayableCards(state, 'p1');
+    selectCardOffer(state, 'p1');
 
     expect(doc.rng).toEqual({ seed: SEED, cursor: 0 });
   });

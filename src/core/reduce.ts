@@ -46,6 +46,7 @@ import {
   selectHand,
   selectIsComplete,
   selectPhase,
+  selectPlayableCards,
   selectResolvedOrder,
 } from './selectors';
 
@@ -75,6 +76,16 @@ export type RejectionReason =
   | 'nothingToUndo'
   /** That player has already played this card value in an earlier round (CARD-06). */
   | 'cardAlreadySpent'
+  /**
+   * The value is already down this round, or playing it would leave a later player in the
+   * round with no legal card — CARD-04, D-21.
+   *
+   * The BACKSTOP behind an offer that already excludes the value, never the mechanism.
+   * `selectPlayableCards` decides what the card panel renders as playable, so a host
+   * cannot click their way here; this arm refuses an action that arrived some other way.
+   * A rejection reaching a user means the offer and the rule disagree.
+   */
+  | 'cardNotPlayable'
   /** The round's pick order is already recorded, so nothing about it can still change. */
   | 'roundAlreadyResolved'
   /** Not every player has put a card down yet, so there is nothing to resolve. */
@@ -323,9 +334,18 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
         return reject('roundAlreadyResolved');
       }
 
-      // D-21's offer constraint — the CARD-04 deadlock check — attaches HERE, and is
-      // deliberately absent. It is the plan after this one's, and half of it would refuse
-      // plays the card panel has no way yet to steer a player away from.
+      // D-21's offer constraint — the CARD-04 deadlock check. Last, because the three
+      // checks above name a more specific problem with the same action and a host reading
+      // "this would strand someone" about a card they never held would be misled.
+      //
+      // This is the BACKSTOP, not the rule. `selectPlayableCards` is the same answer,
+      // consulted by the card panel before a click is possible, and the value the panel
+      // renders inert is exactly the value this refuses. Enforced twice on purpose
+      // (T-03-37) — and if this ever fires for a real host, the two have disagreed.
+      if (!selectPlayableCards(state, action.playerId).includes(action.value)) {
+        return reject('cardNotPlayable');
+      }
+
       return OK;
     }
 

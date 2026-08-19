@@ -17,6 +17,7 @@
  */
 
 import type { RoundKind, RoundSpec } from './actions';
+import { cardOffer, type CardOffer } from './cards';
 import { choiceFor, isMegaEligible, legalMegaForme } from './mega';
 import type { CardPlay, DraftState } from './model';
 import { nextInt } from './rng';
@@ -403,6 +404,59 @@ export function selectCardTurn(state: DraftState): CardTurn | null {
   const playerId = selectCardPlayOrder(state, round).find((id) => !alreadyPlayed.has(id));
 
   return playerId === undefined ? null : { round, playerId };
+}
+
+/**
+ * What `playerId` may play this round, and whether the rule had to be lifted — CARD-04, D-21.
+ *
+ * ## The posture, which is the whole point
+ *
+ * This is the same shape `selectRoundEligibleIds` and `checkFeasibility` take: a pure
+ * selector the EDGE consults BEFORE dispatching. The constraint belongs upstream of the
+ * click, not in a rejection after it — a card the offer excludes renders inert with a
+ * reason, so the deadlock CARD-04 otherwise creates is never entered rather than refused
+ * on entry. `canApply`'s `cardNotPlayable` arm exists behind this as a backstop; if it
+ * ever fires for a real host, the offer and the rule have disagreed and that is a bug.
+ *
+ * Composed from three selectors that already exist rather than re-deriving any of them:
+ * `selectHand` for every hand, `selectCardsPlayedThisRound` for the round's used values,
+ * and `selectCardPlayOrder` for who is still to come. A second opinion about any of the
+ * three would be a second thing that can disagree with the log.
+ *
+ * `state.order.length` is the player count, not `config.players.length`. The rotation is
+ * what CARD-04's pigeonhole qualifier is about, and a hand-edited document can carry an
+ * order shorter than its player list — in which case the players who can actually be
+ * stranded are the ones in the rotation.
+ */
+export function selectCardOffer(state: DraftState, playerId: string): CardOffer {
+  const round = selectCurrentRound(state);
+  const played = selectCardsPlayedThisRound(state, round);
+
+  // Computation-local, never returned and never stored (CLAUDE.md §Serializability).
+  const used = new Set(played.map((play) => play.value));
+  const done = new Set(played.map((play) => play.playerId));
+
+  const remainingHands = selectCardPlayOrder(state, round)
+    .filter((id) => id !== playerId && !done.has(id))
+    .map((id) => selectHand(state, id));
+
+  return cardOffer(
+    selectHand(state, playerId),
+    remainingHands,
+    used,
+    state.order.length,
+    state.config.rounds,
+  );
+}
+
+/**
+ * The values `playerId` may play this round — {@link selectCardOffer} without the reason.
+ *
+ * The list is what `canApply` needs; the panel needs the reason too, so it reads the
+ * offer. Both go through one computation.
+ */
+export function selectPlayableCards(state: DraftState, playerId: string): number[] {
+  return selectCardOffer(state, playerId).values;
 }
 
 /**
