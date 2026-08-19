@@ -1061,3 +1061,55 @@ describe('playing the last card of a round', () => {
     expect(host.querySelector('.card-panel')).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// DRFT-04 — the whole draft, through the UI
+// ---------------------------------------------------------------------------
+
+function poolCells(): HTMLButtonElement[] {
+  return Array.from(host.querySelectorAll<HTMLButtonElement>('.pool__grid .mon-card'));
+}
+
+describe('a six-round draft played start to finish', () => {
+  it('runs cards, resolution and picks for every round, to six picks a player', async () => {
+    await reachCardPhase();
+
+    const config = getState()?.config;
+    const players = config?.players.length ?? 0;
+    const rounds = config?.rounds ?? 0;
+    expect(players).toBe(2);
+    expect(rounds).toBe(6);
+
+    for (let round = 1; round <= rounds; round++) {
+      // Bid: one click per player, and the last one resolves the round itself.
+      expect(phaseNow(), `round ${round} opens on cards`).toBe('cards');
+      for (let bid = 0; bid < players; bid++) await click(cardButtons()[0]);
+
+      expect(phaseNow(), `round ${round} resolved`).toBe('picking');
+
+      // Pick: one click per player, off the top of whatever the pool still offers.
+      for (let pick = 0; pick < players; pick++) await click(poolCells()[0]);
+    }
+
+    const final = getState();
+    expect(final).not.toBeNull();
+    if (final === null) return;
+
+    // Every player holds exactly `config.rounds` picks — D-06's "never the literal 6".
+    expect(selectPickCount(final)).toBe(players * rounds);
+    for (const player of final.config.players) {
+      expect(
+        final.picks.filter((pick) => pick.playerId === player.id),
+        player.name,
+      ).toHaveLength(rounds);
+    }
+
+    // Every round has a recorded order, and every card in every hand is spent.
+    expect(final.resolvedOrders).toHaveLength(rounds);
+    expect(final.cardsPlayed).toHaveLength(players * rounds);
+
+    // And the draft is over rather than standing in a seventh round.
+    expect(phaseNow()).toBe('complete');
+    expect(host.textContent).toContain('Draft complete — 12 picks, 2 teams');
+  });
+});
