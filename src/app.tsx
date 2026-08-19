@@ -1170,20 +1170,45 @@ export function App() {
    * The `Set` is COMPUTATION-LOCAL and re-derived on every fold. Nothing stores it, and a
    * `Set` could not be persisted anyway (CLAUDE.md §Serializability).
    */
-  const swapArming = useMemo<SwapArming | null>(() => {
-    if (state === null || armedSlot === null || entries.length === 0) return null;
+  /**
+   * `armedSlot`, but `null` once the slot stops holding what was armed.
+   *
+   * THE ONE PLACE THAT DECIDES WHETHER A SLOT IS ARMED. Both the pool surface below and
+   * `handlePoolPick` read this, and neither reads `armedSlot` directly.
+   *
+   * The staleness rule used to live inside `swapArming`, which only the RENDER consumed.
+   * `handlePoolPick` branched on the raw `armedSlot` instead, so the two disagreed exactly
+   * when the board moved under an armed slot: the disarm control — reachable only through
+   * `swapArming` — vanished, while a pool click still opened a swap confirm. `setArmedSlot`
+   * is cleared in two places only (`disarmSwap`, and confirming a swap), neither of which
+   * covers undo, abandon, import or a takeover, so the host was left with an armed state
+   * they could see no way out of. Found by the phase 03 code review (CR-02).
+   *
+   * Nothing could be corrupted by it: `apply(SWAP_MADE)` matches on `pick.monId` and folds
+   * a disagreeing swap to a no-op (T-03-38). The defect was a trap, not data loss.
+   */
+  const activeArmedSlot = useMemo<ArmedSlot>(() => {
+    if (state === null || armedSlot === null) return null;
 
     const slotIndex = armedSlot.round - 1;
     if (selectTeams(state)[armedSlot.playerId]?.[slotIndex] !== armedSlot.outMonId) return null;
 
+    return armedSlot;
+  }, [state, armedSlot]);
+
+  const swapArming = useMemo<SwapArming | null>(() => {
+    if (state === null || activeArmedSlot === null || entries.length === 0) return null;
+
+    const slotIndex = activeArmedSlot.round - 1;
+
     return {
-      outName: entryById.get(armedSlot.outMonId)?.name ?? armedSlot.outMonId,
-      round: armedSlot.round,
+      outName: entryById.get(activeArmedSlot.outMonId)?.name ?? activeArmedSlot.outMonId,
+      round: activeArmedSlot.round,
       kind: selectSlotKind(state, slotIndex),
       ids: new Set(selectSwapTargets(state, entries, slotIndex)),
       onDisarm: disarmSwap,
     };
-  }, [state, armedSlot, entries, entryById, disarmSwap]);
+  }, [state, activeArmedSlot, entries, entryById, disarmSwap]);
 
   /**
    * `{name} has {n} swaps left`, or `null` when the line does not render.
@@ -1368,20 +1393,24 @@ export function App() {
     (entry: RosterEntry, meta: { filtersCleared: boolean }) => {
       const current = getState();
 
-      if (armedSlot !== null && current !== null) {
+      // `activeArmedSlot`, NOT `armedSlot`: the branch has to agree with what the host is
+      // looking at, and the pool only offers a disarm while the slot still holds what was
+      // armed. Reading the raw state here is what made CR-02 reachable.
+      if (activeArmedSlot !== null && current !== null) {
         // Resolved NOW, into the confirm, so the sentence names the world the host asked
         // about. `remaining` is read before the spend, because the copy says what this swap
         // spends one OF.
         setConfirm({
           kind: 'swap',
-          playerId: armedSlot.playerId,
-          playerName: selectPlayerName(current, armedSlot.playerId) ?? armedSlot.playerId,
-          round: armedSlot.round,
-          outMonId: armedSlot.outMonId,
-          outName: entryById.get(armedSlot.outMonId)?.name ?? armedSlot.outMonId,
+          playerId: activeArmedSlot.playerId,
+          playerName:
+            selectPlayerName(current, activeArmedSlot.playerId) ?? activeArmedSlot.playerId,
+          round: activeArmedSlot.round,
+          outMonId: activeArmedSlot.outMonId,
+          outName: entryById.get(activeArmedSlot.outMonId)?.name ?? activeArmedSlot.outMonId,
           inMonId: entry.id,
           inName: entry.name,
-          remaining: selectSwapsRemaining(current, armedSlot.playerId),
+          remaining: selectSwapsRemaining(current, activeArmedSlot.playerId),
         });
         return;
       }
@@ -1392,7 +1421,7 @@ export function App() {
       setLastMove(null);
       handlePick(entry);
     },
-    [armedSlot, entryById],
+    [activeArmedSlot, entryById],
   );
 
   /**

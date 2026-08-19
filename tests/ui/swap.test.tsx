@@ -585,3 +585,75 @@ describe('a document that already carries a swap', () => {
     );
   });
 });
+
+/*
+  Added by the phase 03 code review (CR-02).
+
+  The staleness rule — "the armed slot no longer holds what was armed, so disarm" — lived
+  inside the `swapArming` memo, which only the RENDER consumed. `handlePoolPick` branched on
+  the raw `armedSlot` state instead. `setArmedSlot(null)` fires from exactly two places
+  (`disarmSwap`, and confirming a swap), neither of which covers undo.
+
+  So: arm a slot, undo back past the pick under it, and the two disagreed. The pool dropped
+  the armed heading and its `Keep {species}` control — the only disarm affordance — while a
+  pool click still took the swap branch and opened a confirm for a slot that no longer held
+  what was armed.
+
+  Nothing could be corrupted by it. `apply(SWAP_MADE)` matches on `pick.monId` and folds a
+  disagreeing swap to a no-op (T-03-38). It was a trap the host could not see their way out
+  of, which is why this asserts from the SURFACE — the heading and the controls — rather
+  than from the log, which looked fine throughout.
+
+  The undo loop is not incidental. Since 03-09 the stack spans picks, cards and resolutions,
+  so reaching round 1's pick from a round-3 clock takes several steps, and one of them
+  crosses a round boundary and asks for confirmation.
+*/
+describe('an armed slot that the board moves out from under — CR-02', () => {
+  /** Undo until p1's round-1 slot gives up `mon-0`, confirming any boundary question. */
+  async function undoPastRoundOnePick(): Promise<void> {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const state = getState();
+      if (state !== null && selectTeams(state).p1?.[0] !== 'mon-0') return;
+
+      await click(buttonNamed('Undo last move'));
+
+      // Undoing back across a round boundary asks first, and a resolved order asks with a
+      // label of its own — answer whichever appeared and carry on.
+      const confirmUndo = buttonNamed('Undo the pick') ?? buttonNamed('Undo the pick order');
+      if (confirmUndo !== undefined) await click(confirmUndo);
+    }
+    throw new Error("p1's round-1 slot still holds mon-0 after 12 undos");
+  }
+
+  it('disarms once the slot stops holding what was armed', async () => {
+    await openDraft();
+    await click(labelled('Swap Mon 0 out of round 1'));
+    expect(text('.pool__title')).toBe('Swapping Mon 0 out of round 1');
+
+    await undoPastRoundOnePick();
+
+    const state = getState();
+    expect(state === null ? 'mon-0' : selectTeams(state).p1?.[0]).not.toBe('mon-0');
+
+    // The surface agrees it is no longer armed.
+    expect(text('.pool__title')).toBe('Pool');
+    expect(buttonNamed('Keep Mon 0')).toBeUndefined();
+  });
+
+  it('reads a pool click as a pick rather than opening a swap confirm', async () => {
+    await openDraft();
+    await click(labelled('Swap Mon 0 out of round 1'));
+    await undoPastRoundOnePick();
+
+    const before = getState();
+    const swapsBefore = before === null ? -1 : selectSwapsRemaining(before, 'p1');
+
+    // Before the fix this opened the swap confirm for a slot that no longer held mon-0.
+    await click(poolCells()[0]);
+    expect(dialogText()).not.toContain(SWAP_CONFIRM.heading);
+
+    const after = getState();
+    // The swap budget is untouched: the click was never read as a swap.
+    expect(after === null ? -1 : selectSwapsRemaining(after, 'p1')).toBe(swapsBefore);
+  });
+});
