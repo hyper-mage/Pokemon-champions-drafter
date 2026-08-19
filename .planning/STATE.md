@@ -131,17 +131,39 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Human verification | 03-12 — three-metre legibility pass over the card surfaces (DRFT-14 assertions 9–12) | blocked, not started | 2026-08-19 |
-| Human verification | 03-12 — screen-reader pass on the four focus-moving transitions (WR-02) | blocked, not started | 2026-08-19 |
-| Human verification | 03-12 — playtest the rotation and low-plays-first with real players (ROADMAP Notes) | blocked, not started | 2026-08-19 |
+| Human verification | 03-12 Task 1 — three-metre legibility pass (DRFT-14 assertions 9–12) | **passed 2026-08-19** | — |
+| Human verification | 03-12 Task 2 — screen-reader pass on the four focus-moving transitions (WR-02) | not run — no screen reader set up | 2026-08-19 |
+| Human verification | 03-12 Task 3 — playtest the rotation and low-plays-first with real players (ROADMAP Notes) | deferred to beta test | 2026-08-19 |
 
-**Why blocked:** all three are `checkpoint:human-verify` tasks that no agent can perform —
-they need a physical screen measured at three metres, a real screen reader, and real players.
-The host was asked on 2026-08-19 and none could be run at that time. No `03-12-SUMMARY.md` was
-written, deliberately: a summary marks the plan complete, and there are no results to record.
+**Task 1 — passed.** Host verified at three metres on a **~24" 1080p monitor**. Reported as a
+pass overall rather than itemised per surface; the five surfaces the plan names are the card
+digit, the played-row name, the hand pip, the Mega marker, and the 8-player board height with no
+internal scrollbar.
 
-**To resume:** `npm run dev`, then `/gsd-execute-phase 3 --wave 12`. Phase 03 stays open and
-unverified until then — plans 03-01 through 03-11 are complete and green.
+This is the *pessimistic* case in `03-UI-SPEC`'s arc-minute table (~92ppi: card digit ~11 arcmin,
+pips ~7.6, marker ~5.7 against an acuity limit of ~5 and comfort at 16–20). The spec predicted
+that on a 24" monitor only the card digit would be comfortable while the pips and marker were
+**marginal** — readable but not comfortable. A pass here is consistent with that prediction rather
+than falsifying it, and it means the surfaces clear the bar on the *harder* of the two screens the
+spec models. On a TV-sized shared screen they have considerably more headroom.
+
+**Task 2 — not run.** The host reports no screen reader configured and judged the check
+unimportant for now. It is NOT passed and must not be recorded as such: `03-UI-SPEC` §Interaction
+& Accessibility requires the outcome live in the `SchedulePreview`, `CardPanel` and `SplitPanes`
+doc blocks, and the open question at `src/ui/components/SplitPanes.tsx:146-167` — whether a polite
+announcement queued alongside a focus move is preempted — remains unsettled from Phase 2. The
+design does not depend on the answer (every fact is also carried by a focused control's own name
+or by persistent on-screen text), so this is a documentation gap, not a functional risk.
+
+Windows Narrator needs no install (`Ctrl` + `Win` + `Enter`) if this is picked up later.
+
+**Task 3 — deferred to beta.** Host's decision: run the playtest as part of a beta once the whole
+tool is complete, rather than at the end of Phase 3. The two mechanics it would test — D-18's
+rotation and D-23's low-plays-first — are each a one-line change in `selectCardPlayOrder` and
+`resolvePickOrder` respectively, so deferring costs little.
+
+**Consequence:** no `03-12-SUMMARY.md` is written, so plan 03-12 stays incomplete and Phase 03
+stays open and unverified. Plans 03-01 through 03-11 are complete and green.
 
 ## Session Continuity
 
