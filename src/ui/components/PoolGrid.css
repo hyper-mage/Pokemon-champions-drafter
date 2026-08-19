@@ -73,6 +73,45 @@
   color: var(--color-text);
 }
 
+/*
+ * --- The swap budget line (03-UI-SPEC section 10) ---
+ *
+ * --text-label in --color-text-muted, which is the COUNT's treatment rather than the
+ * restriction's above, and the split is the same one: this is meta about the player, not
+ * the rule in force on the grid. The rule, while a slot is armed, lives in the second
+ * clause of the count line itself.
+ */
+.pool__swap-budget {
+  margin: 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+/*
+ * --- Disarming an armed slot ---
+ *
+ * Secondary, and deliberately identical to .pool__empty-action rather than a new treatment:
+ * both are "step back out of this state" controls in the same header region, and 03-UI-SPEC
+ * keeps accent at exactly three uses, none of which is this. --target-min in the block axis
+ * with the padding supplying the inline axis, exactly as that rule does.
+ */
+.pool__swap-disarm {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-label);
+  cursor: pointer;
+  /* Motion budget: colour only, at most 120ms. */
+  transition: background-color 120ms ease;
+}
+
+.pool__swap-disarm:hover {
+  background: var(--color-surface-raised);
+}
+
 .pool__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--cell-min), 1fr));

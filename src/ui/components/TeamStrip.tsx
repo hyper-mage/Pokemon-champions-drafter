@@ -59,6 +59,21 @@ export interface TeamStripProps {
   onSwap?: ((round: number) => void) | null;
 }
 
+/**
+ * A filled board cell's DOM id — one composer, read by the renderer and by whoever moves
+ * focus to it.
+ *
+ * Exported and written once, because the alternative is the same template literal at two
+ * call sites that have to stay identical forever, and the failure when they drift is
+ * silent: `getElementById` returns null and focus falls to `<body>` with nothing logged.
+ *
+ * `(playerId, round)` because those are the two coordinates `swap/made` already names, so
+ * the caller that has just dispatched a swap has both to hand without deriving anything.
+ */
+export function boardCellId(playerId: string, round: number): string {
+  return `board-cell-${playerId}-${round}`;
+}
+
 export function TeamStrip({
   player,
   slots,
@@ -118,6 +133,12 @@ export function TeamStrip({
                 entry={entry}
                 spriteMeta={spriteMeta}
                 showName={showName}
+                // Unconditional, and on EVERY filled cell rather than only swappable ones.
+                // The cell focus lands on after a swap is the one that just stopped being a
+                // button — spending the last of a `swapBudget: 1` is the common case — so an
+                // id that appeared only on buttons would be missing from exactly the cell
+                // that needs it.
+                id={boardCellId(player.id, round)}
                 swap={
                   swappable && onSwap !== null
                     ? { round, onSwap: () => onSwap(round) }

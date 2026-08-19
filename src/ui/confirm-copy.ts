@@ -242,3 +242,52 @@ export const UNDO_RESOLVED_ORDER_CONFIRM = {
   body: (playerName: string, round: number, value: number, removedCount: number): string =>
     `This un-resolves round ${round}'s pick order and takes ${playerName}'s ${value} back into their hand — ${steps(removedCount)} in total. The order everyone just read changes.`,
 };
+
+/**
+ * The fifth plural helper, for the swap allowance.
+ *
+ * `one of {name}'s 1 swaps` is reachable the moment a host sets `swapBudget: 1`, which is
+ * the most likely setting anyone picks, so this is not a defensive edge — it is the common
+ * case. Same rule the module has followed since Phase 1.
+ */
+function swaps(count: number): string {
+  return count === 1 ? '1 swap' : `${count} swaps`;
+}
+
+/**
+ * 10. Making a swap — SWAP-02, D-27, 03-UI-SPEC §12.
+ *
+ * ## Why a swap confirms when a pick does not
+ *
+ * The asymmetry is the decision, not an inconsistency. A pick fills an EMPTY slot and undo
+ * restores it exactly, so a confirm there would slow the draft without making it safer
+ * (D-08 argued that out and this does not reopen it). A swap changes a slot the room has
+ * been reading for several rounds AND returns a Pokémon to the shared pool, where the next
+ * player may take it before anyone can think again — so it is the one draft-screen action
+ * whose consequence lands on somebody other than the person clicking.
+ *
+ * That is also why Amendment 1 could make a board cell interactive at all: the misclick
+ * rule it supersedes was about a no-confirm surface, and this is not one.
+ *
+ * `default` toned, like the other two `default` sets: nothing is destroyed. The swap is
+ * undoable and the outgoing species is back in the pool rather than gone.
+ *
+ * The body states the RESOLVED CONSEQUENCE in numbers and names — who spends, what leaves,
+ * which slot, what arrives — and never the intent. Both buttons name a verb and its object,
+ * and the safe one names the species being kept, so a host reading only the buttons still
+ * learns which way is which.
+ */
+export const SWAP_CONFIRM = {
+  heading: 'Make this swap?',
+  tone: 'default' as const,
+  confirmLabel: (inName: string): string => `Swap in ${inName}`,
+  safeLabel: (outName: string): string => `Keep ${outName}`,
+  body: (
+    playerName: string,
+    remaining: number,
+    outName: string,
+    inName: string,
+    round: number,
+  ): string =>
+    `This spends one of ${playerName}'s ${swaps(remaining)}. ${outName} leaves round ${round} and returns to the pool for everyone; ${inName} takes the slot.`,
+};

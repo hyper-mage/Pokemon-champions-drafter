@@ -26,7 +26,14 @@ import './MonChip.css';
  *
  * At `swapBudget: 0` the board is byte-identically non-interactive: `swap` is null for every
  * cell, so every chip renders the same `<span>`, the same classes and the same accessible
- * name it did in Phase 2. A tournament that never enables swaps sees no change at all.
+ * name it did in Phase 2. Nothing is a control, nothing activates, and nothing enters the
+ * tab order.
+ *
+ * Two attributes ARE new on every filled cell — an `id` and `tabindex="-1"` — and they are
+ * stated here rather than glossed. Neither is interactivity: a `-1` tabindex is not a tab
+ * stop, announces nothing, and shows no ring under `:focus-visible`. They exist so focus can
+ * be HANDED to a cell after a swap confirm, which is a thing done to the cell rather than
+ * something the cell does.
  *
  * The sprite renders at --sprite-sm, an exact 2:1 integer downscale of the measured
  * 96px source, so it stays crisp. The width/height attributes carry the intrinsic size
@@ -77,9 +84,22 @@ export interface MonChipProps {
    * component may not own a game rule. This renders the mode it is handed.
    */
   swap?: MonChipSwap | null;
+  /**
+   * A stable handle for the ONE thing that has to find this chip from outside: focus, after
+   * a swap confirm closes — 03-UI-SPEC §Interaction, "Focus after a swap confirms".
+   *
+   * `Dialog` restores focus to whatever opened it, which for a swap is a pool cell that the
+   * swap has just removed from the pool, so focus would land on `<body>`. The composition
+   * root overrides the target to the board cell now holding the incoming species, and this
+   * is how it addresses it.
+   *
+   * When present, the non-button chip becomes programmatically focusable — see the render.
+   * Nothing else reads it; it is not a styling hook and not a test hook.
+   */
+  id?: string;
 }
 
-export function MonChip({ entry, spriteMeta, showName, swap = null }: MonChipProps) {
+export function MonChip({ entry, spriteMeta, showName, swap = null, id }: MonChipProps) {
   // TWO derivations, and they have to be read together — the second is the INVERSE of the
   // first, and separating them is how the board loses its accessible names.
   //
@@ -120,11 +140,34 @@ export function MonChip({ entry, spriteMeta, showName, swap = null }: MonChipPro
     </>
   );
 
-  if (swap === null || swapName === null) return <span class="mon-chip">{children}</span>;
+  if (swap === null || swapName === null) {
+    return (
+      <span
+        class="mon-chip"
+        id={id}
+        // -1, so the chip is a FOCUS TARGET without becoming a tab stop. It is still not
+        // interactive: nothing is announced as a control, nothing activates on Enter, and
+        // the `:focus-visible` ring means a mouse click shows nothing.
+        //
+        // It is here because the swap that spends a player's LAST budget lands focus on a
+        // cell that stopped being a button in the same render — the common case at
+        // `swapBudget: 1`. Without this, that one swap drops focus to `<body>`, which is
+        // the exact failure the override exists to prevent.
+        //
+        // Gated on `id` rather than unconditional, so the attribute and the reason for it
+        // travel together: a chip nothing can address has nothing to hand focus to it, and
+        // the two can never fall out of step because one expression decides both.
+        tabIndex={id === undefined ? undefined : -1}
+      >
+        {children}
+      </span>
+    );
+  }
 
   return (
     <button
       type="button"
+      id={id}
       class="mon-chip mon-chip--swappable"
       // The visible name, where there is one, is a SUBSTRING of this — so the button
       // satisfies label-in-name rather than renaming itself out from under anyone reading

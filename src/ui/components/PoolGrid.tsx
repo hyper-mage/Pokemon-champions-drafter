@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { SpriteMeta } from '../../adapters/roster-source';
 import { loadViewPrefs, saveViewPrefs, type Density } from '../../adapters/view-prefs';
+import type { RoundKind } from '../../core/actions';
 import {
   compileFilters,
   hasActiveFilters,
@@ -125,6 +126,61 @@ export interface PoolGridProps<T extends PoolSubject> {
    * a UI component may not own a game rule.
    */
   roundRestriction?: MegaRoundRestriction | null;
+  /**
+   * The armed swap slot, or `null` when no slot is armed — SWAP-05, SWAP-06, D-27.
+   *
+   * ONE prop carrying the outgoing name, the round, the slot's kind and the ids it admits,
+   * for {@link roundRestriction}'s reason: every one of them is needed by the copy, and a
+   * caller that could supply three of four would be a caller that could render
+   * `Swapping undefined out of round 1`.
+   *
+   * `kind` is carried even though `ids` alone would filter correctly, because SWAP-06 is a
+   * COPY requirement as much as a filtering one: BOTH cases have to be stated, including
+   * the unfiltered one. A short pool read as a bug and a long pool assumed to be unfiltered
+   * are symmetric failures, and the only way to close both is to say which case is in force
+   * every time. Derived from `ids.size` it would be a guess.
+   *
+   * When this is set it SUPERSEDES `roundRestriction`: the armed slot may belong to an
+   * earlier round than the one the draft is standing in, and the round on the clock has no
+   * say over what may fill it. The component still decides nothing — `selectSwapTargets`
+   * answers which ids, and this renders them.
+   */
+  swap?: SwapArming | null;
+  /**
+   * `{name} has {n} swaps left`, or `null` when the line does not render — 03-UI-SPEC §10.
+   *
+   * `remaining` is always greater than zero here. At zero the whole feature is absent for
+   * that tournament — no line, no swappable cell, nothing — and resolving that is the
+   * composition root's, which passes `null`. A component that also tested the number would
+   * be a second authority on when swaps exist.
+   */
+  swapBudget?: SwapBudget | null;
+}
+
+/**
+ * A slot the player has armed, as the pool surface needs it.
+ *
+ * `outName` is a display name and is RENDERED, never compared — the id it belongs to is
+ * `app.tsx`'s business and never reaches this component.
+ */
+export interface SwapArming {
+  /** The species leaving the slot. */
+  outName: string;
+  /** 1-based, and rendered — `round 1`, never `round 0`. */
+  round: number;
+  /** What the slot admits. Decides which of the two count-line sentences is true. */
+  kind: RoundKind;
+  /** Ids the slot admits, already minus picked ids — `selectSwapTargets`' answer. */
+  ids: ReadonlySet<string>;
+  /** Disarms without swapping, and without dispatching anything. */
+  onDisarm: () => void;
+}
+
+/** Who has how many swaps left. Rendered as one line above the grid. */
+export interface SwapBudget {
+  playerName: string;
+  /** Greater than zero. See {@link PoolGridProps.swapBudget}. */
+  remaining: number;
 }
 
 /**
@@ -230,6 +286,66 @@ function megaOfferEmptyBody(round: number): string {
   return `Round ${round} is a Mega round, and nothing left in the pool can still Mega. Undo a pick to return one, or start a new tournament.`;
 }
 
+/*
+ * --- An armed swap slot, 03-UI-SPEC §10 ---
+ *
+ * Composers, per S-5 and for the reason every copy block in this file is one: these are
+ * contracts down to the em dash, and JSX collapses the whitespace between text lines.
+ */
+
+function swapHeading(outName: string, round: number): string {
+  return `Swapping ${outName} out of round ${round}`;
+}
+
+/**
+ * BOTH cases, including the one where nothing was filtered out.
+ *
+ * This is SWAP-06's actual requirement rather than a nicety. Its obvious failure mode is a
+ * player reading a short pool as a broken render, and the SYMMETRIC failure — assuming a
+ * long pool is unfiltered when it is not — is closed only by stating which case is in force
+ * every time. A branch that fell silent on the open case would leave that half open.
+ *
+ * `total` is the whole leftover pool, which is the number that makes the filtering legible:
+ * `74 of 213 available for this slot` says why the grid is short. Narrowing the `entries`
+ * prop upstream instead would leave the two numbers equal and the sentence saying nothing.
+ */
+function swapCountLine(shown: number, total: number, round: number, kind: RoundKind): string {
+  const clause =
+    kind === 'mega'
+      ? `round ${round} is a Mega round, so only Pokémon that can still Mega are shown.`
+      : `round ${round} is an open round, so the whole leftover pool is shown.`;
+
+  return `${shown} of ${total} available for this slot — ${clause}`;
+}
+
+function swapDisarmLabel(outName: string): string {
+  return `Keep ${outName}`;
+}
+
+/**
+ * PLURALISED, against 03-UI-SPEC's literal slot `{name} has {n} swaps left`.
+ *
+ * Rendering that template verbatim produces `Ada has 1 swap s left`'s uglier cousin —
+ * `Ada has 1 swaps left` — and one remaining swap is not an edge case here: `swapBudget: 1`
+ * is the most likely setting a host picks, and every budget passes through 1 on its way to
+ * being spent, so this line is read in the singular by almost every tournament that enables
+ * swaps at all.
+ *
+ * `confirm-copy.ts` established the rule and the reason in Phase 1 — a visible grammar error
+ * reads as a tool that was not finished — and has four helpers of its own doing exactly this
+ * to exactly this class of slot. Following the spec's letter here would break its own
+ * copywriting contract.
+ */
+function swapBudgetLine(playerName: string, remaining: number): string {
+  return `${playerName} has ${remaining === 1 ? '1 swap' : `${remaining} swaps`} left`;
+}
+
+const SWAP_OFFER_EMPTY_HEADING = 'Nothing can fill this slot';
+
+function swapOfferEmptyBody(round: number): string {
+  return `Round ${round} is a Mega round, and nothing left in the pool can still Mega. Choose another slot, or pass.`;
+}
+
 /**
  * What the pool renders in place of the grid, and what its action undoes.
  *
@@ -268,6 +384,8 @@ export function PoolGrid<T extends PoolSubject>({
   idPrefix = 'pool',
   megaInertReason = null,
   roundRestriction = null,
+  swap = null,
+  swapBudget = null,
 }: PoolGridProps<T>) {
   // Read synchronously on the first render, in a state initializer rather than an
   // effect. An effect runs after the first paint, so the host would watch the pool draw
@@ -306,7 +424,16 @@ export function PoolGrid<T extends PoolSubject>({
     never appears on account of a rule. `search.ts` excludes the field from that function
     besides, so the two halves agree rather than one covering for the other.
   */
-  const restrictTo = roundRestriction === null ? null : roundRestriction.ids;
+  /*
+    An armed swap SUPERSEDES the round's restriction rather than stacking with it.
+
+    The armed slot may be an earlier round's than the one the draft is standing in — that is
+    the ordinary case, since a swap targets a slot the room has been looking at for several
+    rounds — and intersecting the two would filter a round-1 Mega slot's offer by round 4's
+    rule as well. The slot decides what may fill it, and only the slot (D-08).
+  */
+  const restrictTo =
+    swap !== null ? swap.ids : roundRestriction === null ? null : roundRestriction.ids;
 
   // Two memos and no more. `compiled` normalizes the query ONCE per change; `visible` is
   // the whole filtered list in a single derivation keyed on every input, so one keystroke
@@ -499,7 +626,28 @@ export function PoolGrid<T extends PoolSubject>({
   */
   const queryActive = filters.query !== '';
   const controlsActive = filters.types.length > 0 || filters.mega !== 'all';
-  const restricted = roundRestriction !== null;
+
+  /*
+    Which round's MEGA rule is narrowing the grid, or null when none is.
+
+    Resolved once because four things read it — two empty-state sentences, the Mega
+    control's inert reason, and the forced `of` count form — and every one of them would be
+    wrong in a different way if it worked the answer out for itself.
+
+    An armed OPEN slot is deliberately `null` here, and that is the case a plain
+    `swap !== null` boolean gets wrong: an open slot offers the whole leftover pool, so
+    `No Pokémon that can still Mega is left in the pool with those types` would be a
+    confident lie about a filter that excluded ordinary species. The armed slot supersedes
+    the round for the same reason `restrictTo` does — the slot decides.
+  */
+  const megaRestrictionRound: number | null =
+    swap !== null
+      ? swap.kind === 'mega'
+        ? swap.round
+        : null
+      : (roundRestriction?.round ?? null);
+
+  const restricted = megaRestrictionRound !== null;
 
   function chooseEmptyState(): EmptyState | null {
     if (visible.length > 0) return null;
@@ -508,6 +656,21 @@ export function PoolGrid<T extends PoolSubject>({
     // hand-edited document — the RULE-09 gate is the guarantee for documents this build
     // creates — and the offer is NEVER widened to fill it.
     if (!filtered) {
+      // An armed Mega slot with nothing left that can Mega. Its sentence names the way OUT
+      // — choose another slot, or pass — rather than the pick-time one, because the player
+      // is mid-swap and undoing a pick is not what they came here to do.
+      //
+      // `action: null` for the same reason the round's empty offer has none: there is no
+      // filter to clear, and a button that cleared nothing would widen the offer the moment
+      // anyone "fixed" it, which is the removed validator arriving as a courtesy.
+      if (swap !== null) {
+        return {
+          heading: SWAP_OFFER_EMPTY_HEADING,
+          body: swapOfferEmptyBody(swap.round),
+          action: null,
+        };
+      }
+
       if (roundRestriction === null) return null;
       return {
         heading: MEGA_OFFER_EMPTY_HEADING,
@@ -528,9 +691,9 @@ export function PoolGrid<T extends PoolSubject>({
       return {
         heading: EMPTY_HEADING,
         body:
-          roundRestriction === null
+          megaRestrictionRound === null
             ? searchEmptyBody(filters.query)
-            : megaSearchEmptyBody(roundRestriction.round, filters.query),
+            : megaSearchEmptyBody(megaRestrictionRound, filters.query),
         action: {
           label: CLEAR_SEARCH_LABEL,
           reset: () => setFilters({ ...filters, query: '' }),
@@ -574,10 +737,27 @@ export function PoolGrid<T extends PoolSubject>({
           `Bans` fieldset the legend already supplies one, so the ban grid is a plain div
           rather than a landmark with an invented name.
         */}
+        {/*
+          The heading is REPLACED while a slot is armed, not supplemented. The pool has
+          stopped being "the pool" and become one slot's offer, and it keeps the same id so
+          the section's `aria-labelledby` still resolves — the pane's accessible name follows
+          the mode rather than going stale on it.
+        */}
         {!banMode && (
           <h2 class="pool__title" id="pool-heading">
-            Pool
+            {swap === null ? 'Pool' : swapHeading(swap.outName, swap.round)}
           </h2>
+        )}
+
+        {/*
+          The budget line, above the count. Rendered whenever the caller supplies one, which
+          is while the player is on the clock and holds budget — armed or not, because the
+          number is what makes arming a cell look possible in the first place.
+        */}
+        {swapBudget !== null && (
+          <p class="pool__swap-budget">
+            {swapBudgetLine(swapBudget.playerName, swapBudget.remaining)}
+          </p>
         )}
 
         {/*
@@ -591,9 +771,11 @@ export function PoolGrid<T extends PoolSubject>({
         <p class="pool__count">
           {banMode
             ? banCountLine(bannedCount, visible.length, banSubject)
-            : filtered || restricted
-              ? `${visible.length} of ${entries.length} available`
-              : `${visible.length} available`}
+            : swap !== null
+              ? swapCountLine(visible.length, entries.length, swap.round, swap.kind)
+              : filtered || restricted
+                ? `${visible.length} of ${entries.length} available`
+                : `${visible.length} available`}
         </p>
 
         {/*
@@ -601,9 +783,24 @@ export function PoolGrid<T extends PoolSubject>({
           count uses. Not a styling slip: this is current STATE — the rule in force right
           now — where the count is meta about the grid. It is what stops a short pool
           reading as a broken render.
+
+          NOT rendered while a slot is armed: the swap count line above already carries the
+          rule in its own second clause, and two sentences about one restriction would let a
+          round-4 rule sit under a round-1 slot's offer and contradict it.
         */}
-        {roundRestriction !== null && (
+        {roundRestriction !== null && swap === null && (
           <p class="pool__restriction">{megaRoundRestrictionLine(roundRestriction.round)}</p>
+        )}
+
+        {/*
+          Disarm. Secondary — no accent — because 03-UI-SPEC keeps accent at exactly three
+          uses and this is none of them. It dispatches NOTHING: arming is view state, so
+          giving it up is too.
+        */}
+        {swap !== null && (
+          <button type="button" class="pool__swap-disarm" onClick={swap.onDisarm}>
+            {swapDisarmLabel(swap.outName)}
+          </button>
         )}
 
         <SegmentedControl
@@ -637,7 +834,7 @@ export function PoolGrid<T extends PoolSubject>({
           idPrefix={idPrefix}
           megaInertReason={
             megaInertReason ??
-            (roundRestriction === null ? null : megaRoundInertReason(roundRestriction.round))
+            (megaRestrictionRound === null ? null : megaRoundInertReason(megaRestrictionRound))
           }
         />
       </header>

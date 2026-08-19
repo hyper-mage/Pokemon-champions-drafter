@@ -25,7 +25,7 @@ import {
 } from './adapters/roster-source';
 import { claimOwnership, disposeTabLock, notifyAbandoned } from './adapters/tab-lock';
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
-import { cardsPlayed, orderResolved, pickMade } from './core/actions';
+import { cardsPlayed, orderResolved, pickMade, swapMade } from './core/actions';
 import { bannedEntries } from './core/bans';
 import { resolvePickOrder, type CardOffer } from './core/cards';
 import { checkFeasibility } from './core/feasibility';
@@ -50,6 +50,9 @@ import {
   selectRoundEligibleIds,
   selectRoundKind,
   selectSchedule,
+  selectSlotKind,
+  selectSwapsRemaining,
+  selectSwapTargets,
   selectTeams,
 } from './core/selectors';
 import { undoCrossesRoundBoundary, type RoundBoundaryCrossing } from './core/undo';
@@ -65,6 +68,7 @@ import {
 } from './store';
 import {
   ABANDON_CONFIRM,
+  SWAP_CONFIRM,
   UNDO_BOUNDARY_CONFIRM,
   UNDO_RESOLVED_ORDER_CONFIRM,
 } from './ui/confirm-copy';
@@ -73,9 +77,15 @@ import { CardPanel, type PlayedCard } from './ui/components/CardPanel';
 import { ConfirmDialog } from './ui/components/ConfirmDialog';
 import { ImportConfirmDialog } from './ui/components/ImportConfirmDialog';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
-import { PoolGrid, type MegaRoundRestriction } from './ui/components/PoolGrid';
+import {
+  PoolGrid,
+  type MegaRoundRestriction,
+  type SwapArming,
+  type SwapBudget,
+} from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
 import { CARD_PHASE_EXPAND_REASON, SplitPanes } from './ui/components/SplitPanes';
+import { boardCellId } from './ui/components/TeamStrip';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
 import { CompletedDraft } from './ui/screens/CompletedDraft';
@@ -132,7 +142,41 @@ type ImportFlow =
 type Confirm =
   | { kind: 'idle' }
   | { kind: 'abandon'; picks: number; players: number }
-  | { kind: 'undo'; crossing: RoundBoundaryCrossing; playerName: string };
+  | { kind: 'undo'; crossing: RoundBoundaryCrossing; playerName: string }
+  /**
+   * A swap, resolved at the moment the pool cell was clicked.
+   *
+   * Ids for the dispatch, names for the sentence, and the remaining count as it stood when
+   * the question was asked — the shape the two above already take. Holding names rather than
+   * looking them up at render time is what lets the dialog state the world it was opened
+   * against: nothing here can drift while it is on screen.
+   */
+  | {
+      kind: 'swap';
+      playerId: string;
+      playerName: string;
+      round: number;
+      outMonId: string;
+      outName: string;
+      inMonId: string;
+      inName: string;
+      remaining: number;
+    };
+
+/**
+ * The slot a player has armed for a swap, or `null` — 03-UI-SPEC §10 step 1.
+ *
+ * Arming is VIEW STATE and belongs here rather than in the log, which is the whole of D-27's
+ * "slot first, then pool": choosing which slot to look at changes nothing about the
+ * tournament, and a `swap/armed` action would put a UI mode into a document that has to
+ * survive an export. What is NOT view state is the offer — `selectSwapTargets` answers that,
+ * and this file only asks.
+ *
+ * `outMonId` is carried so the dispatch is self-describing without re-reading the board, and
+ * so an armed slot whose species has changed underneath it (an undo, another tab) cannot
+ * commit against a species that is no longer there.
+ */
+type ArmedSlot = { playerId: string; round: number; outMonId: string } | null;
 
 /**
  * Verbatim from the approved UI-SPEC copywriting table.
@@ -285,6 +329,37 @@ function handlePick(entry: RosterEntry): void {
       pickIndex: turn.pickIndex,
     }),
   );
+}
+
+/**
+ * Spend a swap — SWAP-02, D-25, D-26.
+ *
+ * `handlePick`'s shape exactly, and the same boundaries: it does not decide whose turn it
+ * is, does not decide whether the slot is swappable, and does not check the target against
+ * the slot's predicate. The turn comes from a selector, legality is `dispatch`'s through
+ * `canApply`, and the PREDICATE was enforced before this was reachable — the pool the player
+ * clicked was already `selectSwapTargets`' output (D-27). A UI component may not own a game
+ * rule, and neither may this handler.
+ *
+ * `swapRound: 0` is the mid-draft spend. The dedicated swap round is 03-11's, and it dispatches
+ * the same action with a 1-based number.
+ *
+ * Returns whether the swap landed, so the caller can decide about focus and the announcement
+ * without asking the store a second time and getting a different answer.
+ */
+function handleSwap(slot: { playerId: string; round: number; outMonId: string }, inMonId: string): boolean {
+  const state = getState();
+  if (state === null) return false;
+
+  return dispatch(
+    swapMade({
+      playerId: slot.playerId,
+      round: slot.round,
+      outMonId: slot.outMonId,
+      inMonId,
+      swapRound: 0,
+    }),
+  ).ok;
 }
 
 /**
@@ -871,6 +946,87 @@ export function App() {
     };
   }, [state, entries]);
 
+  // ---------------------------------------------------------------------------
+  // Swaps — SWAP-02, SWAP-05, SWAP-06, D-27
+  //
+  // The state is declared HERE, above the memos that read it, rather than down beside the
+  // handlers that write it. A `useMemo` body runs at its own call site, so an armed slot
+  // declared later would be in the temporal dead zone by the time `swapArming` below reached
+  // for it — a render-time crash rather than a stale value.
+  // ---------------------------------------------------------------------------
+
+  const [armedSlot, setArmedSlot] = useState<ArmedSlot>(null);
+
+  const disarmSwap = useCallback(() => setArmedSlot(null), []);
+
+  /**
+   * The ONE player whose filled cells are swap-target buttons, or `null` — Amendment 1.
+   *
+   * Three of the four conditions are resolved here, where the config and the selectors meet,
+   * and handed down as one id. The fourth — "the cell is filled" — is `TeamStrip`'s, because
+   * it is the only one that varies per cell.
+   *
+   * `selectCurrentTurn` is null during the card phase and once every team is full, so both
+   * of those fall out as "no swappable cells" with no clause of their own. That is the point
+   * of reading the clock rather than the phase: a mid-draft swap is spent BY the player on
+   * the clock (D-25), so wherever there is no clock there is no mid-draft swap.
+   */
+  const swapPlayerId = useMemo<string | null>(() => {
+    if (state === null || state.config.swapBudget <= 0) return null;
+
+    const turn = selectCurrentTurn(state);
+    if (turn === null) return null;
+
+    return selectSwapsRemaining(state, turn.playerId) > 0 ? turn.playerId : null;
+  }, [state]);
+
+  /**
+   * The armed slot, as the pool surface needs it — SWAP-06.
+   *
+   * The ids are `selectSwapTargets`' answer and never this file's; the kind is
+   * `selectSlotKind`'s. A UI component may not own a game rule, and neither may a memo here:
+   * both are read, neither is derived.
+   *
+   * `null` when the armed slot no longer holds what was armed. That is reachable without
+   * anything going wrong — an undo in this tab, or a takeover from another — and the honest
+   * answer is to disarm rather than to offer a swap out of a species that has left.
+   *
+   * The `Set` is COMPUTATION-LOCAL and re-derived on every fold. Nothing stores it, and a
+   * `Set` could not be persisted anyway (CLAUDE.md §Serializability).
+   */
+  const swapArming = useMemo<SwapArming | null>(() => {
+    if (state === null || armedSlot === null || entries.length === 0) return null;
+
+    const slotIndex = armedSlot.round - 1;
+    if (selectTeams(state)[armedSlot.playerId]?.[slotIndex] !== armedSlot.outMonId) return null;
+
+    return {
+      outName: entryById.get(armedSlot.outMonId)?.name ?? armedSlot.outMonId,
+      round: armedSlot.round,
+      kind: selectSlotKind(state, slotIndex),
+      ids: new Set(selectSwapTargets(state, entries, slotIndex)),
+      onDisarm: disarmSwap,
+    };
+  }, [state, armedSlot, entries, entryById, disarmSwap]);
+
+  /**
+   * `{name} has {n} swaps left`, or `null` when the line does not render.
+   *
+   * Gated on the same `swapPlayerId` the board is, so the line and the buttons cannot
+   * disagree: a header advertising swaps above a board with none is the failure this
+   * single source removes. At zero remaining, `swapPlayerId` is already null and nothing
+   * about swaps renders anywhere — which is 03-UI-SPEC's "not an empty state; the feature
+   * does not exist for this tournament".
+   */
+  const swapBudget = useMemo<SwapBudget | null>(() => {
+    if (state === null || swapPlayerId === null) return null;
+
+    return {
+      playerName: selectPlayerName(state, swapPlayerId) ?? swapPlayerId,
+      remaining: selectSwapsRemaining(state, swapPlayerId),
+    };
+  }, [state, swapPlayerId]);
+
   /**
    * Every player's remaining priority cards, or `null` when this tournament deals none —
    * CARD-07, D-24.
@@ -983,13 +1139,85 @@ export function App() {
    */
   const [filtersCleared, setFiltersCleared] = useState(false);
 
-  const handlePoolPick = useCallback((entry: RosterEntry, meta: { filtersCleared: boolean }) => {
-    // Before the dispatch, so the flag and the turn it describes land in one render
-    // rather than in two, the first of which would announce the turn without its suffix.
-    setFiltersCleared(meta.filtersCleared);
-    setLastMove(null);
-    handlePick(entry);
-  }, []);
+  /**
+   * The board cell focus is owed after a swap confirm closes — 03-UI-SPEC §Interaction.
+   *
+   * The same ref-then-layout-effect handoff `focusPoolAfterResolveRef` above uses, and for a
+   * closely related reason. `Dialog` restores focus to whatever opened it, which here is a
+   * pool cell the swap has just removed from the pool — a detached node, so `.focus()` does
+   * nothing and focus lands on `<body>`. The markup is not wrong; there is genuinely nothing
+   * left where the host was standing, so the fix is to pass focus on.
+   */
+  const focusCellAfterSwapRef = useRef<string | null>(null);
+
+  /**
+   * Arm a slot — 03-UI-SPEC §10 step 1.
+   *
+   * Reads the outgoing species off the CURRENT fold rather than taking it from the board
+   * cell that was clicked, so what gets armed is what the document says is in that slot at
+   * this instant. `swap/made` is self-describing, and this is where that description is
+   * captured honestly.
+   */
+  const armSwap = useCallback(
+    (playerId: string, round: number) => {
+      const current = getState();
+      if (current === null) return;
+
+      const outMonId = selectTeams(current)[playerId]?.[round - 1] ?? null;
+      if (outMonId === null) return;
+
+      setArmedSlot({ playerId, round, outMonId });
+
+      // The count is the OFFER's, read from the same selector the grid renders, so the
+      // sentence somebody hears and the grid somebody sees cannot report different numbers.
+      // Announced here rather than from an effect on the armed state: an effect would fire
+      // again on any re-render that happened to change the offer, and the live region would
+      // repeat itself at a player who has not touched anything.
+      const outName = entryById.get(outMonId)?.name ?? outMonId;
+      const offer = selectSwapTargets(current, entries, round - 1).length;
+      announce(`Swapping ${outName} out of round ${round}. ${offer} Pokémon can fill this slot.`);
+    },
+    [entries, entryById],
+  );
+
+  /**
+   * Clicking a pool cell: a pick, or a swap confirm, decided by whether a slot is armed.
+   *
+   * The branch is HERE rather than inside `PoolGrid`, so the grid keeps one activation path
+   * and the component never has to know which of two games it is part of. It also keeps the
+   * asymmetry in one place: a pick commits on the click and a swap opens a question, which is
+   * the D-08/§12 decision rather than a difference between two components.
+   */
+  const handlePoolPick = useCallback(
+    (entry: RosterEntry, meta: { filtersCleared: boolean }) => {
+      const current = getState();
+
+      if (armedSlot !== null && current !== null) {
+        // Resolved NOW, into the confirm, so the sentence names the world the host asked
+        // about. `remaining` is read before the spend, because the copy says what this swap
+        // spends one OF.
+        setConfirm({
+          kind: 'swap',
+          playerId: armedSlot.playerId,
+          playerName: selectPlayerName(current, armedSlot.playerId) ?? armedSlot.playerId,
+          round: armedSlot.round,
+          outMonId: armedSlot.outMonId,
+          outName: entryById.get(armedSlot.outMonId)?.name ?? armedSlot.outMonId,
+          inMonId: entry.id,
+          inName: entry.name,
+          remaining: selectSwapsRemaining(current, armedSlot.playerId),
+        });
+        return;
+      }
+
+      // Before the dispatch, so the flag and the turn it describes land in one render
+      // rather than in two, the first of which would announce the turn without its suffix.
+      setFiltersCleared(meta.filtersCleared);
+      setLastMove(null);
+      handlePick(entry);
+    },
+    [armedSlot, entryById],
+  );
 
   /**
    * The card play, and the resolution it may have triggered, as one sentence.
@@ -1122,6 +1350,48 @@ export function App() {
     setFiltersCleared(false);
     undo(resolveSpeciesName);
   }, [resolveSpeciesName]);
+
+  /**
+   * Commit the armed swap — 03-UI-SPEC §10 steps 3 and 4.
+   *
+   * Three things happen in one tick and the order matters. The dialog closes and the slot
+   * disarms so the pool goes back to being the pool; the swap dispatches; and the focus
+   * target is armed for the layout effect below. `setLastMove(null)` is deliberate: a swap
+   * does not change whose turn it is (D-25), so the turn banner must not re-announce a card
+   * play as though it had.
+   */
+  const confirmSwap = useCallback(() => {
+    if (confirm.kind !== 'swap') return;
+    const { playerId, playerName, round, outMonId, outName, inMonId, inName } = confirm;
+
+    setConfirm({ kind: 'idle' });
+    setArmedSlot(null);
+
+    if (!handleSwap({ playerId, round, outMonId }, inMonId)) return;
+
+    setLastMove(null);
+    focusCellAfterSwapRef.current = boardCellId(playerId, round);
+    announce(`${inName} fills ${playerName}'s round ${round} slot. ${outName} is back in the pool.`);
+  }, [confirm]);
+
+  /**
+   * Hand focus to the board cell the swap just changed.
+   *
+   * `useLayoutEffect` with no dependency array, always clearing its own flag, exactly like
+   * the card-resolution handoff above — an armed handoff must never survive into a later,
+   * unrelated render.
+   *
+   * It runs AFTER `Dialog`'s unmount cleanup has restored focus to the detached pool cell,
+   * which is why this is an override rather than a race: the last write wins and this is the
+   * last write.
+   */
+  useLayoutEffect(() => {
+    const cellId = focusCellAfterSwapRef.current;
+    if (cellId === null) return;
+    focusCellAfterSwapRef.current = null;
+
+    document.getElementById(cellId)?.focus();
+  });
 
   // -------------------------------------------------------------------------
   // PERS-04 / PERS-05 — the tournament as a file
@@ -1531,6 +1801,11 @@ export function App() {
                     // grid composes the two, which is what leaves `{total}` in
                     // `{n} of {total} available` a number worth printing — see PoolGrid.
                     roundRestriction={roundRestriction}
+                    // The armed slot's offer, already filtered by that slot's own predicate
+                    // on the FIRST frame — SWAP-06 by construction, never by rejecting a
+                    // click afterwards.
+                    swap={swapArming}
+                    swapBudget={swapBudget}
                   />
                 )
               }
@@ -1553,6 +1828,11 @@ export function App() {
                   firstPlayerName={turnPlayerName}
                   // Null for a migrated schema-2 draft, which dealt no cards. See the memo.
                   hands={hands}
+                  // Amendment 1's four conditions, three of them already resolved into this
+                  // one id. Null at `swapBudget: 0`, during the card phase, and once the
+                  // budget is spent — and then no cell on the board is a button.
+                  swapPlayerId={swapPlayerId}
+                  onArmSwap={armSwap}
                 />
               }
             />
@@ -1608,6 +1888,36 @@ export function App() {
           safeLabel={UNDO_RESOLVED_ORDER_CONFIRM.safeLabel}
           tone={UNDO_RESOLVED_ORDER_CONFIRM.tone}
           onConfirm={confirmUndo}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {/*
+        The swap confirm, and the SIBLING placement is the same trap the note above the
+        import confirm describes. Rendered inside the `inert` region it would appear, trap
+        focus and refuse every click — a dialog nobody can dismiss.
+
+        Every value comes off `confirm` rather than being recomputed here, so the sentence
+        describes the world the host asked about rather than the one that exists a render
+        later.
+      */}
+      {confirm.kind === 'swap' && (
+        <ConfirmDialog
+          heading={SWAP_CONFIRM.heading}
+          body={SWAP_CONFIRM.body(
+            confirm.playerName,
+            confirm.remaining,
+            confirm.outName,
+            confirm.inName,
+            confirm.round,
+          )}
+          confirmLabel={SWAP_CONFIRM.confirmLabel(confirm.inName)}
+          safeLabel={SWAP_CONFIRM.safeLabel(confirm.outName)}
+          tone={SWAP_CONFIRM.tone}
+          onConfirm={confirmSwap}
+          // The SAFE outcome closes the question and leaves the slot armed — the host said
+          // "keep this species", not "stop swapping". Disarming is the `Keep {species}`
+          // control in the pool header, which is a different sentence about a different thing.
           onSafe={closeConfirm}
         />
       )}
