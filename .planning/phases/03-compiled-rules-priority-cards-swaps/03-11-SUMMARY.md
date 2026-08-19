@@ -371,3 +371,30 @@ path, file access pattern or trust-boundary schema change was introduced.
   inherits that and this is where it would surface.
 - **Deferred items 5 and 6 are closed.** Items 1, 3 and 4 remain open and are unowned; item 1
   is the flaky-test decision the host has still not been asked about directly.
+
+## TDD Gate Compliance
+
+The plan marks Task 1 `tdd="true"`, and the gates are in `git log` in order:
+
+- **RED** — `5de8ec6` `test(03-11): …`, 41 failing tests against 226 still passing.
+- **GREEN** — `bdc1ea0` `feat(03-11): …`, 794 core tests passing.
+- **REFACTOR** — none. No cleanup pass was warranted, so no empty commit was made.
+
+No test passed unexpectedly during RED; every one of the 41 failed on a missing export or a
+missing field, which is the shape a genuine RED has.
+
+## A note on `node_modules`
+
+None was created, and none is present. `npm run build` and `npx vitest` caused **Vite** to
+write its own dep-optimizer cache to `node_modules/.vite` inside the worktree — an ordinary
+directory containing `.vite` and `.vite-temp` and zero packages. It was verified with
+`fsutil reparsepoint query` to be **not a reparse point** (no junction, no symlink), then
+removed. The main checkout's `node_modules` was counted at 241 entries before and after the
+removal: unchanged. No `npm install` or `npm ci` was ever run here.
+
+## Self-Check: PASSED
+
+All 16 files verified present on disk (3 created, 13 modified). All 4 commits verified in
+`git log`: `5de8ec6`, `bdc1ea0`, `1b25081`, `8ffb678`. `git diff --diff-filter=D` across the
+whole plan is empty — no file was deleted at any step. Working tree clean, no untracked
+files left behind, `package.json` untouched, `STATE.md` and `ROADMAP.md` not modified.
