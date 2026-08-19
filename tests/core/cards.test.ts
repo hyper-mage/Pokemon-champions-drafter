@@ -689,3 +689,52 @@ describe('selectPlayableCards', () => {
     expect(doc.rng).toEqual({ seed: SEED, cursor: 0 });
   });
 });
+
+/*
+  Added by the phase 03 code review (CR-01).
+
+  `admitsDistinctRepresentatives` decided Hall's condition by enumerating all `2^count - 1`
+  subsets. `cardOffer`'s `players > rounds` guard bounds `count` at `MAX_ROUNDS - 1` = 23,
+  so the shape below is legal input — and 2^23 subsets took 11185ms on the author's machine,
+  synchronously, inside a render `useMemo` and inside `canApply`.
+
+  The budget is deliberately loose. It is not a benchmark: it is the difference between
+  "returns" and "freezes the tab", and it fails by seconds rather than by milliseconds if
+  the matching is ever swapped back for an enumeration.
+*/
+describe('the offer is computed by matching, not by subset enumeration', () => {
+  it('answers a 24-player, 24-round offer well inside a frame budget', () => {
+    const rounds = 24;
+    const players = 24;
+    const hand = Array.from({ length: rounds }, (_, index) => index + 1);
+    const remainingHands = Array.from({ length: players - 1 }, () => hand);
+
+    const started = performance.now();
+    const offer = cardOffer(hand, remainingHands, new Set<number>(), players, rounds);
+    const elapsed = performance.now() - started;
+
+    // Every value is playable: 23 later players drawing from 24 distinct values always
+    // admits distinct representatives, whichever one the player on the clock takes.
+    expect(offer.values).toEqual(hand);
+    expect(offer.lifted).toBe(false);
+    expect(elapsed).toBeLessThan(250);
+  });
+
+  it('still refuses the value that would strand a later player at that size', () => {
+    const rounds = 24;
+    const players = 24;
+    const hand = [1, 2];
+    // One later player holds only `1`, so the clock playing `1` strands them. The other 22
+    // hold everything, which is what makes the enumeration expensive rather than trivial.
+    const wide = Array.from({ length: rounds }, (_, index) => index + 1);
+    const remainingHands = [[1], ...Array.from({ length: players - 2 }, () => wide)];
+
+    const started = performance.now();
+    const offer = cardOffer(hand, remainingHands, new Set<number>(), players, rounds);
+    const elapsed = performance.now() - started;
+
+    expect(offer.values).toEqual([2]);
+    expect(offer.lifted).toBe(false);
+    expect(elapsed).toBeLessThan(250);
+  });
+});
