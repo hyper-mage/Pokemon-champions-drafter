@@ -42,12 +42,14 @@ import {
   type LockMessage,
 } from '../src/adapters/tab-lock';
 import {
+  cardsPlayed,
   draftStarted,
   isDraftStartedAction,
   isPoolBuiltAction,
   isScheduleCompiledAction,
   pickMade,
   poolBuilt,
+  scheduleCompiled,
   type Action,
   type Intent,
   type RoundSpec,
@@ -139,6 +141,29 @@ function docWithPicks(): TournamentDoc {
   };
 }
 
+/** A v3 draft mid-bid, so the thing an undo would take is a card rather than a pick. */
+function docWithCards(): TournamentDoc {
+  const schedule = Array.from({ length: CONFIG.rounds }, (_, position) => ({
+    index: position + 1,
+    kind: 'open' as const,
+  }));
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'tournament-cards-fixture',
+    createdAt: 1_770_000_000_000,
+    config: CONFIG,
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log: [
+      stamp(poolBuilt(['venusaur', 'charizard', 'blastoise'], 'mb', 'abc123', 7, 0), 0),
+      stamp(scheduleCompiled(schedule), 1),
+      stamp(draftStarted(['p1', 'p2'], 9), 2),
+      stamp(cardsPlayed({ playerId: 'p1', value: 4, round: 1 }), 3),
+      stamp(cardsPlayed({ playerId: 'p2', value: 2, round: 1 }), 4),
+    ],
+  };
+}
+
 beforeEach(() => {
   // The claim window is a real 250ms timer. Faking time keeps one test's window from
   // closing inside the next one.
@@ -216,6 +241,35 @@ describe('undo in a tab that does not own the lock', () => {
     expect(isOwner()).toBe(true);
     expect(undo()).toBe(true);
     expect(getDoc()?.log).toHaveLength(3);
+  });
+
+  /**
+   * T-03-36. D-20 widened what undo REMOVES; it did not widen who may remove it.
+   *
+   * Worth its own case rather than left to the pick tests above: the gate is one line at
+   * the top of `store.undo`, and the thing that would break it is a future refactor that
+   * pushed ownership down into a per-kind branch. This fails loudly if that happens.
+   */
+  it('refuses a card undo in a secondary tab, exactly as it refuses a pick', () => {
+    expect(adoptTournament(docWithCards())).toBe(true);
+
+    const before = getDoc();
+    expect(before?.log).toHaveLength(5);
+
+    const wire = makeWire();
+    claimOwnership({ channel: wire });
+    otherTabClaims(wire);
+
+    expect(isOwner()).toBe(false);
+    expect(undo()).toBe(false);
+    expect(getDoc()).toBe(before);
+
+    requestTakeover();
+
+    // And the same call succeeds once this tab owns the draft — so the assertion above is
+    // about ownership rather than about the card being unremovable.
+    expect(undo()).toBe(true);
+    expect(getDoc()?.log).toHaveLength(4);
   });
 });
 

@@ -490,7 +490,7 @@ describe('the filter bar cannot overwrite whose turn it is', () => {
     expect(liveRegionText()).toBe('Round 1 of 6 — Bo picks. Filters cleared.');
 
     const undoButton = [...host.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Undo last pick',
+      (button) => button.textContent?.trim() === 'Undo last move',
     );
     expect(undoButton).toBeDefined();
     await act(async () => {

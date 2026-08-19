@@ -99,7 +99,7 @@ describe('the top bar file controls', () => {
   it('offers all three controls, labelled exactly as contracted', () => {
     drawTopBar();
 
-    expect(buttonLabelled('Undo last pick')).toBeDefined();
+    expect(buttonLabelled('Undo last move')).toBeDefined();
     expect(buttonLabelled('Download JSON')).toBeDefined();
     expect(buttonLabelled('Import JSON…')).toBeDefined();
   });

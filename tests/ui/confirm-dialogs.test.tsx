@@ -74,9 +74,19 @@ vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
 import { App } from '../../src/app';
 import { save as saveTournament } from '../../src/adapters/persistence';
 import { claimOwnership, CLAIM_WINDOW_MS, disposeTabLock } from '../../src/adapters/tab-lock';
-import { draftStarted, pickMade, poolBuilt, type Action, type Intent } from '../../src/core/actions';
+import {
+  cardsPlayed,
+  draftStarted,
+  orderResolved,
+  pickMade,
+  poolBuilt,
+  scheduleCompiled,
+  type Action,
+  type Intent,
+  type RoundSpec,
+} from '../../src/core/actions';
 import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
-import { selectPickCount } from '../../src/core/selectors';
+import { selectPhase, selectPickCount } from '../../src/core/selectors';
 import { getDoc, getState } from '../../src/store';
 import {
   CHECKPOINT_DISMISS,
@@ -89,6 +99,7 @@ import {
   REROLL_ORDER_CONFIRM,
   REROLL_POOL_CONFIRM,
   UNDO_BOUNDARY_CONFIRM,
+  UNDO_RESOLVED_ORDER_CONFIRM,
 } from '../../src/ui/confirm-copy';
 
 // ---------------------------------------------------------------------------
@@ -186,6 +197,62 @@ function makeDoc(options: { players?: number; picks?: number; id?: string } = {}
 
 function seedSavedDraft(options: { players?: number; picks?: number } = {}): void {
   expect(saveTournament(makeDoc(options))).toBe(true);
+}
+
+/**
+ * A v3 draft that has bid and resolved round 1 — the document the D-20 confirm needs.
+ *
+ * `makeDoc` above deliberately writes a schema-2-shaped log with no `schedule/compiled`,
+ * which `selectDealsCards` reads as "this tournament deals no cards" and which therefore
+ * can never reach a resolved pick order. This is the other document, not a replacement.
+ *
+ * The two card values differ because CARD-04 forbids repeating a value inside one round.
+ */
+function makeResolvedCardDoc(): TournamentDoc {
+  const config = configOf(2);
+  const order = config.players.map((player) => player.id);
+  const schedule: RoundSpec[] = Array.from({ length: config.rounds }, (_, position) => ({
+    index: position + 1,
+    kind: 'open' as const,
+  }));
+
+  const log: Action[] = [];
+  const push = (intent: Intent): void => {
+    log.push(stamp(intent, log.length));
+  };
+
+  push(
+    poolBuilt(
+      Array.from({ length: 30 }, (_, index) => `mon-${index}`),
+      'mb',
+      'test-checksum',
+      29,
+      0,
+    ),
+  );
+  push(scheduleCompiled(schedule));
+  push(draftStarted(order, 13));
+
+  // Round 1's cards, in play order, then the resolution the last one triggers.
+  push(cardsPlayed({ playerId: order[0] as string, value: 4, round: 1 }));
+  push(cardsPlayed({ playerId: order[1] as string, value: 2, round: 1 }));
+  push(orderResolved(1, [order[1] as string, order[0] as string]));
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'confirm-dialogs-cards-fixture',
+    createdAt: 1_770_000_000_000,
+    config,
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log,
+  };
+}
+
+async function reachResolvedOrder(): Promise<void> {
+  expect(saveTournament(makeResolvedCardDoc())).toBe(true);
+  claimLock();
+  await mountApp();
+  await click(buttonNamed('Resume saved draft'));
 }
 
 /** Two players × six rounds, every slot filled — a tournament that has reached the milestone. */
@@ -354,7 +421,7 @@ describe('undo asks only when it reaches into an earlier round', () => {
     await reachDraft({ picks: 3 });
     expect(pickCount()).toBe(3);
 
-    await click(buttonNamed('Undo last pick'));
+    await click(buttonNamed('Undo last move'));
 
     expect(pickCount()).toBe(2);
     expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(0);
@@ -363,7 +430,7 @@ describe('undo asks only when it reaches into an earlier round', () => {
   it('asks before undoing a pick from the round just finished', async () => {
     await reachDraft({ picks: 2 });
 
-    await click(buttonNamed('Undo last pick'));
+    await click(buttonNamed('Undo last move'));
 
     expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
     expect(dialogText()).toContain('pick from round 1, and the draft is currently on round 2.');
@@ -393,7 +460,7 @@ describe('undo asks only when it reaches into an earlier round', () => {
 
   it('keeps the pick when Escape closes the dialog', async () => {
     await reachDraft({ picks: 2 });
-    await click(buttonNamed('Undo last pick'));
+    await click(buttonNamed('Undo last move'));
 
     await pressEscape();
 
@@ -424,11 +491,86 @@ describe('undo asks only when it reaches into an earlier round', () => {
 
   it('names the player and both rounds in the body', async () => {
     await reachDraft({ picks: 2 });
-    await click(buttonNamed('Undo last pick'));
+    await click(buttonNamed('Undo last move'));
 
     expect(dialogText()).toContain("Bo's pick from round 1");
     // The "picks made after it" clause is dormant while undo removes exactly one.
     expect(dialogText()).not.toContain('in total');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Undoing back across a resolved pick order — D-20, 03-UI-SPEC §12
+// ---------------------------------------------------------------------------
+
+describe('undoing back across a resolved pick order', () => {
+  it('says `Undo last move`, because the button now removes more than picks', async () => {
+    // Amendment 2. A control labelled `Undo last pick` that removes a priority card is
+    // wrong on a screen somebody reads aloud to the table.
+    await reachResolvedOrder();
+
+    expect(buttonNamed('Undo last move')).toBeDefined();
+    expect(buttonNamed('Undo last pick')).toBeUndefined();
+  });
+
+  it('asks first, even though the draft has not left the round', async () => {
+    await reachResolvedOrder();
+
+    await click(buttonNamed('Undo last move'));
+
+    expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
+    expect(dialogText()).toContain("This un-resolves round 1's pick order");
+  });
+
+  it('states whose card comes back, and that it is two steps rather than one', async () => {
+    await reachResolvedOrder();
+    await click(buttonNamed('Undo last move'));
+
+    // Bo played the 2 that completed the round, so Bo's 2 is what returns.
+    expect(dialogText()).toContain("takes Bo's 2 back into their hand — 2 steps in total.");
+    expect(dialogText()).toContain('The order everyone just read changes.');
+  });
+
+  it('uses its own labels rather than the earlier-round set', async () => {
+    await reachResolvedOrder();
+    await click(buttonNamed('Undo last move'));
+
+    expect(dialogButtonNamed(UNDO_RESOLVED_ORDER_CONFIRM.confirmLabel)).toBeDefined();
+    expect(dialogButtonNamed(UNDO_RESOLVED_ORDER_CONFIRM.safeLabel)).toBeDefined();
+    expect(dialogButtonNamed(UNDO_BOUNDARY_CONFIRM.confirmLabel)).toBeUndefined();
+  });
+
+  it('puts the round back into the card phase when confirmed', async () => {
+    await reachResolvedOrder();
+    expect(selectPhase(getState() as never)).toBe('picking');
+
+    await click(buttonNamed('Undo last move'));
+    await click(dialogButtonNamed(UNDO_RESOLVED_ORDER_CONFIRM.confirmLabel));
+
+    // Both entries went, so the app is bidding again rather than re-resolving on the spot.
+    expect(selectPhase(getState() as never)).toBe('cards');
+    expect(host.querySelector('.card-panel')).not.toBeNull();
+    expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(0);
+  });
+
+  it('changes nothing when the safe button is pressed', async () => {
+    await reachResolvedOrder();
+    const before = JSON.stringify(getDoc());
+
+    await click(buttonNamed('Undo last move'));
+    await click(dialogButtonNamed(UNDO_RESOLVED_ORDER_CONFIRM.safeLabel));
+
+    expect(JSON.stringify(getDoc())).toBe(before);
+    expect(selectPhase(getState() as never)).toBe('picking');
+  });
+
+  it('asks on Ctrl+Z too, because the shortcut and the button are one path', async () => {
+    await reachResolvedOrder();
+
+    await pressCtrlZ();
+
+    expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
+    expect(dialogText()).toContain('un-resolves');
   });
 });
 

@@ -11,7 +11,7 @@ import { ExportPanel } from '../components/ExportPanel';
  * It replaces the pool grid and nothing else. The top bar and the draft board stay
  * exactly where they were, which is a requirement rather than an oversight: a host who
  * realises on this screen that the last pick was wrong must still be able to unwind it,
- * and `Undo last pick` lives in the top bar. A completed-draft screen that swapped out
+ * and `Undo last move` lives in the top bar. A completed-draft screen that swapped out
  * the whole draft region would make the final pick the one pick in the tournament that
  * could not be taken back.
  *

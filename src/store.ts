@@ -42,7 +42,7 @@ import {
   type TournamentDoc,
 } from './core/model';
 import { apply, canApply, fold, type CanApplyResult } from './core/reduce';
-import { canUndo, lastPickAction, undoLast } from './core/undo';
+import { canUndo, undoLast, undoRemoval, type UndoRemoval } from './core/undo';
 import { announce } from './ui/components/LiveRegion';
 
 /**
@@ -344,7 +344,7 @@ export function abandonTournament(): void {
  *
  * A tab that does not hold write ownership may not undo, and the check lives HERE rather
  * than only in the keyboard handler that exposed it. `app.tsx` marks the whole draft
- * region `inert` in a secondary tab, which correctly kills the `Undo last pick` button,
+ * region `inert` in a secondary tab, which correctly kills the `Undo last move` button,
  * every pool cell and the tab order — but `TopBar` registers `Ctrl+Z` on `document`, which
  * is outside that subtree, and `inert` governs targeting inside a subtree rather than
  * document-level listeners. So the keystroke reached this function.
@@ -380,17 +380,52 @@ export function undo(resolveSpeciesName?: (monId: string) => string): boolean {
   const previous = docSignal.peek();
   if (previous === null || !canUndo(previous)) return false;
 
-  const removed = lastPickAction(previous);
+  const removed = undoRemoval(previous);
   if (removed === null) return false;
+
+  // Read BEFORE the write, because the removal names a player and the display name has to
+  // come from the state that still contains the move being described.
+  const playerName = selectPlayerName(stateSignal.peek(), removed.playerId);
 
   const next = undoLast(previous);
   docSignal.value = next;
   stateSignal.value = fold(next);
 
-  // Verbatim from the UI-SPEC copywriting table. The board reverting is the primary
-  // feedback; this is what makes the same event reach someone not watching the screen.
-  const species = resolveSpeciesName?.(removed.monId) ?? removed.monId;
-  announce(`Undid Round ${removed.round} — ${species} is back in the pool.`);
+  announce(undoAnnouncement(removed, playerName, resolveSpeciesName));
 
   return true;
+}
+
+/** The display name for a player id, or the id, without assuming a live state. */
+function selectPlayerName(state: DraftState | null, playerId: string): string {
+  if (state === null) return playerId;
+  return state.config.players.find((player) => player.id === playerId)?.name ?? playerId;
+}
+
+/**
+ * What the live region says an undo just did — 03-UI-SPEC §Live-region announcements.
+ *
+ * Verbatim from the copywriting table, one string per kind. The board reverting is the
+ * primary feedback; this is what makes the same event reach somebody not watching the
+ * screen, which on a shared draft screen is most of the room.
+ *
+ * A card undo needs no species name and must not invent one — `resolveSpeciesName` is
+ * consulted for a pick and for nothing else.
+ */
+function undoAnnouncement(
+  removed: UndoRemoval,
+  playerName: string,
+  resolveSpeciesName?: (monId: string) => string,
+): string {
+  if (removed.kind === 'card') {
+    return `Undid ${playerName}'s card — ${removed.cardValue} is back in their hand.`;
+  }
+
+  if (removed.kind === 'order') {
+    return `Undid round ${removed.round}'s pick order — ${playerName}'s ${removed.cardValue} is back in their hand.`;
+  }
+
+  const monId = removed.monId ?? '';
+  const species = resolveSpeciesName?.(monId) ?? monId;
+  return `Undid Round ${removed.round} — ${species} is back in the pool.`;
 }

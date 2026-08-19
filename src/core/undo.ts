@@ -1,5 +1,21 @@
 /**
- * undo.ts — SHEL-06 / D-10. Unlimited undo, back to draft start, no redo.
+ * undo.ts — SHEL-06 / D-10 / D-20. Unlimited undo, back to draft start, no redo.
+ *
+ * ## ONE stack, spanning everything the draft does — D-20
+ *
+ * Picks, priority-card plays and automatic resolutions all live in the same log and all
+ * come off the same stack, newest first. There is no per-surface undo and there must not
+ * be one: two stacks would let a host undo a pick made after a card play and leave the
+ * document in an order the room never played through.
+ *
+ * That is why the button reads `Undo last move` (Amendment 2). It is not a copy
+ * preference — a control naming only picks, that then removes a priority card, is simply
+ * wrong on a screen somebody is reading aloud to the table. `move` covers all of them;
+ * `action` was rejected for leaking the log's vocabulary into copy the room reads.
+ *
+ * The one place the stack is not literally one-entry-at-a-time is a resolved pick order,
+ * which comes off together with the card play that triggered it. `removalIndices` carries
+ * the reason.
  *
  * The entire implementation is "remove the action and fold again". That is not a
  * shortcut; it is the property plan 01-06 established and asserted rather than claimed:
@@ -28,18 +44,29 @@
  * The document handed in is never mutated.
  */
 
-import { isPickMadeAction, type PickMadeAction } from './actions';
+import {
+  DRAFT_STARTED,
+  POOL_BUILT,
+  SCHEDULE_COMPILED,
+  isCardsPlayedAction,
+  isOrderResolvedAction,
+  isPickMadeAction,
+  type Action,
+  type CardsPlayedAction,
+  type PickMadeAction,
+} from './actions';
 import type { DraftState, TournamentDoc } from './model';
 import { selectCurrentRound } from './selectors';
 
 /**
  * Index of the most recent `draft/pickMade` in the log, or `-1` when there is none.
  *
- * Written as "the last pick" rather than "the last entry" on purpose. In Phase 1 the
- * two are always the same — a pick is the only thing that follows a pick — but Phase 2
- * interleaves priority-card plays, bans and swaps into the same log, and a `pop()`
- * would then remove one of those instead, silently and with the undo button still
- * reading `Undo last pick`.
+ * Written as "the last pick" rather than "the last entry" on purpose, and that distinction
+ * has since become the whole of D-20. In Phase 1 the two were always the same — a pick was
+ * the only thing that followed a pick — and Phase 3 interleaves priority-card plays and
+ * resolutions into the same log, so a `pop()` would now remove one of those instead,
+ * silently. `lastUndoableIndex` below is what the undo path actually reads; this one
+ * survives for `lastPickAction`, which answers a genuinely narrower question.
  *
  * `isPickMadeAction` rather than a bare `type` comparison, because an imported or
  * hand-edited log is untrusted input (plan 01-10 folds one). A pick-shaped entry with
@@ -55,11 +82,11 @@ function lastPickIndex(doc: TournamentDoc): number {
 }
 
 /**
- * The pick that `undoLast` would remove, or `null` when there is nothing to undo.
+ * The pick that an undo would remove, or `null` when the log holds none.
  *
- * Exposed because the live-region announcement names both the round and the species —
- * `Undid Round {r} — {species} is back in the pool.` — and reading them off the action
- * that is about to be dropped is the only way to say them without re-deriving anything.
+ * Kept beside `lastUndoableAction` rather than replaced by it. The two answer different
+ * questions — "the last pick" and "the last thing undo would touch" — and since D-20 those
+ * are routinely different actions.
  */
 export function lastPickAction(doc: TournamentDoc): PickMadeAction | null {
   const index = lastPickIndex(doc);
@@ -68,22 +95,197 @@ export function lastPickAction(doc: TournamentDoc): PickMadeAction | null {
 }
 
 /**
- * Whether the draft has a pick to unwind.
+ * The three actions that ORIGINATE a tournament, and the boundary undo never crosses.
  *
- * False for an empty log and false for a log holding only `pool/built` and
- * `draft/started` — which is the state the board boots into, and exactly when the
- * `Undo last pick` button must render disabled.
+ * Undo unwinds the DRAFT; it does not un-create the tournament. Removing any of these
+ * would leave a document with no pool, no schedule or no turn order — which is not an
+ * earlier state of the draft, it is a broken one. `Abandon draft` is the control for
+ * throwing a tournament away, and it is a `danger`-toned confirm for that reason.
  */
-export function canUndo(doc: TournamentDoc): boolean {
-  return lastPickIndex(doc) !== -1;
+const NEVER_UNDONE: readonly string[] = [POOL_BUILT, SCHEDULE_COMPILED, DRAFT_STARTED];
+
+/**
+ * Whether undo would touch this entry — D-20, SHEL-06.
+ *
+ * Both halves are load-bearing and they are not redundant.
+ *
+ * The DENY-LIST is the invariant. It states the boundary in one place, so the day swap
+ * actions join the allow-list below nobody has to re-derive whether a growing allow-list
+ * could reach `pool/built`.
+ *
+ * The ALLOW-LIST is the structural check, and it is why this is not simply "anything not
+ * excluded". An imported or hand-edited log is untrusted input: it can carry an action
+ * type this build has never heard of, which `apply` tolerates and folds to nothing, and it
+ * can carry a pick-shaped entry with no `monId`. Undoing either would remove an entry and
+ * change NOTHING on screen — the failure `lastPickIndex`'s comment describes, arriving by
+ * a different route. `draft/pickUndone` is excluded by the same rule and deliberately:
+ * removing a compensating action would resurrect the pick it compensated, which is a redo,
+ * and D-10 declines to have one.
+ */
+function isUndoable(action: Action): boolean {
+  if (NEVER_UNDONE.includes(action.type)) return false;
+  return isPickMadeAction(action) || isCardsPlayedAction(action) || isOrderResolvedAction(action);
+}
+
+/** Index of the last entry undo would touch, or `-1`. */
+function lastUndoableIndex(doc: TournamentDoc): number {
+  for (let index = doc.log.length - 1; index >= 0; index--) {
+    const action = doc.log[index];
+    if (action !== undefined && isUndoable(action)) return index;
+  }
+  return -1;
 }
 
 /**
- * The document with its most recent pick removed.
+ * The action `undoLast` would remove, or `null` when there is nothing to undo.
+ *
+ * The generalization `lastPickIndex`'s own comment predicted: Phase 1 could say "the last
+ * pick" because a pick was the only thing that followed a pick, and D-20 makes the log
+ * interleave picks, card plays and resolutions. A `pop()` — or a `lastPickAction` on the
+ * undo path — would now reach past a card play to a pick made two moves ago, silently,
+ * with the button still reading as if it had done the obvious thing.
+ */
+export function lastUndoableAction(doc: TournamentDoc): Action | null {
+  const index = lastUndoableIndex(doc);
+  if (index === -1) return null;
+  return doc.log[index] ?? null;
+}
+
+/**
+ * The `cards/played` that triggered a resolution — searched, not assumed to be at `-1`.
+ *
+ * In every log this build writes it IS the immediately preceding entry, because
+ * `order/resolved` is dispatched the instant the last card lands. The search exists for
+ * imported documents, and the round is matched so that a log carrying a stray entry
+ * between the two cannot pair a resolution with a card from some other round.
+ */
+function triggeringCardIndex(doc: TournamentDoc, resolvedIndex: number, round: number): number {
+  for (let index = resolvedIndex - 1; index >= 0; index--) {
+    const action = doc.log[index];
+    if (action === undefined) continue;
+    if (isCardsPlayedAction(action) && action.round === round) return index;
+  }
+  return -1;
+}
+
+/**
+ * Which log entries an undo would drop, ascending. Empty when there is nothing to undo.
+ *
+ * ## Why a resolution takes its trigger with it — D-20, and 03-RESEARCH's Pitfall 5
+ *
+ * Resolution is AUTOMATIC (D-17, D-19): the moment every player's card is down, the app
+ * emits `order/resolved` without anybody clicking anything. So removing the resolution on
+ * its own returns the document to a state where every card is still down — and the app
+ * immediately re-resolves it on the next render. The undo appears to do nothing, or loops.
+ *
+ * Removing the resolution AND the card that completed the round is what actually steps
+ * back: the round returns to the card phase with one card outstanding, which is a state
+ * the host can act in.
+ *
+ * The alternative was making resolution a host click, which costs a click per round and
+ * contradicts D-17's whole point — that "every card down but no order yet" is a screen
+ * state nobody should have to look at.
+ */
+function removalIndices(doc: TournamentDoc): number[] {
+  const index = lastUndoableIndex(doc);
+  if (index === -1) return [];
+
+  const action = doc.log[index];
+  if (action !== undefined && isOrderResolvedAction(action)) {
+    const cardIndex = triggeringCardIndex(doc, index, action.round);
+    if (cardIndex !== -1) return [cardIndex, index];
+  }
+
+  return [index];
+}
+
+/** What an undo would take, and from whom. Every field is a fact, never a sentence. */
+export interface UndoRemoval {
+  /** Which of the undoable actions is at the top of the stack. */
+  kind: 'pick' | 'card' | 'order';
+  /** 1-based round of the action being removed. */
+  round: number;
+  /** Whose move it was. The UI resolves the display name; core never holds one. */
+  playerId: string;
+  /** The species returning to the pool, for a pick. `null` otherwise. */
+  monId: string | null;
+  /** The value returning to a hand, for a card play or a resolution. `null` for a pick. */
+  cardValue: number | null;
+  /** Log entries the operation removes — 2 for a resolution and its trigger, else 1. */
+  removedCount: number;
+}
+
+/**
+ * What `undoLast` would take, without taking it.
+ *
+ * ONE description, two consumers: the confirm dialog's copy and the live-region
+ * announcement. Written out at each of them, the two would be free to disagree about what
+ * an undo just did — and the announcement is what reaches somebody not watching the screen.
+ */
+export function undoRemoval(doc: TournamentDoc): UndoRemoval | null {
+  const indices = removalIndices(doc);
+  if (indices.length === 0) return null;
+
+  // The LAST index is the action at the top of the stack; anything before it is something
+  // that action drags along.
+  const primary = doc.log[indices[indices.length - 1] ?? -1];
+  if (primary === undefined) return null;
+
+  if (isPickMadeAction(primary)) {
+    return {
+      kind: 'pick',
+      round: primary.round,
+      playerId: primary.playerId,
+      monId: primary.monId,
+      cardValue: null,
+      removedCount: indices.length,
+    };
+  }
+
+  if (isCardsPlayedAction(primary)) {
+    return {
+      kind: 'card',
+      round: primary.round,
+      playerId: primary.playerId,
+      monId: null,
+      cardValue: primary.value,
+      removedCount: indices.length,
+    };
+  }
+
+  // A resolution, and the card it dragged with it. The card is what the copy names — "an
+  // order was removed" tells the host nothing they can act on, and the value going back
+  // into somebody's hand is the part they have to know about.
+  const trigger = indices.length > 1 ? doc.log[indices[0] ?? -1] : undefined;
+  const card: CardsPlayedAction | null =
+    trigger !== undefined && isCardsPlayedAction(trigger) ? trigger : null;
+
+  return {
+    kind: 'order',
+    round: isOrderResolvedAction(primary) ? primary.round : (card?.round ?? 1),
+    playerId: card?.playerId ?? '',
+    monId: null,
+    cardValue: card?.value ?? null,
+    removedCount: indices.length,
+  };
+}
+
+/**
+ * Whether the draft has anything to unwind.
+ *
+ * False for an empty log and false for a log holding only the three origination actions —
+ * which is the state the board boots into, and exactly when the `Undo last move` button
+ * must render disabled.
+ */
+export function canUndo(doc: TournamentDoc): boolean {
+  return lastUndoableIndex(doc) !== -1;
+}
+
+/**
+ * The document with its most recent move removed.
  *
  * Returns the input unchanged when there is nothing to undo, so the caller never has to
- * ask twice. Undo unwinds the draft; it does not un-create the tournament, so
- * `pool/built` and `draft/started` are never candidates.
+ * ask twice.
  *
  * A fresh document object with a fresh log array comes back, never a mutation of the
  * input — the store, the autosave and the JSON export all hold references to documents
@@ -91,26 +293,42 @@ export function canUndo(doc: TournamentDoc): boolean {
  * describe what they described.
  */
 export function undoLast(doc: TournamentDoc): TournamentDoc {
-  const index = lastPickIndex(doc);
-  if (index === -1) return doc;
+  const indices = removalIndices(doc);
+  if (indices.length === 0) return doc;
 
   const log = [...doc.log];
-  log.splice(index, 1);
+
+  // Descending, so each splice cannot shift an index still to be used. Two splices on one
+  // fresh array rather than a filter, because the indices are already in hand and a filter
+  // would need a predicate that re-identifies the same two entries.
+  for (let position = indices.length - 1; position >= 0; position--) {
+    log.splice(indices[position] ?? 0, 1);
+  }
 
   return { ...doc, log };
 }
 
 /** What an undo would reach back into. Every field is a fact, never a sentence. */
 export interface RoundBoundaryCrossing {
-  /** True when the pick that would be removed belongs to an earlier round than the draft is on. */
+  /** True when the undo needs a confirm — see {@link undoCrossesRoundBoundary}. */
   crosses: boolean;
-  /** 1-based round of the pick that would be removed. */
-  pickRound: number;
+  /** Which kind of move is at the top of the stack. The UI picks its copy from this. */
+  kind: UndoRemoval['kind'];
+  /**
+   * 1-based round of the action that would be removed.
+   *
+   * Named for the action rather than for a pick since D-20: a card play and a resolution
+   * both carry a round, and a field called `pickRound` holding a card's round would be the
+   * kind of stale contract this project treats as worse than no comment at all.
+   */
+  removedRound: number;
   /** 1-based round the draft is currently on. `config.rounds` once the draft is complete. */
   currentRound: number;
-  /** Who made the pick. The UI resolves the display name; core never holds one. */
+  /** Whose move it was. The UI resolves the display name; core never holds one. */
   playerId: string;
-  /** Picks removed by the operation. Always 1 while `undoLast` is single-step. */
+  /** The card value going back into a hand, or `null` when a pick is being undone. */
+  cardValue: number | null;
+  /** Log entries the operation removes — 2 for a resolution and its trigger, else 1. */
   removedCount: number;
 }
 
@@ -125,12 +343,12 @@ export interface RoundBoundaryCrossing {
  * clock, rolls no die and touches no DOM, so it is testable with zero mocks — which is
  * the observable payoff of the purity rule rather than a nicety.
  *
- * WHY `removedCount` EXISTS when it is always 1. `undoLast` above removes exactly one
- * pick, so 02-UI-SPEC §11's clause about "picks made after it" describes a mechanism this
- * codebase does not have, and in the only state where the dialog can appear there are no
- * picks after the one being removed. The field is the seam a walk-back undo would fill,
- * not a number waiting to be deleted; the copy composer gates the clause on it being
- * greater than 1, so the sentence is dormant today and correct the day that arrives.
+ * WHAT `removedCount` REPORTS, now that it is not always 1. It was written as the seam a
+ * multi-step undo would fill, and D-20 filled it: undoing a resolved pick order removes
+ * the resolution AND the card play that triggered it, so the field reports 2 for that case
+ * and 1 for every other. `confirm-copy.ts`'s clause gated on `removedCount > 1` — dormant
+ * since 02-07 — is reachable for the first time, which is the whole reason it was gated
+ * rather than deleted.
  *
  * WHAT D-37 CHANGES, AND WHAT IT DOES NOT. It narrows Phase 1's D-10 without touching its
  * mechanism: the cheap case — undoing a pick in the round you are standing in — is still
@@ -143,7 +361,7 @@ export function undoCrossesRoundBoundary(
   doc: TournamentDoc,
   state: DraftState,
 ): RoundBoundaryCrossing | null {
-  const removed = lastPickAction(doc);
+  const removed = undoRemoval(doc);
   if (removed === null) return null;
 
   // The round the draft is STANDING IN, asked for directly rather than read off a turn.
@@ -158,11 +376,26 @@ export function undoCrossesRoundBoundary(
   // behaviour the old fallback existed for is unchanged.
   const currentRound = selectCurrentRound(state);
 
+  /*
+    A RESOLVED ORDER always confirms, whatever round it belongs to.
+
+    03-CONTEXT: "Undoing back past `order/resolved` un-resolves the round, which is honest:
+    the order was computed from cards that no longer stand. D-37's round-boundary confirm
+    extends to cover that crossing." The boundary being crossed is not the round's — it is
+    the moment the whole room read an order off the screen and started picking against it.
+    Comparing round numbers would miss it entirely, because the draft is still STANDING in
+    the round it just resolved, so `removed.round < currentRound` is false exactly when the
+    confirm matters most.
+  */
+  const crosses = removed.kind === 'order' || removed.round < currentRound;
+
   return {
-    crosses: removed.round < currentRound,
-    pickRound: removed.round,
+    crosses,
+    kind: removed.kind,
+    removedRound: removed.round,
     currentRound,
     playerId: removed.playerId,
-    removedCount: 1,
+    cardValue: removed.cardValue,
+    removedCount: removed.removedCount,
   };
 }

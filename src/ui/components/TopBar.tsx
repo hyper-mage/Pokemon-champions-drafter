@@ -7,7 +7,7 @@ import { tournamentDoc } from '../../store';
 import './TopBar.css';
 
 /**
- * The sticky control bar — `Undo last pick`, `Download JSON` and `Import JSON…`.
+ * The sticky control bar — `Undo last move`, `Download JSON` and `Import JSON…`.
  *
  * It is sticky because undo has to be reachable without scrolling. The host is looking
  * at a 235-cell pool when they realise the last pick was wrong, and a safety net you
@@ -134,7 +134,7 @@ export function TopBar({
       // This listener is on `document`, which is OUTSIDE the `inert` shell. `inert`
       // governs focus and pointer/keyboard targeting inside a subtree; it does not stop a
       // document-level handler from firing when the event target is `<body>`. So the
-      // attribute that disables the `Undo last pick` button beside this shortcut does not
+      // attribute that disables the `Undo last move` button beside this shortcut does not
       // disable the shortcut, and a read-only tab could undo the owner's pick from the
       // keyboard. `store.undo()` refuses this too and that refusal is the guarantee; this
       // one is here so a secondary tab does not swallow the browser's own Ctrl+Z with the
@@ -165,7 +165,7 @@ export function TopBar({
           disabled={!undoAvailable}
           aria-disabled={undoAvailable ? 'false' : 'true'}
         >
-          Undo last pick
+          Undo last move
         </button>
 
         <button type="button" class="top-bar__button" onClick={onDownload}>

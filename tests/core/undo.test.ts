@@ -16,10 +16,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CARDS_PLAYED,
   DRAFT_PICK_MADE,
   DRAFT_PICK_UNDONE,
   DRAFT_STARTED,
   POOL_BUILT,
+  SCHEDULE_COMPILED,
   cardsPlayed,
   draftStarted,
   orderResolved,
@@ -37,12 +39,23 @@ import {
   type TournamentDoc,
 } from '../../src/core/model';
 import { fold } from '../../src/core/reduce';
-import { selectAvailablePool, selectCurrentTurn, selectPickCount } from '../../src/core/selectors';
+import {
+  selectAvailablePool,
+  selectCardsPlayedThisRound,
+  selectCardTurn,
+  selectCurrentTurn,
+  selectHand,
+  selectPhase,
+  selectPickCount,
+  selectResolvedOrder,
+} from '../../src/core/selectors';
 import {
   canUndo,
   lastPickAction,
+  lastUndoableAction,
   undoCrossesRoundBoundary,
   undoLast,
+  undoRemoval,
 } from '../../src/core/undo';
 
 // ---------------------------------------------------------------------------
@@ -437,7 +450,7 @@ describe('undoCrossesRoundBoundary', () => {
     const crossing = undoCrossesRoundBoundary(doc, fold(doc));
 
     expect(crossing?.crosses).toBe(false);
-    expect(crossing?.pickRound).toBe(2);
+    expect(crossing?.removedRound).toBe(2);
     expect(crossing?.currentRound).toBe(2);
   });
 
@@ -448,7 +461,7 @@ describe('undoCrossesRoundBoundary', () => {
     const crossing = undoCrossesRoundBoundary(doc, fold(doc));
 
     expect(crossing?.crosses).toBe(true);
-    expect(crossing?.pickRound).toBe(1);
+    expect(crossing?.removedRound).toBe(1);
     expect(crossing?.currentRound).toBe(2);
     expect(crossing?.playerId).toBe('p2');
   });
@@ -458,7 +471,7 @@ describe('undoCrossesRoundBoundary', () => {
     const crossing = undoCrossesRoundBoundary(doc, fold(doc));
 
     expect(crossing?.crosses).toBe(true);
-    expect(crossing?.pickRound).toBe(1);
+    expect(crossing?.removedRound).toBe(1);
     expect(crossing?.currentRound).toBe(2);
     expect(crossing?.playerId).toBe(EIGHT_ORDER[7]);
   });
@@ -473,7 +486,7 @@ describe('undoCrossesRoundBoundary', () => {
 
     const crossing = undoCrossesRoundBoundary(doc, state);
     expect(crossing?.currentRound).toBe(CONFIG.rounds);
-    expect(crossing?.pickRound).toBe(CONFIG.rounds);
+    expect(crossing?.removedRound).toBe(CONFIG.rounds);
     // The final pick belongs to the final round, so unwinding it crosses nothing.
     expect(crossing?.crosses).toBe(false);
   });
@@ -531,6 +544,11 @@ function withResolvedRound(log: Action[], round: number): Action[] {
 
   // Both players play the round's own number, so each spends 1..6 exactly once and the
   // round is a tie on value — resolved by `seq`, which puts them back in `state.order`.
+  //
+  // CARD-04 makes this shape unreachable in a LIVE draft since 03-09: the second player
+  // may not repeat a value already down this round. It stays here deliberately, because
+  // `fold` runs no `canApply` and undo has to keep working against exactly the documents
+  // it did not write. The tie is what makes the resulting order predictable.
   for (const playerId of ORDER) push(cardsPlayed({ playerId, value: round, round }));
   push(orderResolved(round, ORDER));
 
@@ -557,9 +575,21 @@ describe('undoCrossesRoundBoundary during the card phase', () => {
 
     const crossing = undoCrossesRoundBoundary(doc, state);
 
+    // The assertion this test exists for: `selectCurrentRound` answers during the card
+    // phase, so the confirm is not told the draft is standing on round six.
     expect(crossing?.currentRound).toBe(2);
     expect(crossing?.currentRound).not.toBe(CONFIG.rounds);
-    expect(crossing?.pickRound).toBe(1);
+
+    /*
+      And the D-20 generalization, which changed this test's other half. The top of the
+      stack is now round 2's CARD PLAY — the most recent move — not round 1's last pick.
+      Before undo covered cards, this reported round 1 and would have unwound a pick the
+      host made two moves ago while their card sat on the table untouched.
+    */
+    expect(crossing?.kind).toBe('card');
+    expect(crossing?.removedRound).toBe(2);
+    expect(crossing?.cardValue).toBe(3);
+    expect(crossing?.crosses).toBe(false);
   });
 
   it('does not report a crossing for an undo inside the round being picked', () => {
@@ -569,7 +599,7 @@ describe('undoCrossesRoundBoundary during the card phase', () => {
 
     // Round 1's picks are in and round 2 has not been bid on, so the draft stands in
     // round 2 and unwinding round 1's last pick genuinely does cross.
-    expect(crossing?.pickRound).toBe(1);
+    expect(crossing?.removedRound).toBe(1);
     expect(crossing?.currentRound).toBe(2);
     expect(crossing?.crosses).toBe(true);
   });
@@ -583,5 +613,158 @@ describe('undoCrossesRoundBoundary during the card phase', () => {
 
     expect(crossing?.currentRound).toBe(CONFIG.rounds);
     expect(crossing?.crosses).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One stack for the whole log — D-20, SHEL-06
+// ---------------------------------------------------------------------------
+
+/** Round `round`'s cards only, with no resolution and no picks after them. */
+function withCardsOnly(log: Action[], round: number, values: readonly number[]): Action[] {
+  const extended = [...log];
+  ORDER.forEach((playerId, index) => {
+    const value = values[index];
+    if (value === undefined) return;
+    extended.push(stamp(cardsPlayed({ playerId, value, round }), extended.length));
+  });
+  return extended;
+}
+
+describe('the undo stack spans the whole log', () => {
+  it('is false when the log holds only the three origination actions', () => {
+    // Undo unwinds the draft; it does not un-create the tournament. This is the state the
+    // board boots into, and exactly when the button must render disabled.
+    expect(canUndo(makeDoc(v3OpeningLog()))).toBe(false);
+  });
+
+  it('is true once a card has been played, with no pick anywhere in the log', () => {
+    const doc = makeDoc(withCardsOnly(v3OpeningLog(), 1, [4]));
+
+    expect(canUndo(doc)).toBe(true);
+    expect(lastUndoableAction(doc)?.type).toBe(CARDS_PLAYED);
+    // The pick-only predicate would have said no. That is the whole of D-20.
+    expect(lastPickAction(doc)).toBeNull();
+  });
+
+  it('returns a played card to its hand and leaves every pick alone', () => {
+    const log = withCardsOnly(withResolvedRound(v3OpeningLog(), 1), 2, [5]);
+    const doc = makeDoc(log);
+
+    const before = fold(doc);
+    expect(selectHand(before, 'p1')).not.toContain(5);
+    expect(selectPickCount(before)).toBe(2);
+
+    const after = fold(undoLast(doc));
+
+    expect(selectHand(after, 'p1')).toContain(5);
+    expect(selectPickCount(after)).toBe(2);
+  });
+
+  it('never removes pool/built, schedule/compiled or draft/started', () => {
+    // Unwind everything, repeatedly, and the origination actions are still there.
+    let doc = makeDoc(withResolvedRound(v3OpeningLog(), 1));
+    for (let step = 0; step < 50; step++) doc = undoLast(doc);
+
+    expect(doc.log.map((action) => action.type)).toEqual([
+      POOL_BUILT,
+      SCHEDULE_COMPILED,
+      DRAFT_STARTED,
+    ]);
+    expect(canUndo(doc)).toBe(false);
+  });
+
+  it('ignores a compensating draft/pickUndone rather than resurrecting the pick', () => {
+    // Removing a compensating action would re-apply what it compensated, which is a redo.
+    // D-10 declines to have one.
+    const log = withPicks(openingLog(), 1);
+    log.push(stamp(pickUndone(log.length - 1), log.length));
+
+    expect(lastUndoableAction(makeDoc(log))?.type).toBe(DRAFT_PICK_MADE);
+  });
+});
+
+describe('undoing a resolved pick order', () => {
+  /** Round 1 bid and resolved, with no picks made against the order yet. */
+  function resolvedNoPicks(): TournamentDoc {
+    const log = withCardsOnly(v3OpeningLog(), 1, [4, 2]);
+    log.push(stamp(orderResolved(1, ['p2', 'p1']), log.length));
+    return makeDoc(log);
+  }
+
+  it('removes the resolution and the card that triggered it as one step', () => {
+    const doc = resolvedNoPicks();
+    const removal = undoRemoval(doc);
+
+    expect(removal?.kind).toBe('order');
+    expect(removal?.removedCount).toBe(2);
+    // The card named is p2's 2 — the one that completed the round.
+    expect(removal?.playerId).toBe('p2');
+    expect(removal?.cardValue).toBe(2);
+
+    expect(doc.log).toHaveLength(6);
+    expect(undoLast(doc).log).toHaveLength(4);
+  });
+
+  it('leaves the round in the card phase with one card still to play', () => {
+    // The trap D-20 exists to avoid: remove the resolution alone and every card is still
+    // down, so the app re-resolves on the next render and the undo appears to do nothing.
+    const after = fold(undoLast(resolvedNoPicks()));
+
+    expect(selectPhase(after)).toBe('cards');
+    expect(selectResolvedOrder(after, 1)).toBeNull();
+    expect(selectCardsPlayedThisRound(after, 1)).toHaveLength(1);
+    expect(selectCardTurn(after)?.playerId).toBe('p2');
+    expect(selectHand(after, 'p2')).toContain(2);
+  });
+
+  it('reports the crossing so the confirm fires, even though the round has not changed', () => {
+    const doc = resolvedNoPicks();
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    // The draft is STANDING in round 1, so a round-number comparison would wave this
+    // through. The boundary being crossed is the moment the room read the order.
+    expect(crossing?.removedRound).toBe(1);
+    expect(crossing?.currentRound).toBe(1);
+    expect(crossing?.crosses).toBe(true);
+    expect(crossing?.kind).toBe('order');
+    expect(crossing?.removedCount).toBe(2);
+  });
+
+  it('takes the picks off first, one at a time, before it reaches the order', () => {
+    // The order is not un-resolved while picks still stand against it. Two picks were made
+    // in round 1, so it takes three undos to reach the resolution.
+    let doc = makeDoc(withResolvedRound(v3OpeningLog(), 1));
+
+    expect(undoRemoval(doc)?.kind).toBe('pick');
+    doc = undoLast(doc);
+    expect(undoRemoval(doc)?.kind).toBe('pick');
+    doc = undoLast(doc);
+    expect(undoRemoval(doc)?.kind).toBe('order');
+  });
+
+  it('does not mutate the document it was handed', () => {
+    const doc = resolvedNoPicks();
+    const before = JSON.stringify(doc);
+
+    undoLast(doc);
+    undoRemoval(doc);
+
+    expect(JSON.stringify(doc)).toBe(before);
+  });
+
+  it('survives an imported resolution whose triggering card play is missing', () => {
+    // A hand-edited log. There is no card to take back, so the removal is a lone step
+    // rather than a crash or a phantom second entry.
+    const log = v3OpeningLog();
+    log.push(stamp(orderResolved(1, ORDER), log.length));
+
+    const doc = makeDoc(log);
+    const removal = undoRemoval(doc);
+
+    expect(removal?.kind).toBe('order');
+    expect(removal?.removedCount).toBe(1);
+    expect(removal?.cardValue).toBeNull();
+    expect(undoLast(doc).log).toHaveLength(3);
   });
 });

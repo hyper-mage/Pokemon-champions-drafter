@@ -75,7 +75,7 @@
  * Colour is never the only signal: the native `disabled` attribute and
  * `aria-disabled="true"` carry the state for assistive technology and for the pointer,
  * and the opacity is the visual echo rather than the mechanism. The label does not
- * change — `Undo last pick` still describes exactly what the control would do.
+ * change — `Undo last move` still describes exactly what the control would do.
  */
 .top-bar__button:disabled {
   opacity: 0.45;

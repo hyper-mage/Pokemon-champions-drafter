@@ -63,7 +63,11 @@ import {
   subscribe,
   undo,
 } from './store';
-import { ABANDON_CONFIRM, UNDO_BOUNDARY_CONFIRM } from './ui/confirm-copy';
+import {
+  ABANDON_CONFIRM,
+  UNDO_BOUNDARY_CONFIRM,
+  UNDO_RESOLVED_ORDER_CONFIRM,
+} from './ui/confirm-copy';
 import { BoardGrid } from './ui/components/BoardGrid';
 import { CardPanel, type PlayedCard } from './ui/components/CardPanel';
 import { ConfirmDialog } from './ui/components/ConfirmDialog';
@@ -1044,7 +1048,7 @@ export function App() {
   /**
    * The single gate both undo paths pass through — D-37, and the mitigation for Pitfall 6.
    *
-   * `TopBar` calls this from the `Undo last pick` button AND from its `document`-level
+   * `TopBar` calls this from the `Undo last move` button AND from its `document`-level
    * Ctrl+Z listener, which is registered outside the `inert` draft region. Putting the
    * question here rather than on the button is the whole reason the two cannot diverge.
    *
@@ -1479,7 +1483,7 @@ export function App() {
 
             {/*
               The completed-draft screen takes the POOL's place and nothing else. The head
-              and the board stay exactly where they are, so `Undo last pick` is still one
+              and the board stay exactly where they are, so `Undo last move` is still one
               click away — a host who spots a wrong final pick on this screen must be able
               to unwind it, and the board remains the completed record.
             */}
@@ -1585,12 +1589,35 @@ export function App() {
         />
       )}
 
-      {confirm.kind === 'undo' && (
+      {/*
+        Two copy sets, one dialog, and no new mechanism — the variant is chosen by what the
+        undo would REMOVE, which core already reported in `crossing.kind`. Un-resolving a
+        pick order is a different event from reaching back into an earlier round, and
+        03-UI-SPEC states them as two rows of the copy table.
+      */}
+      {confirm.kind === 'undo' && confirm.crossing.kind === 'order' && (
+        <ConfirmDialog
+          heading={UNDO_RESOLVED_ORDER_CONFIRM.heading}
+          body={UNDO_RESOLVED_ORDER_CONFIRM.body(
+            confirm.playerName,
+            confirm.crossing.removedRound,
+            confirm.crossing.cardValue ?? 0,
+            confirm.crossing.removedCount,
+          )}
+          confirmLabel={UNDO_RESOLVED_ORDER_CONFIRM.confirmLabel}
+          safeLabel={UNDO_RESOLVED_ORDER_CONFIRM.safeLabel}
+          tone={UNDO_RESOLVED_ORDER_CONFIRM.tone}
+          onConfirm={confirmUndo}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {confirm.kind === 'undo' && confirm.crossing.kind !== 'order' && (
         <ConfirmDialog
           heading={UNDO_BOUNDARY_CONFIRM.heading}
           body={UNDO_BOUNDARY_CONFIRM.body(
             confirm.playerName,
-            confirm.crossing.pickRound,
+            confirm.crossing.removedRound,
             confirm.crossing.currentRound,
             confirm.crossing.removedCount,
           )}

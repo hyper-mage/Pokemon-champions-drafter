@@ -136,12 +136,13 @@ export const REMOVE_PLAYER_CONFIRM = {
  * question about shared understanding rather than about data loss. Everyone at the table
  * saw round 1 finish; reaching back into it should be deliberate.
  *
- * The second clause is 02-UI-SPEC §11's and it is gated rather than deleted. `undoLast`
- * removes exactly ONE pick — the most recent — so in the only state where this dialog can
- * appear there are no picks after it and `removedCount` is 1. Inventing a walk-back undo
- * to make a sentence true would be a far larger deviation than a dormant clause, and D-37
- * is explicit that "the mechanism is unchanged". Gated on the count, the clause is silent
- * today and correct the day a walk-back undo exists.
+ * The second clause is 02-UI-SPEC §11's and it was gated rather than deleted, on the
+ * argument that a dormant clause beats inventing a mechanism to make a sentence true. It
+ * is still dormant HERE — undoing a pick removes exactly that pick, so `removedCount` is
+ * 1 in every state this particular dialog can appear in. What changed in 03-09 is that
+ * `removedCount` is no longer always 1 in general: a resolved pick order comes off with
+ * the card that triggered it, and `UNDO_RESOLVED_ORDER_CONFIRM` below is the set that
+ * reports it.
  */
 export const UNDO_BOUNDARY_CONFIRM = {
   heading: 'Undo a pick from an earlier round?',
@@ -203,4 +204,41 @@ export const CLEAR_MEGA_FORME_BANLIST_CONFIRM = {
   safeLabel: 'Keep the bans',
   body: (banCount: number): string =>
     `This clears all ${megaFormeBans(banCount)} at once. Every banned forme becomes legal again.`,
+};
+
+/**
+ * The fourth plural helper, for the one count that is genuinely multi-step.
+ *
+ * `{c} steps in total` renders "1 steps" at a lone resolution — reachable from an imported
+ * log whose triggering card play is missing — and the module's rule since Phase 1 is that a
+ * visible grammar error in a dialog reads as a tool that was not finished.
+ */
+function steps(count: number): string {
+  return count === 1 ? '1 step' : `${count} steps`;
+}
+
+/**
+ * 9. Undoing back across a resolved pick order — D-20, 03-UI-SPEC §12.
+ *
+ * A SEPARATE set from `UNDO_BOUNDARY_CONFIRM` rather than a parameterization of it, on the
+ * `CLEAR_MEGA_FORME_BANLIST_CONFIRM` precedent: the contract states them as two rows, and
+ * one composer behind two rows is how the two drift in a way no test catches.
+ *
+ * `default` toned, and the tone is the honest one. Nothing is destroyed — the card goes
+ * back into a hand and the order can be resolved again by replaying it. What IS lost is
+ * shared understanding, and that is what the last sentence is for: everyone in the room
+ * read that order off the screen, and some of them are already planning against it.
+ *
+ * The step count is live here in a way it is not anywhere else in this file. Undoing a
+ * resolution removes the resolution AND the card play that triggered it, because resolution
+ * is automatic and removing it alone would let the app re-resolve on the next render — so
+ * the host is TOLD two things are going rather than discovering it.
+ */
+export const UNDO_RESOLVED_ORDER_CONFIRM = {
+  heading: "Undo this round's pick order?",
+  tone: 'default' as const,
+  confirmLabel: 'Undo the pick order',
+  safeLabel: 'Keep the pick order',
+  body: (playerName: string, round: number, value: number, removedCount: number): string =>
+    `This un-resolves round ${round}'s pick order and takes ${playerName}'s ${value} back into their hand — ${steps(removedCount)} in total. The order everyone just read changes.`,
 };
