@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: resolved
 phase: 02-host-configured-draft-night
 source: [02-01-SUMMARY.md, 02-02-SUMMARY.md, 02-03-SUMMARY.md, 02-04-SUMMARY.md, 02-05-SUMMARY.md, 02-06-SUMMARY.md, 02-07-SUMMARY.md, 02-08-SUMMARY.md]
 started: 2026-08-14T00:00:00Z
-updated: 2026-08-14T18:00:00Z
+updated: 2026-08-19T00:00:00Z
 ---
 
 ## Current Test
@@ -46,9 +46,44 @@ expected: The pool grid offers a ban mode where clicking a card toggles its ban.
 result: pass
 
 ### 9. Start draft → the two-pane draft screen
-expected: With a valid config, `Start draft` leaves the form and shows the draft screen: pool on one side, board on the other. The board has a cell per player per round. The turn banner names whose pick it is, and the empty board names the first picker. You can expand the draft board to full width and restore it, and that choice survives a page reload. The pool's own expand control is visible but inert while the draft runs, dimmed with the reason `Available once the draft is complete` beside it, and clicking it does nothing; it becomes usable once the draft is over.
-result: pending
-note: "The truth statement was corrected under plan 02-09 — it carried D-18/D-19's unscoped 'switch which pane is expanded' wording, which 02-UI-SPEC.md:116 had already declined. The missing affordance it exposed was built in the same plan: the pool expand now renders inert with a visible reason instead of being omitted. Awaiting re-verification."
+expected: |
+  With a valid config, `Start draft` leaves the form and shows the draft screen: pool on one
+  side, board on the other. The board has a cell per player per round. The turn banner names
+  whose pick it is, and the empty board names the first picker. You can expand the draft board
+  to full width and restore it, and that choice survives a page reload — reached via
+  `Resume saved draft` on the landing screen, since the app never auto-enters a draft (test 2).
+
+  The pool's own expand control is visible but inert while the draft runs, dimmed with a reason
+  beside it, and clicking it does nothing.
+
+  Amended after Phase 3 — the reason string is phase-dependent, and neither expand is always
+  available:
+
+  - Outside card play and swap rounds, the pool's reason reads
+    `Available once the draft is complete`.
+  - During a round's card play, the BOARD expand is also inert, reading
+    `Available once the round's cards are played` (`boardExpandable = !cardPhase && !swapPhase`,
+    app.tsx:945). The pool pane holds the only control that can act, so hiding it would hide the
+    only available action — Amendment 3.
+  - `complete` became tournament-complete in 03-11, so with swap rounds configured the pool
+    expand stays inert through those too, not merely until the last pick.
+result: pass
+note: |
+  Host verified 2026-08-19. Two observations, both confirmed as specified behaviour rather than
+  defects:
+
+  1. "When I reloaded the page I had to resume draft, not a big deal." — Correct and designed.
+     The landing screen offers `Resume saved draft` (test 2, passed); the app deliberately never
+     boots straight into a draft. The pane choice did survive the reload once resumed, which is
+     what this test asserts.
+  2. "I could not expand the draft until after players picked their round numbers, also not a
+     big deal." — Correct and designed. That is Amendment 3's card-phase restriction, with
+     `CARD_PHASE_EXPAND_REASON` naming the reason on screen. The host hit the rule at exactly
+     the moment it applies.
+
+  The affordance this test's gap demanded was built under 02-09: the pool expand renders inert
+  with a visible reason instead of being omitted. Both observations above are recorded in the
+  expected text so a future re-run is not misled by them.
 
 ### 10. Pool filters
 expected: The filter bar has a search box, eighteen type buttons, a match-all toggle, a Mega filter, and `Clear filters`. Filtering narrows the grid and the count line updates. Tab moves into the type toolbar as ONE stop — arrow keys move between the eighteen buttons, Tab leaves the group. With no matches you get an empty state that names your query. Filters clear when a pick is committed.
@@ -100,22 +135,22 @@ expected: |
   Then the zero-ban case: start a second tournament with no bans at all. No disclosure
   appears — not `Bans (0)`, nothing. Absence is the specified behaviour there
   (`02-UI-SPEC.md:1013`), not a missing render.
-result: pending
-note: "No code change was warranted. `TopBar.tsx:209-218` matches `02-UI-SPEC.md:1013` and its four tests at `tests/ui/ban-mode.test.tsx:506-548` pass. The defect was this test's missing setup: with no setup step it inherited a zero-ban tournament from test 14 and then asserted a count, which is unobservable as written — so the host's `i don't see a disclosure anywhere` was a correct observation of correct behaviour. Setup added under plan 02-09. Awaiting re-verification."
+result: pass
+note: "Host verified 2026-08-19 with the added setup, and it passed. No code change was warranted at any point. `TopBar.tsx:211` matches `02-UI-SPEC.md:1013` and its tests at `tests/ui/ban-mode.test.tsx` pass. The original defect was this test's missing setup: with no setup step it inherited a zero-ban tournament from test 14 and then asserted a count, which is unobservable as written — so the host's `i don't see a disclosure anywhere` was a correct observation of correct behaviour. Setup added under plan 02-09; that setup is what made this test runnable."
 
 ## Summary
 
 total: 16
-passed: 14
+passed: 16
 issues: 0
-pending: 2
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
 
 - truth: "You can switch which pane is expanded, and that choice survives a page reload"
-  status: failed
+  status: resolved
   reason: "User reported: there is no way to expand the pool pane, but there is one for the draft board"
   severity: major
   test: 9
@@ -136,10 +171,10 @@ blocked: 0
     - "Reserve `min-height: var(--target-min)` on `.pane__chrome` so the panes stay aligned whether or not the slot has a control"
     - "Correct test 9's truth to: you can expand the draft board and restore it; the pool expands once the draft completes"
   constraint: "Do NOT render a WORKING pool expand button mid-draft. That lets pool-full hide the board, regressing ROADMAP criterion 5 and reopening T-02-24, whose mitigation is two independent coercions. Keep `poolExpandable = complete` and both coercions."
-  debug_session: .planning/debug/pool-pane-not-expandable.md
+  debug_session: .planning/debug/resolved/pool-pane-not-expandable.md
 
 - truth: "During a draft, the `Bans (n)` disclosure expands to list the banned species by name"
-  status: failed
+  status: resolved
   reason: "User reported: pass, but i don't see a disclosure anywhere"
   severity: major
   test: 16
@@ -155,4 +190,4 @@ blocked: 0
     - "Give test 16 its own setup: create a tournament with at least two bans, start it, then confirm `Bans (2)` in the top bar, expand to two names, and assert no button inside"
     - "Add the zero-ban non-render as an explicit second assertion — that is what the host actually verified, and it passed"
   constraint: "Close this gap in 02-UAT.md, not in src/. No implementation change is warranted."
-  debug_session: .planning/debug/bans-disclosure-not-visible.md
+  debug_session: .planning/debug/resolved/bans-disclosure-not-visible.md

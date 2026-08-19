@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "there is no way to expand the pool pane, but there is one for the draft board"
 created: 2026-08-14T21:17:02Z
-updated: 2026-08-14T21:32:00Z
+updated: 2026-08-19T00:00:00Z
 ---
 
 ## Current Focus
