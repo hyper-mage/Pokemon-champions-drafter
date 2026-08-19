@@ -378,26 +378,104 @@ export function selectResolvedOrder(state: DraftState, round: number): string[] 
 }
 
 /**
- * The slot on the clock, or `null` when the draft has not started or is finished.
+ * Does this tournament deal priority cards at all?
  *
- * Phase 1 pick order is strict alternation: round `r` runs `order[0]` then `order[1]`,
- * and the same arithmetic carries eight players unchanged. Phase 2 replaces this with
- * priority-card resolution, at which point the resolved order becomes another
- * materialized log entry rather than a computation here.
+ * The gate is 03-UI-SPEC's, and both halves are load-bearing. A migrated schema-2
+ * document carries no `schedule/compiled` — `migrateV2ToV3` performs no log surgery — and
+ * no `cards/played`, because that draft ran strict alternation and dealt nothing. Every
+ * document this build writes compiles a schedule before the draft starts, so the schedule
+ * is what separates a v3 draft standing at round 1 with every hand still full from a
+ * migrated one: their `cardsPlayed` are both empty and only the schedule tells them apart.
+ * The `cardsPlayed` half then catches a document whose schedule is missing or malformed
+ * but which has demonstrably dealt cards.
+ *
+ * One definition, three readers: `selectPhase` and `selectCurrentTurn` below, and the
+ * board's hand strips in `app.tsx`. Written out at each of them, the three would be free
+ * to disagree about whether a document deals cards — and the disagreement would show as a
+ * board rendering hands for a draft the turn selector was running without them.
+ */
+export function selectDealsCards(state: DraftState): boolean {
+  return state.schedule.length > 0 || state.cardsPlayed.length > 0;
+}
+
+/**
+ * Which mode the screen is in — and the ONE place that is decided (D-17).
+ *
+ * `app.tsx` branches on this to choose a panel; no component works it out. That is what
+ * makes "played but not yet resolved" unrepresentable as a screen state: the card phase
+ * lasts exactly as long as the round has no `order/resolved`, so there is no window in
+ * which the cards are all down and the app is pretending to pick. The boundary is a fact
+ * about the log rather than a flag anything sets, which is also why an imported document
+ * cannot declare a mode it is not in (T-03-29).
+ *
+ *   `'cards'`       the current round has not resolved, so a card is on the clock
+ *   `'picking'`     it has, and some team is still short of `config.rounds`
+ *   `'swapRounds'`  every team is full and this tournament runs swap rounds
+ *   `'complete'`    every team is full and it does not
+ *
+ * Two documents are deliberately `'picking'` rather than `'cards'`. A migrated schema-2
+ * draft deals no cards at all and must stay playable; and a document whose draft has not
+ * started has no rotation to put anybody on the clock, so a card panel there would name
+ * nobody. Both keep exactly the behaviour they had before the card phase existed.
+ */
+export function selectPhase(state: DraftState): 'cards' | 'picking' | 'swapRounds' | 'complete' {
+  if (selectIsComplete(state)) {
+    return state.config.swapRounds > 0 ? 'swapRounds' : 'complete';
+  }
+
+  if (state.order.length === 0) return 'picking';
+  if (!selectDealsCards(state)) return 'picking';
+
+  return selectResolvedOrder(state, selectCurrentRound(state)) === null ? 'cards' : 'picking';
+}
+
+/**
+ * The slot on the clock, or `null` when no pick is on it.
+ *
+ * `null` now covers THREE states rather than two: before the draft starts, after every
+ * team is full, and while the current round's cards are still being played. A caller that
+ * reads a null turn as "the draft is finished" is wrong in the third case — which is why
+ * `canApply(DRAFT_PICK_MADE)` gained `cardsNotResolved` and `undoCrossesRoundBoundary`
+ * stopped falling back to `config.rounds` in the same change that added the third.
+ *
+ * The order is READ from `order/resolved` rather than computed here. That is the point of
+ * materializing it: this build's comparator is not consulted about a round the room
+ * already played, so a later change to the tiebreak cannot silently reinterpret a
+ * finished draft.
+ *
+ * ## The one fallback, and what it is NOT
+ *
+ * A schema-2 document has no `order/resolved` for any round, and its picks were made in
+ * `state.order` by strict alternation. Falling back to `state.order` is what keeps that
+ * draft playable, and the log is right about it.
+ *
+ * The fallback is gated on `selectDealsCards` — a property of the DOCUMENT — and never on
+ * the round. Gated per round it would fire for every v3 round before its resolution, which
+ * is precisely the card phase, and the app would pick straight through the bidding it
+ * exists to run.
  */
 export function selectCurrentTurn(state: DraftState): Turn | null {
   if (state.order.length === 0) return null;
   if (selectIsComplete(state)) return null;
 
+  const round = selectCurrentRound(state);
   const pickIndex = state.picks.length;
-  const playerId = state.order[pickIndex % state.order.length];
-  if (playerId === undefined) return null;
+  const resolved = selectResolvedOrder(state, round);
 
-  return {
-    round: Math.floor(pickIndex / state.order.length) + 1,
-    playerId,
-    pickIndex,
-  };
+  if (resolved === null) {
+    // A document that deals cards and has not resolved this round is BIDDING, not picking.
+    if (selectDealsCards(state)) return null;
+
+    const fallbackId = state.order[pickIndex % state.order.length];
+    return fallbackId === undefined ? null : { round, playerId: fallbackId, pickIndex };
+  }
+
+  // `% resolved.length` rather than `% state.order.length`: a hand-edited document can
+  // carry a short order, and reading past its end must answer null rather than name a
+  // player the round never put on the clock. A zero-length order gives `NaN`, which
+  // indexes to `undefined` and lands on the same answer.
+  const playerId = resolved[pickIndex % resolved.length];
+  return playerId === undefined ? null : { round, playerId, pickIndex };
 }
 
 /** Display name for a configured player id, or `null` if the tournament has no such player. */

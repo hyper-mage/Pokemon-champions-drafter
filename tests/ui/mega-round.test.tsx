@@ -102,7 +102,9 @@ import type { SpriteMeta } from '../../src/adapters/roster-source';
 import { claimOwnership, CLAIM_WINDOW_MS, disposeTabLock } from '../../src/adapters/tab-lock';
 import { App } from '../../src/app';
 import {
+  cardsPlayed,
   draftStarted,
+  orderResolved,
   pickMade,
   poolBuilt,
   scheduleCompiled,
@@ -499,6 +501,22 @@ function seedSavedDraft(picks: readonly { playerId: string; monId: string; round
     ),
     stamp(draftStarted(['p1', 'p2'], 13), 2),
   ];
+
+  /*
+    Every round's priority cards, played and resolved up front.
+
+    This fixture is about the POOL during a Mega round, and a draft with no `order/resolved`
+    for the round it is standing in is in the card phase — where there is no pool grid to
+    assert on. Resolving every round hands the draft straight to picking, which is the state
+    these assertions were written against. Both players play the round's own number, so each
+    spends 1..6 once and the tie on value resolves back into `state.order`.
+  */
+  for (let round = 1; round <= APP_CONFIG.rounds; round++) {
+    for (const playerId of ['p1', 'p2']) {
+      log.push(stamp(cardsPlayed({ playerId, value: round, round }), log.length));
+    }
+    log.push(stamp(orderResolved(round, ['p1', 'p2']), log.length));
+  }
 
   picks.forEach((pick, pickIndex) => {
     log.push(stamp(pickMade({ ...pick, pickIndex }), log.length));

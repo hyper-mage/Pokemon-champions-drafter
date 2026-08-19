@@ -151,6 +151,39 @@ function migratedOpeningLog(): Action[] {
   ];
 }
 
+/**
+ * `count` picks with every round's cards played and resolved BEFORE that round's picks —
+ * the order the app actually writes them, and the shape a pick-legality fixture now needs.
+ *
+ * Both players play the round's own number, so each round ties on value and `seq` resolves
+ * it back into `state.order`. The pick order is therefore the same strict alternation the
+ * Phase 2 fixtures assumed, and every assertion about WHO is on the clock keeps its
+ * meaning — what changes is only that the round has a recorded order to read it from.
+ *
+ * It stops the moment `count` picks exist, which leaves the NEXT round unbid: a fixture is
+ * either mid-picking or mid-card-phase, never both, exactly as the app is.
+ */
+function withCardedPicks(log: Action[], count: number): Action[] {
+  const extended = [...log];
+  const push = (intent: Intent): void => {
+    extended.push(stamp(intent, nextSeqOf(extended)));
+  };
+
+  let pickIndex = 0;
+  for (let round = 1; round <= CONFIG.rounds; round++) {
+    for (const playerId of ORDER) push(cardsPlayed({ playerId, value: round, round }));
+    push(orderResolved(round, ORDER));
+
+    for (const playerId of ORDER) {
+      if (pickIndex >= count) return extended;
+      push(pickMade({ playerId, monId: POOL[pickIndex] as string, round, pickIndex }));
+      pickIndex += 1;
+    }
+  }
+
+  return extended;
+}
+
 /** Append `count` legal alternating picks, taking species off the top of the pool. */
 function withPicks(log: Action[], count: number): Action[] {
   const extended = [...log];
@@ -328,7 +361,9 @@ describe('apply', () => {
 
 describe('apply draft/pickUndone', () => {
   it('retracts the pick recorded by the targeted action', () => {
-    const log = withPicks(openingLog(), 3);
+    // Carded picks, because the assertion below reads the turn: a pick that leaves the
+    // draft mid-round needs that round's order on the log for anybody to be on the clock.
+    const log = withCardedPicks(openingLog(), 3);
     const lastPickSeq = (log[log.length - 1] as Action).seq;
     const undone = [...log, stamp(pickUndone(lastPickSeq), log.length)];
 
@@ -364,47 +399,48 @@ describe('apply draft/pickUndone', () => {
 // ---------------------------------------------------------------------------
 
 describe('canApply', () => {
+  /*
+    These fixtures resolve round 1's cards before the pick under test, and that is a
+    requirement rather than ceremony: a pick is not legal until the round it belongs to has
+    an order to be on the clock of. Their own reason — `cardsNotResolved` — has its own
+    block further down, so the cases here go on testing what they were written to test.
+  */
   it('accepts a legal pick', () => {
-    const state = fold(makeDoc(openingLog()));
+    const state = fold(makeDoc(withCardedPicks(openingLog(), 0)));
     const action = stamp(
       pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 0 }),
-      2,
+      20,
     );
 
     expect(canApply(state, action)).toEqual({ ok: true });
   });
 
   it('rejects a species that is not in the current available pool', () => {
-    const state = fold(
-      makeDoc([
-        ...openingLog(),
-        stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 0 }), 2),
-      ]),
-    );
+    const state = fold(makeDoc(withCardedPicks(openingLog(), 1)));
     // p2 is on the clock; venusaur has already gone.
     const action = stamp(
       pickMade({ playerId: 'p2', monId: 'venusaur', round: 1, pickIndex: 1 }),
-      3,
+      20,
     );
 
     expect(canApply(state, action)).toEqual({ ok: false, reason: 'notInPool' });
   });
 
   it('rejects a species that was never in the pool at all', () => {
-    const state = fold(makeDoc(openingLog()));
+    const state = fold(makeDoc(withCardedPicks(openingLog(), 0)));
     const action = stamp(
       pickMade({ playerId: 'p1', monId: 'missingno', round: 1, pickIndex: 0 }),
-      2,
+      20,
     );
 
     expect(canApply(state, action)).toEqual({ ok: false, reason: 'notInPool' });
   });
 
   it('rejects a pick by a player who is not on the clock', () => {
-    const state = fold(makeDoc(openingLog()));
+    const state = fold(makeDoc(withCardedPicks(openingLog(), 0)));
     const action = stamp(
       pickMade({ playerId: 'p2', monId: 'venusaur', round: 1, pickIndex: 0 }),
-      2,
+      20,
     );
 
     expect(canApply(state, action)).toEqual({ ok: false, reason: 'notYourTurn' });
@@ -434,19 +470,19 @@ describe('canApply', () => {
     // T-01-29. The store stamps round and pickIndex from the current turn, so this can
     // only arrive from an edited or imported log — which is exactly the path that must
     // not be able to write a pick into round 4 while round 1 is live.
-    const state = fold(makeDoc(openingLog()));
+    const state = fold(makeDoc(withCardedPicks(openingLog(), 0)));
 
     expect(
       canApply(
         state,
-        stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 4, pickIndex: 0 }), 2),
+        stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 4, pickIndex: 0 }), 20),
       ),
     ).toEqual({ ok: false, reason: 'wrongSlot' });
 
     expect(
       canApply(
         state,
-        stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 7 }), 2),
+        stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 7 }), 20),
       ),
     ).toEqual({ ok: false, reason: 'wrongSlot' });
   });

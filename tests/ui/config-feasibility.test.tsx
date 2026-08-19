@@ -56,10 +56,19 @@ vi.mock('../../src/adapters/id', () => ({
 
 import committedSnapshot from '../../public/data/roster.mb.json';
 import type { SpriteMeta } from '../../src/adapters/roster-source';
-import { isPoolBuiltAction, pickMade } from '../../src/core/actions';
+import { cardsPlayed, isPoolBuiltAction, orderResolved, pickMade } from '../../src/core/actions';
+import { resolvePickOrder } from '../../src/core/cards';
 import { drawPool } from '../../src/core/draw';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
-import { selectAvailablePool, selectCurrentTurn } from '../../src/core/selectors';
+import {
+  selectAvailablePool,
+  selectCardPlayOrder,
+  selectCardsPlayedThisRound,
+  selectCurrentRound,
+  selectCurrentTurn,
+  selectHand,
+  selectPhase,
+} from '../../src/core/selectors';
 import { dispatch, getDoc, getState } from '../../src/store';
 import { announce } from '../../src/ui/components/LiveRegion';
 import { ConfigScreen } from '../../src/ui/screens/ConfigScreen';
@@ -718,6 +727,40 @@ describe('the Mega requirement reaching the draw', () => {
 // The pool-dry invariant — pinned by a test, never guarded by code
 // ---------------------------------------------------------------------------
 
+/**
+ * Play out the current round's priority cards, if it is still being bid on.
+ *
+ * A draft with a compiled schedule opens in the card phase and there is no turn until the
+ * round resolves (D-17), so a test that drives real picks has to bid first — which is what
+ * the card panel does for the host. Everyone plays the lowest card still in hand, so each
+ * round is a tie on value and `resolvePickOrder` settles it on `seq`.
+ */
+function bidCurrentRound(): void {
+  const state = getState();
+  if (state === null) throw new Error('no draft state');
+  if (selectPhase(state) !== 'cards') return;
+
+  const round = selectCurrentRound(state);
+
+  for (const playerId of selectCardPlayOrder(state, round)) {
+    const live = getState();
+    if (live === null) throw new Error('no draft state');
+
+    const value = selectHand(live, playerId)[0];
+    if (value === undefined) throw new Error(`${playerId} has no card left in round ${round}`);
+
+    expect(dispatch(cardsPlayed({ playerId, value, round })).ok).toBe(true);
+  }
+
+  const bid = getState();
+  if (bid === null) throw new Error('no draft state');
+
+  const resolved = dispatch(
+    orderResolved(round, resolvePickOrder(selectCardsPlayedThisRound(bid, round))),
+  );
+  expect(resolved.ok).toBe(true);
+}
+
 describe('a pool drawn at Exact', () => {
   it('leaves the last picker exactly one option and never runs dry', () => {
     mount();
@@ -734,6 +777,8 @@ describe('a pool drawn at Exact', () => {
     // removes exactly one distinct id. So the final picker sees exactly `N − p×r + 1`,
     // which at the Exact preset is one.
     for (let pick = 0; pick < 11; pick++) {
+      bidCurrentRound();
+
       const state = getState();
       if (state === null) throw new Error('no draft state');
 

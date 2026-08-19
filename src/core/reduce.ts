@@ -45,6 +45,7 @@ import {
   selectCurrentTurn,
   selectHand,
   selectIsComplete,
+  selectPhase,
   selectResolvedOrder,
 } from './selectors';
 
@@ -77,7 +78,14 @@ export type RejectionReason =
   /** The round's pick order is already recorded, so nothing about it can still change. */
   | 'roundAlreadyResolved'
   /** Not every player has put a card down yet, so there is nothing to resolve. */
-  | 'roundNotComplete';
+  | 'roundNotComplete'
+  /**
+   * A pick was attempted while the round's cards are still on the table (D-17).
+   *
+   * Before this existed the null turn fell through to `draftComplete`, which does not
+   * merely under-describe the state — it names the opposite end of the draft.
+   */
+  | 'cardsNotResolved';
 
 export type CanApplyResult = { ok: true } | { ok: false; reason: RejectionReason };
 
@@ -251,6 +259,13 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
       if (!isPickMadeAction(action)) return reject('malformedPayload');
       if (state.order.length === 0) return reject('draftNotStarted');
       if (selectIsComplete(state)) return reject('draftComplete');
+
+      // AFTER the completion check and BEFORE the null turn, which is the whole of the
+      // ordering: the end of the draft keeps its own reason, and the card phase — the
+      // other state that yields a null turn — no longer borrows it. This makes a pick
+      // during bidding impossible through every path rather than merely unreachable
+      // through the UI (T-03-32).
+      if (selectPhase(state) === 'cards') return reject('cardsNotResolved');
 
       const turn = selectCurrentTurn(state);
       if (turn === null) return reject('draftComplete');

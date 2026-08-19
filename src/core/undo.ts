@@ -30,7 +30,7 @@
 
 import { isPickMadeAction, type PickMadeAction } from './actions';
 import type { DraftState, TournamentDoc } from './model';
-import { selectCurrentTurn } from './selectors';
+import { selectCurrentRound } from './selectors';
 
 /**
  * Index of the most recent `draft/pickMade` in the log, or `-1` when there is none.
@@ -146,11 +146,17 @@ export function undoCrossesRoundBoundary(
   const removed = lastPickAction(doc);
   if (removed === null) return null;
 
-  // `selectCurrentTurn` returns null once every team is full, and the draft is then
-  // standing on its last round rather than on round zero. Reporting 0 would make the
-  // final pick look like it crossed a boundary, which would put a dialog in front of the
-  // one undo a host is most likely to want.
-  const currentRound = selectCurrentTurn(state)?.round ?? state.config.rounds;
+  // The round the draft is STANDING IN, asked for directly rather than read off a turn.
+  //
+  // This used to take the turn's round and fall back to `config.rounds` when there was no
+  // turn — correct while the only turnless state was a finished draft, which does stand on
+  // its last round. The card phase is a second turnless state and the fallback was wrong
+  // for it: between two rounds of a six-round draft every undo would have been described
+  // to the host as reaching back from round six, and D-37's confirm would have appeared on
+  // the one undo it is meant to wave through. `selectCurrentRound` answers both states
+  // from the same arithmetic, and clamps at `config.rounds`, so the finished-draft
+  // behaviour the old fallback existed for is unchanged.
+  const currentRound = selectCurrentRound(state);
 
   return {
     crosses: removed.round < currentRound,
