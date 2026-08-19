@@ -25,7 +25,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Draft Skeleton on a Real URL** - Deployed, offline-capable two-player draft on the real Champions roster with undo, autosave, and working export (completed 2026-08-06)
 - [x] **Phase 2: Host-Configured Draft Night** - A real group drafts on one shared screen: config, N players, pool, host banlist, board, feasibility gate (completed 2026-08-12)
-- [ ] **Phase 3: Compiled Rules, Priority Cards, Swaps** - Composition requirements compile into a typed round schedule; cards decide turn order, swaps respect slot constraints
+- [x] **Phase 3: Compiled Rules, Priority Cards, Swaps** - Composition requirements compile into a typed round schedule; cards decide turn order, swaps respect slot constraints (completed 2026-08-19)
 - [ ] **Phase 4: Blind and Snake Bans** - The ban ritual on one shared screen, with a real pass-the-device flow that cannot leak
 - [ ] **Phase 5: Full Tournament — Brackets, Standings, Archive** - Round robin, seeded cut, single elim, match records, recap, and roster refresh across a regulation rotation
 
@@ -218,7 +218,7 @@ Plans:
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [ ] 03-12-PLAN.md — the three-metre legibility pass, the screen-reader pass, and the card-mechanic playtest *(not autonomous — three blocking checkpoints)*
+- [x] 03-12-PLAN.md — the three-metre legibility pass, the screen-reader pass, and the card-mechanic playtest *(not autonomous — three blocking checkpoints)*
 
 **UI hint**: yes
 **Notes**: Research need HIGH on the rules compiler — the compilable-vs-non-compilable rule-class taxonomy is reasoned analysis with no prior art found in any surveyed draft tooling; validate the class boundaries against real host configuration attempts and keep the "pick guard" escape hatch as a named, unbuilt extension point rather than building it speculatively. Research need MEDIUM on the priority-card redesign — an El Grande-style open-sequential mechanic retrofitted mid-spec; the tiebreak rule and the play flow should be playtested with the target 4–8 friend group, not just implemented from the write-up. Ordering inside this phase is not negotiable: the compiler establishes typed slots, and swaps built before typed slots exist can silently violate composition rules with nothing left to catch them, because the compiler deliberately removes runtime validation. **Plan count revised from 3 to 12 at planning time**: 23 requirements over three strictly ordered units, a schema 2 to 3 migration, five new action families and eleven new or reshaped surfaces do not fit three plans at the 2-3-task, ~50%-context ceiling — Phase 2 was roadmapped at 8 and shipped 13 for less. The three units survive as the wave order: 03-01 through 03-06 are the compiler, 03-07 through 03-09 the cards, 03-10 and 03-11 the swaps, and 03-12 is the physical and human acceptance happy-dom cannot give.
@@ -267,7 +267,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
-| 3. Compiled Rules, Priority Cards, Swaps | 11/12 | In Progress|  |
+| 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 0/1 | Not started | - |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
