@@ -256,3 +256,11 @@ validator cannot be added silently.
 - **`selectIsComplete` is untouched**, so D-31's second completion state is still 03-11's to add.
 - **Deferred items 5 and 6 are addressed to 03-11 specifically** — undo's allow-list, and §11's
   unpluralised budget line.
+
+## Self-Check: PASSED
+
+All 16 files verified present on disk (2 created, 14 modified). All 5 commits verified in
+`git log`: `d5ab062` (RED), `cbf8ad7`, `84bd7a2`, `6f44950`, `b3a74c0`. No file deletions in
+any commit (`git diff --diff-filter=D` empty at every step), no untracked files left behind,
+`package.json` untouched, and no `node_modules` link, junction or install created anywhere in
+the worktree.
