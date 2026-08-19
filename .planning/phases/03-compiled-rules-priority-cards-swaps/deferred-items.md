@@ -127,11 +127,11 @@ number, in whichever plan next edits that file.
 
 ---
 
-## 5. `swap/made` is not on `isUndoable`'s allow-list yet
+## 5. ~~`swap/made` is not on `isUndoable`'s allow-list yet~~ — SETTLED in 03-11
 
 **Found during:** 03-10 Task 1
-**Owner:** 03-11 — the plan that adds `swap/passed`
-**Severity:** UX gap, not a correctness bug
+**Settled by:** 03-11 Task 1
+**Status:** closed
 
 `src/core/undo.ts`'s `isUndoable` allows `draft/pickMade`, `cards/played` and
 `order/resolved`. `swap/made` is deliberately not added here, so `Undo last move` currently
@@ -156,13 +156,45 @@ directly.
 widen `UndoRemoval.kind` to include `'swap'` and `'pass'`, carry both mon ids on the removal,
 and wire the two unused announcement rows in 03-UI-SPEC §Live-region announcements.
 
+**What 03-11 did.** All four, in the order above, plus one thing the handover did not
+predict.
+
+`isUndoable` gained `isSwapMadeAction` and `isSwapPassedAction` together, exactly as 03-09
+specified. `UndoRemoval.kind` is now `'pick' | 'card' | 'order' | 'swap' | 'pass'`.
+
+The type widened by **two** fields rather than one. `monId` was redefined as "the species
+returning to the POOL" — a pick's own species, or a swap's incoming one — and a sibling
+`outMonId` carries "the species returning to the SLOT", which only a swap has. A pass needed
+a third: `swapRound`, `null` for every other kind *and for a mid-draft swap*, whose
+`swapRound` is `0` and which belongs to no dedicated round. That null is what the crossing
+check reads, so the field earns its place rather than merely describing a pass.
+
+Both announcement rows are wired in `src/store.ts`'s `undoAnnouncement`, and
+`resolveSpeciesName` is now consulted for a pick **and** a swap, which its doc block says.
+
+**The unpredicted part: a swap and a pass never raise the round-boundary confirm.**
+`undoCrossesRoundBoundary` used to compare `removed.round` against the current round for
+every kind. A swap's `round` is the PICK round of the slot it changed, which is routinely
+round 1 while the draft stands at round 6 — so the bare comparison would have fired
+`UNDO_BOUNDARY_CONFIRM` on almost every swap undo, and that dialog reads *"This undoes
+{name}'s pick from round {r}"*, which is pick-specific prose and a plain untruth over a
+swap. 03-UI-SPEC §12 lists exactly three new confirm sets for this phase and neither of
+these is among them, so the spec already held this position. The comparison is now gated on
+an explicit `ROUND_COMPARABLE_KINDS` allow-list of `['pick', 'card']`, which leaves the
+three pre-existing kinds byte-identical in behaviour.
+
+`undo.ts` and `store.ts` were **not** in 03-11's `files_modified` either. They were changed
+anyway, under deviation Rule 2: `Undo last move` silently skipping the one move a host is
+most likely to regret is a correctness gap in a shipped control, and the execution brief
+assigned this item to this plan explicitly.
+
 ---
 
-## 6. 03-UI-SPEC's swap-count copy slots are not pluralised
+## 6. ~~03-UI-SPEC's swap-count copy slots are not pluralised~~ — SETTLED in 03-11
 
 **Found during:** 03-10 Task 3
-**Owner:** 03-11 for the swap-panel line; 03-10 already fixed the pool-header one
-**Severity:** copy defect in the most common configuration
+**Settled by:** 03-11 Task 2 (03-10 had already fixed the pool-header one)
+**Status:** closed
 
 03-UI-SPEC writes the budget slots literally as `{name} has {n} swaps left` (§10, pool header)
 and `{playerName} has {n} swaps left.` (§11, swap panel). Rendered verbatim at one remaining
@@ -176,9 +208,19 @@ and pluralised the swap confirm's `{n} swaps` slot via a `swaps()` helper in
 this class of slot (`picks`, `players`, `bans`, `steps`). `confirm-copy.ts` states the reason:
 a visible grammar error in a dialog reads as a tool that was not finished.
 
-**What is left.** §11's swap-panel line is 03-11's surface and should take the same treatment.
-Consider exporting one `swaps(count)` helper rather than a third private copy.
+**What 03-11 did.** Took the suggestion rather than the minimum. `swaps` is now **exported**
+from `confirm-copy.ts` — alone among the five helpers, and the module says why — and both
+remaining readers call it: `SwapPanel`'s §11 line (`Cy has 1 swap left.`) and `PoolGrid`'s
+§10 line, whose private copy of the rule was replaced. One plural rule, three surfaces, no
+third copy to drift.
 
-**What it is not.** Not a deviation from the spec's substance — the numbers, the subject and
-the sentence order are unchanged. Only the plural agreement differs, and the spec's own
-copywriting contract is what requires the change.
+The SENTENCES stay where they are. §10's line and §11's are two rows of the copy table and
+differ in more than the number — a shared composer taking a noun would put one string behind
+two contract rows, which is the argument `CLEAR_MEGA_FORME_BANLIST_CONFIRM` already makes
+against parameterizing its sibling.
+
+Asserted at one remaining in `tests/ui/swap-rounds.test.tsx`, on the whole sentence.
+
+**What it was not.** Not a deviation from the spec's substance — the numbers, the subject and
+the sentence order are unchanged. Only the plural agreement differed, and the spec's own
+copywriting contract is what required the change.
