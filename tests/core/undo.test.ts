@@ -22,6 +22,8 @@ import {
   DRAFT_STARTED,
   POOL_BUILT,
   SCHEDULE_COMPILED,
+  SWAP_MADE,
+  SWAP_PASSED,
   cardsPlayed,
   draftStarted,
   orderResolved,
@@ -29,6 +31,8 @@ import {
   pickUndone,
   poolBuilt,
   scheduleCompiled,
+  swapMade,
+  swapPassed,
   type Action,
   type Intent,
   type RoundSpec,
@@ -45,9 +49,12 @@ import {
   selectCardTurn,
   selectCurrentTurn,
   selectHand,
+  selectIsTournamentComplete,
   selectPhase,
   selectPickCount,
   selectResolvedOrder,
+  selectSwapRoundPosition,
+  selectTeams,
 } from '../../src/core/selectors';
 import {
   canUndo,
@@ -766,5 +773,148 @@ describe('undoing a resolved pick order', () => {
     expect(removal?.removedCount).toBe(1);
     expect(removal?.cardValue).toBeNull();
     expect(undoLast(doc).log).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Swaps and passes join the stack — 03-11, closing deferred item 5
+//
+// Until this plan `Undo last move` stepped PAST a swap to the last pick, and the swap
+// survived. The two attach TOGETHER because `UndoRemoval` had to widen for both at once:
+// a swap needs two mon ids where a pick needs one, and a pass needs a swap round where
+// neither of the others has one.
+// ---------------------------------------------------------------------------
+
+const SWAPPY_CONFIG: TournamentConfig = { ...CONFIG, swapBudget: 2, swapRounds: 1 };
+
+function makeSwappyDoc(log: readonly Action[]): TournamentDoc {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'tournament-fixture',
+    createdAt: CREATED_AT,
+    config: SWAPPY_CONFIG,
+    rng: { seed: SEED, cursor: 0 },
+    log: [...log],
+  };
+}
+
+/** Every round resolved and picked, so the picks are complete and a swap round is open. */
+function fullyPicked(): Action[] {
+  let log = v3OpeningLog();
+  for (let round = 1; round <= CONFIG.rounds; round++) log = withResolvedRound(log, round);
+  return log;
+}
+
+function append(log: readonly Action[], intent: Intent): Action[] {
+  const seq = log.reduce((highest, action) => Math.max(highest, action.seq), -1) + 1;
+  return [...log, stamp(intent, seq)];
+}
+
+describe('undoing a swap', () => {
+  /** `p1`'s round-1 `venusaur` replaced by the one id the draft left in the pool. */
+  function swapped(swapRound: number): TournamentDoc {
+    return makeSwappyDoc(
+      append(
+        fullyPicked(),
+        swapMade({
+          playerId: 'p1',
+          round: 1,
+          outMonId: 'venusaur',
+          inMonId: 'feraligatr',
+          swapRound,
+        }),
+      ),
+    );
+  }
+
+  it('is the top of the stack, rather than the pick underneath it', () => {
+    // The whole of deferred item 5. Before this, `lastUndoableAction` reached PAST the
+    // swap to the last pick and the swap survived the undo that was meant to remove it.
+    const doc = swapped(1);
+    expect(lastUndoableAction(doc)?.type).toBe(SWAP_MADE);
+    expect(undoRemoval(doc)?.kind).toBe('swap');
+  });
+
+  it('carries BOTH mon ids, which is why the type had to widen', () => {
+    const removal = undoRemoval(swapped(1));
+
+    // `monId` is what goes back to the POOL; `outMonId` is what goes back to the SLOT.
+    // 03-UI-SPEC's `Undo, swap` row names both, and one field could not say it.
+    expect(removal?.monId).toBe('feraligatr');
+    expect(removal?.outMonId).toBe('venusaur');
+    expect(removal?.playerId).toBe('p1');
+    expect(removal?.round).toBe(1);
+    expect(removal?.swapRound).toBe(1);
+    expect(removal?.cardValue).toBeNull();
+    expect(removal?.removedCount).toBe(1);
+  });
+
+  it('restores the slot and takes the incoming species back out of the pool', () => {
+    const doc = swapped(1);
+
+    const before = fold(doc);
+    expect(selectTeams(before)['p1']?.[0]).toBe('feraligatr');
+    expect(selectAvailablePool(before)).toContain('venusaur');
+
+    const after = fold(undoLast(doc));
+    expect(selectTeams(after)['p1']?.[0]).toBe('venusaur');
+    expect(selectAvailablePool(after)).toContain('feraligatr');
+    expect(selectAvailablePool(after)).not.toContain('venusaur');
+  });
+
+  it('never asks for a confirm, whichever round the slot belongs to', () => {
+    // 03-UI-SPEC §12 lists exactly three new confirm sets and none of them is "undo a
+    // swap". A swap is the most recent move and its undo takes nothing else with it, so
+    // the round comparison D-37 makes for a PICK does not apply — and the boundary
+    // confirm's copy is pick-specific prose that would read as a lie here.
+    for (const swapRound of [0, 1]) {
+      const doc = swapped(swapRound);
+      const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+      expect(crossing?.kind).toBe('swap');
+      expect(crossing?.crosses).toBe(false);
+    }
+  });
+});
+
+describe('undoing a pass', () => {
+  function passed(): TournamentDoc {
+    return makeSwappyDoc(append(fullyPicked(), swapPassed({ playerId: 'p2', swapRound: 1 })));
+  }
+
+  it('is undoable, because a pass is a recorded action rather than an absence', () => {
+    const doc = passed();
+    expect(lastUndoableAction(doc)?.type).toBe(SWAP_PASSED);
+
+    const removal = undoRemoval(doc);
+    expect(removal?.kind).toBe('pass');
+    expect(removal?.playerId).toBe('p2');
+    expect(removal?.swapRound).toBe(1);
+    expect(removal?.monId).toBeNull();
+    expect(removal?.outMonId).toBeNull();
+    expect(removal?.cardValue).toBeNull();
+  });
+
+  it('puts the swap round’s clock back on the player who passed', () => {
+    const doc = passed();
+    expect(selectSwapRoundPosition(fold(doc), 1)?.playerId).toBe('p1');
+    expect(selectSwapRoundPosition(fold(undoLast(doc)), 1)?.playerId).toBe('p2');
+  });
+
+  it('never asks for a confirm', () => {
+    const doc = passed();
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+    expect(crossing?.kind).toBe('pass');
+    expect(crossing?.crosses).toBe(false);
+  });
+
+  it('reopens a tournament the last pass had completed', () => {
+    // D-31's second completion state, walked backwards. The export panels close again,
+    // which is the point: an undone pass means the teams can still change.
+    let log = append(fullyPicked(), swapPassed({ playerId: 'p2', swapRound: 1 }));
+    log = append(log, swapPassed({ playerId: 'p1', swapRound: 1 }));
+
+    const doc = makeSwappyDoc(log);
+    expect(selectIsTournamentComplete(fold(doc))).toBe(true);
+    expect(selectIsTournamentComplete(fold(undoLast(doc)))).toBe(false);
   });
 });

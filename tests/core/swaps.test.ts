@@ -26,8 +26,11 @@ import {
   poolBuilt,
   scheduleCompiled,
   SWAP_MADE,
+  SWAP_PASSED,
   swapMade,
+  swapPassed,
   isSwapMadeAction,
+  isSwapPassedAction,
   type Action,
   type AnyAction,
   type Intent,
@@ -46,6 +49,13 @@ import type { MegaForme, RosterEntry } from '../../src/core/roster/types';
 import {
   selectAvailablePool,
   selectCurrentTurn,
+  selectIsComplete,
+  selectIsTournamentComplete,
+  selectPhase,
+  selectResolvedOrder,
+  selectSwapOrderSource,
+  selectSwapRoundOrder,
+  selectSwapRoundPosition,
   selectSwapsRemaining,
   selectSwapTargets,
   selectTeams,
@@ -610,5 +620,387 @@ describe('a swapped document survives the round trip', () => {
     expect(reloaded.swaps).toEqual(original.swaps);
     expect(selectAvailablePool(reloaded)).toEqual(selectAvailablePool(original));
     expect(selectSwapsRemaining(reloaded, 'p1')).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dedicated swap rounds — SWAP-03, SWAP-04, SWAP-07, D-28…D-31.
+//
+// The fixture runs the draft to completion, which for two players over six rounds is
+// twelve picks out of a thirteen-id pool. The single leftover is deliberate: it is one id
+// away from D-32's Exact case, and it is what makes a swap-round swap possible at all
+// without somebody dropping first.
+// ---------------------------------------------------------------------------
+
+/** The same tournament, with `n` dedicated swap rounds after the last pick. */
+function configWithSwapRounds(swapRounds: number, swapBudget = 2): TournamentConfig {
+  return { ...CONFIG, swapRounds, swapBudget };
+}
+
+/** Every round bid, resolved and picked — `selectIsComplete` is true on this fold. */
+function completeLog(): Action[] {
+  return withCardedPicks(openingLog(), CONFIG.players.length * CONFIG.rounds);
+}
+
+function push(log: readonly Action[], intent: Intent): Action[] {
+  return [...log, stamp(intent, nextSeqOf(log))];
+}
+
+describe('swapPassed, the action', () => {
+  it('carries only the player and the swap round, and never the envelope', () => {
+    expect(swapPassed({ playerId: 'p1', swapRound: 2 })).toEqual({
+      type: SWAP_PASSED,
+      playerId: 'p1',
+      swapRound: 2,
+    });
+  });
+
+  it('accepts a well-formed pass and refuses one missing swapRound', () => {
+    expect(isSwapPassedAction(stamp(swapPassed({ playerId: 'p1', swapRound: 1 }), 99))).toBe(true);
+
+    const bad = { type: SWAP_PASSED, playerId: 'p1', seq: 99, at: 1, actorId: 'host' };
+    expect(isSwapPassedAction(bad as unknown as AnyAction)).toBe(false);
+  });
+});
+
+describe('selectSwapRoundOrder — D-28, SWAP-04', () => {
+  it('is the reverse of the LAST round’s resolved order', () => {
+    const state = fold(makeDoc(completeLog(), configWithSwapRounds(2)));
+
+    expect(selectResolvedOrder(state, CONFIG.rounds)).toEqual(ORDER);
+    expect(selectSwapRoundOrder(state)).toEqual([...ORDER].reverse());
+    expect(selectSwapOrderSource(state)).toBe('lastRound');
+  });
+
+  it('falls back to the reverse of the starting order, and SAYS so', () => {
+    // A migrated schema-2 document: picks by strict alternation, no `order/resolved`
+    // anywhere. The order is still deterministic; what changes is which source it came
+    // from, and SWAP-04 requires that to be explicit rather than silent.
+    let log = openingLog();
+    let pickIndex = 0;
+    for (let round = 1; round <= CONFIG.rounds; round++) {
+      for (const playerId of ORDER) {
+        log = push(log, pickMade({ playerId, monId: POOL[pickIndex] as string, round, pickIndex }));
+        pickIndex += 1;
+      }
+    }
+
+    const state = fold(makeDoc(log, configWithSwapRounds(1)));
+    expect(selectResolvedOrder(state, CONFIG.rounds)).toBeNull();
+    expect(selectSwapRoundOrder(state)).toEqual([...ORDER].reverse());
+    expect(selectSwapOrderSource(state)).toBe('startingOrder');
+  });
+
+  it('never aliases the resolved order it reversed', () => {
+    const state = fold(makeDoc(completeLog(), configWithSwapRounds(1)));
+    selectSwapRoundOrder(state).push('intruder');
+    expect(selectSwapRoundOrder(state)).toEqual([...ORDER].reverse());
+  });
+});
+
+describe('selectSwapRoundPosition — the clock a swap round runs on', () => {
+  it('starts on whoever picked LAST in the last round', () => {
+    const state = fold(makeDoc(completeLog(), configWithSwapRounds(2)));
+    expect(selectSwapRoundPosition(state, 1)).toEqual({ playerId: 'p2', index: 0 });
+  });
+
+  it('is null while the picks are still running', () => {
+    const state = fold(makeDoc(armedLog(), configWithSwapRounds(2)));
+    expect(selectSwapRoundPosition(state, 1)).toBeNull();
+  });
+
+  it('is null for a swap round this tournament does not have', () => {
+    const state = fold(makeDoc(completeLog(), configWithSwapRounds(1)));
+    expect(selectSwapRoundPosition(state, 0)).toBeNull();
+    expect(selectSwapRoundPosition(state, 2)).toBeNull();
+  });
+
+  it('advances by one on a pass, and the budget is untouched', () => {
+    const before = fold(makeDoc(completeLog(), configWithSwapRounds(1)));
+    expect(selectSwapsRemaining(before, 'p2')).toBe(2);
+
+    const log = push(completeLog(), swapPassed({ playerId: 'p2', swapRound: 1 }));
+    const after = fold(makeDoc(log, configWithSwapRounds(1)));
+
+    expect(selectSwapRoundPosition(after, 1)).toEqual({ playerId: 'p1', index: 1 });
+    // A pass is not a spend — D-29, and 03-RESEARCH's budget row.
+    expect(selectSwapsRemaining(after, 'p2')).toBe(2);
+  });
+
+  it('advances by one on a swap as well, counting BOTH kinds of move', () => {
+    let log = push(completeLog(), swapPassed({ playerId: 'p2', swapRound: 1 }));
+    log = push(
+      log,
+      swapMade({
+        playerId: 'p1',
+        round: 2,
+        outMonId: 'blastoise',
+        inMonId: 'feraligatr',
+        swapRound: 1,
+      }),
+    );
+
+    const state = fold(makeDoc(log, configWithSwapRounds(2)));
+    // Round 1 is finished, so it has no clock left.
+    expect(selectSwapRoundPosition(state, 1)).toBeNull();
+    // Round 2 opens on the same order, from the top.
+    expect(selectSwapRoundPosition(state, 2)).toEqual({ playerId: 'p2', index: 0 });
+  });
+});
+
+describe('selectIsTournamentComplete — the second completion state, D-31', () => {
+  it('coincides with selectIsComplete exactly when swapRounds is 0', () => {
+    const state = fold(makeDoc(completeLog(), configWithSwapRounds(0)));
+    expect(selectIsComplete(state)).toBe(true);
+    expect(selectIsTournamentComplete(state)).toBe(true);
+  });
+
+  it('disagrees with selectIsComplete until every player has moved in every swap round', () => {
+    const one = configWithSwapRounds(1);
+
+    const opened = fold(makeDoc(completeLog(), one));
+    expect(selectIsComplete(opened)).toBe(true);
+    expect(selectIsTournamentComplete(opened)).toBe(false);
+
+    const half = push(completeLog(), swapPassed({ playerId: 'p2', swapRound: 1 }));
+    const midway = fold(makeDoc(half, one));
+    expect(selectIsComplete(midway)).toBe(true);
+    expect(selectIsTournamentComplete(midway)).toBe(false);
+
+    const all = push(half, swapPassed({ playerId: 'p1', swapRound: 1 }));
+    const finished = fold(makeDoc(all, one));
+    expect(selectIsComplete(finished)).toBe(true);
+    expect(selectIsTournamentComplete(finished)).toBe(true);
+  });
+
+  it('is false while the picks are unfinished, whatever the swap rounds say', () => {
+    const state = fold(makeDoc(armedLog(), configWithSwapRounds(0)));
+    expect(selectIsComplete(state)).toBe(false);
+    expect(selectIsTournamentComplete(state)).toBe(false);
+  });
+
+  it('needs the SECOND swap round too', () => {
+    const two = configWithSwapRounds(2);
+
+    let log = push(completeLog(), swapPassed({ playerId: 'p2', swapRound: 1 }));
+    log = push(log, swapPassed({ playerId: 'p1', swapRound: 1 }));
+    expect(selectIsTournamentComplete(fold(makeDoc(log, two)))).toBe(false);
+
+    log = push(log, swapPassed({ playerId: 'p2', swapRound: 2 }));
+    log = push(log, swapPassed({ playerId: 'p1', swapRound: 2 }));
+    expect(selectIsTournamentComplete(fold(makeDoc(log, two)))).toBe(true);
+  });
+});
+
+describe('selectPhase reaches its swapRounds arm', () => {
+  it('is swapRounds while they are pending and stays there until they are done', () => {
+    const one = configWithSwapRounds(1);
+    expect(selectPhase(fold(makeDoc(completeLog(), one)))).toBe('swapRounds');
+
+    const half = push(completeLog(), swapPassed({ playerId: 'p2', swapRound: 1 }));
+    expect(selectPhase(fold(makeDoc(half, one)))).toBe('swapRounds');
+  });
+});
+
+describe('apply(SWAP_PASSED)', () => {
+  it('records the pass and changes nothing else about the fold', () => {
+    const before = fold(makeDoc(completeLog(), configWithSwapRounds(1)));
+    const after = apply(before, stamp(swapPassed({ playerId: 'p2', swapRound: 1 }), 99));
+
+    expect(after.passes).toEqual([{ playerId: 'p2', swapRound: 1, seq: 99 }]);
+    expect(after.picks).toEqual(before.picks);
+    expect(after.swaps).toEqual(before.swaps);
+    expect(selectAvailablePool(after)).toEqual(selectAvailablePool(before));
+  });
+
+  it('ignores a malformed pass rather than folding a pass of undefined', () => {
+    const before = fold(makeDoc(completeLog(), configWithSwapRounds(1)));
+    const malformed = { type: SWAP_PASSED, playerId: 'p2', seq: 99, at: 1, actorId: 'host' };
+    expect(apply(before, malformed as unknown as AnyAction)).toBe(before);
+  });
+
+  it('takes seq off the ENVELOPE, so a log with gaps stays addressable', () => {
+    const before = fold(makeDoc(completeLog(), configWithSwapRounds(1)));
+    const after = apply(before, stamp(swapPassed({ playerId: 'p2', swapRound: 1 }), 4242));
+    expect(after.passes[0]?.seq).toBe(4242);
+  });
+});
+
+describe('canApply(SWAP_PASSED)', () => {
+  const one = configWithSwapRounds(1);
+
+  it('accepts the player the swap-round clock names', () => {
+    const state = fold(makeDoc(completeLog(), one));
+    expect(canApply(state, stamp(swapPassed({ playerId: 'p2', swapRound: 1 }), 99))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('refuses a malformed payload', () => {
+    const state = fold(makeDoc(completeLog(), one));
+    const malformed = { type: SWAP_PASSED, playerId: 'p2', seq: 99, at: 1, actorId: 'host' };
+    expect(reason(canApply(state, malformed as unknown as AnyAction))).toBe('malformedPayload');
+  });
+
+  it('refuses a pass before the draft has started', () => {
+    const state = fold(makeDoc([], one));
+    expect(reason(canApply(state, stamp(swapPassed({ playerId: 'p2', swapRound: 1 }), 99)))).toBe(
+      'draftNotStarted',
+    );
+  });
+
+  it('refuses a pass while picks are still owed — notSwapRound', () => {
+    const state = fold(makeDoc(armedLog(), one));
+    expect(reason(canApply(state, stamp(swapPassed({ playerId: 'p1', swapRound: 1 }), 99)))).toBe(
+      'notSwapRound',
+    );
+  });
+
+  it('refuses a swap round this tournament does not have — notSwapRound', () => {
+    const state = fold(makeDoc(completeLog(), one));
+    expect(reason(canApply(state, stamp(swapPassed({ playerId: 'p2', swapRound: 2 }), 99)))).toBe(
+      'notSwapRound',
+    );
+    expect(reason(canApply(state, stamp(swapPassed({ playerId: 'p2', swapRound: 0 }), 99)))).toBe(
+      'notSwapRound',
+    );
+  });
+
+  it('refuses a later swap round while an earlier one is unfinished — notSwapRound', () => {
+    const state = fold(makeDoc(completeLog(), configWithSwapRounds(2)));
+    expect(reason(canApply(state, stamp(swapPassed({ playerId: 'p2', swapRound: 2 }), 99)))).toBe(
+      'notSwapRound',
+    );
+  });
+
+  it('refuses a player the clock has not reached — notYourTurn', () => {
+    const state = fold(makeDoc(completeLog(), one));
+    expect(reason(canApply(state, stamp(swapPassed({ playerId: 'p1', swapRound: 1 }), 99)))).toBe(
+      'notYourTurn',
+    );
+  });
+
+  it('refuses a pass into a round every player has already moved in — swapRoundComplete', () => {
+    let log = push(completeLog(), swapPassed({ playerId: 'p2', swapRound: 1 }));
+    log = push(log, swapPassed({ playerId: 'p1', swapRound: 1 }));
+
+    const state = fold(makeDoc(log, one));
+    expect(reason(canApply(state, stamp(swapPassed({ playerId: 'p2', swapRound: 1 }), 99)))).toBe(
+      'swapRoundComplete',
+    );
+  });
+});
+
+describe('canApply(SWAP_MADE) in a dedicated round — D-29, one budget', () => {
+  const one = configWithSwapRounds(1);
+
+  /** `p2` picked second in round 2, which is `POOL[3]` — `garchomp`. */
+  const roundSwap: Intent = swapMade({
+    playerId: 'p2',
+    round: 2,
+    outMonId: 'garchomp',
+    inMonId: 'feraligatr',
+    swapRound: 1,
+  });
+
+  it('accepts the player the SWAP-ROUND clock names, not the pick clock', () => {
+    const state = fold(makeDoc(completeLog(), one));
+    // The pick clock is null once every team is full — that is exactly why this arm widens.
+    expect(selectCurrentTurn(state)).toBeNull();
+    expect(canApply(state, stamp(roundSwap, 99))).toEqual({ ok: true });
+  });
+
+  it('refuses the player the swap-round clock has not reached', () => {
+    const state = fold(makeDoc(completeLog(), one));
+    const wrong = swapMade({
+      playerId: 'p1',
+      round: 2,
+      outMonId: 'blastoise',
+      inMonId: 'feraligatr',
+      swapRound: 1,
+    });
+    expect(reason(canApply(state, stamp(wrong, 99)))).toBe('notYourTurn');
+  });
+
+  it('still refuses noSwapsLeft — ONE budget covers both windows', () => {
+    // `p2` spends the whole allowance inside the swap rounds. There is no second
+    // allowance waiting for the dedicated round, which is D-29 as an assertion rather
+    // than as a comment.
+    let log = push(
+      completeLog(),
+      swapMade({
+        playerId: 'p2',
+        round: 2,
+        outMonId: 'garchomp',
+        inMonId: 'feraligatr',
+        swapRound: 1,
+      }),
+    );
+    log = push(log, swapPassed({ playerId: 'p1', swapRound: 1 }));
+    log = push(
+      log,
+      swapMade({
+        playerId: 'p2',
+        round: 2,
+        outMonId: 'feraligatr',
+        inMonId: 'garchomp',
+        swapRound: 2,
+      }),
+    );
+    log = push(log, swapPassed({ playerId: 'p1', swapRound: 2 }));
+
+    const state = fold(makeDoc(log, configWithSwapRounds(3, 2)));
+    expect(selectSwapsRemaining(state, 'p2')).toBe(0);
+
+    const third = swapMade({
+      playerId: 'p2',
+      round: 2,
+      outMonId: 'garchomp',
+      inMonId: 'feraligatr',
+      swapRound: 3,
+    });
+    expect(reason(canApply(state, stamp(third, 99)))).toBe('noSwapsLeft');
+  });
+
+  it('refuses a mid-draft swap once the picks are complete — the pick clock is gone', () => {
+    const state = fold(makeDoc(completeLog(), one));
+    const midDraft = swapMade({
+      playerId: 'p2',
+      round: 2,
+      outMonId: 'garchomp',
+      inMonId: 'feraligatr',
+      swapRound: 0,
+    });
+    expect(reason(canApply(state, stamp(midDraft, 99)))).toBe('notYourTurn');
+  });
+});
+
+describe('a passed document survives the round trip', () => {
+  it('reproduces every pass exactly after export, import and fold', () => {
+    let log = push(completeLog(), swapPassed({ playerId: 'p2', swapRound: 1 }));
+    log = push(
+      log,
+      swapMade({
+        playerId: 'p1',
+        round: 2,
+        outMonId: 'blastoise',
+        inMonId: 'feraligatr',
+        swapRound: 1,
+      }),
+    );
+
+    const doc = makeDoc(log, configWithSwapRounds(1));
+    const original = fold(doc);
+
+    const text = JSON.stringify(doc);
+    const result = parseTournamentFile(text, text.length);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reloaded = fold(result.doc);
+    expect(reloaded.passes).toEqual(original.passes);
+    expect(reloaded.swaps).toEqual(original.swaps);
+    expect(selectIsTournamentComplete(reloaded)).toBe(true);
+    expect(selectIsTournamentComplete(reloaded)).toBe(selectIsTournamentComplete(original));
   });
 });

@@ -1717,3 +1717,67 @@ describe('a swap/made log entry', () => {
     expect(state.swaps).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// swap/passed — 03-11
+// ---------------------------------------------------------------------------
+
+/** A pass in the first dedicated swap round, with the same deliberate `seq` gap. */
+const PASS_ENTRY: Record<string, unknown> = {
+  type: 'swap/passed',
+  playerId: 'p1',
+  swapRound: 1,
+  seq: 620,
+  at: 1_770_000_000_020,
+  actorId: 'host',
+};
+
+function passDoc(patch: Record<string, unknown> = {}): string {
+  return cardDoc([{ ...PASS_ENTRY, ...patch }]);
+}
+
+function passDocWithout(field: string): string {
+  const copy = { ...PASS_ENTRY };
+  delete copy[field];
+  return cardDoc([copy]);
+}
+
+describe('a swap/passed log entry', () => {
+  it('survives the round trip field by field', () => {
+    const result = parse(passDoc());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(fold(result.doc).passes).toEqual([{ playerId: 'p1', swapRound: 1, seq: 620 }]);
+  });
+
+  it('refuses an entry missing either of its two payload fields', () => {
+    for (const field of ['playerId', 'swapRound']) {
+      expect(rejection(parse(passDocWithout(field))), field).toBe('wrongShape');
+    }
+  });
+
+  it('refuses a swapRound of four billion — T-03-43', () => {
+    // The bound is what stops a file declaring a pass in round four billion and driving a
+    // render loop off the count. It is an ALLOCATION bound, not an integrity check.
+    expect(rejection(parse(passDoc({ swapRound: 4_000_000_000 })))).toBe('wrongShape');
+    expect(rejection(parse(passDoc({ swapRound: MAX_SWAP_ROUNDS + 1 })))).toBe('wrongShape');
+    expect(parse(passDoc({ swapRound: MAX_SWAP_ROUNDS })).ok).toBe(true);
+  });
+
+  it('refuses swapRound 0 — there is no mid-draft pass', () => {
+    // The one place `swap/passed` and `swap/made` take DIFFERENT bounds on the same field.
+    // Zero is a legal mid-draft swap and is not a legal pass, because a pass only exists
+    // inside a dedicated round.
+    expect(rejection(parse(passDoc({ swapRound: 0 })))).toBe('wrongShape');
+  });
+
+  it('refuses a playerId that is not a string and a swapRound that is not a safe integer', () => {
+    for (const value of [42, null, ['p1'], { id: 'p1' }]) {
+      expect(rejection(parse(passDoc({ playerId: value })))).toBe('wrongShape');
+    }
+    for (const value of [1.5, '1', null, Number.NaN]) {
+      expect(rejection(parse(passDoc({ swapRound: value })))).toBe('wrongShape');
+    }
+  });
+});
