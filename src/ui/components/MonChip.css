@@ -2,9 +2,13 @@
  * MonChip — a drafted species inside a board cell.
  *
  * Consumes tokens only; declares no raw colour and no raw length the token table
- * covers. Nothing here is interactive, so there is no hover, no focus and no cursor
- * rule: the chip is a readout, and styling it like a control would promise an
- * interaction that does not exist.
+ * covers.
+ *
+ * The BASE chip is still a readout and is still styled as one — no hover, no cursor, no
+ * focus rule — because styling it like a control would promise an interaction that does
+ * not exist. `--swappable` is the one variant that IS a control (03-UI-SPEC Amendment 1),
+ * and the affordances live on that class alone so a cell that cannot be swapped never
+ * grows a pointer cursor or a hover response.
  */
 
 .mon-chip {
@@ -47,4 +51,39 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   font: var(--text-body);
+}
+
+/*
+ * --- The swappable cell, 03-UI-SPEC Amendment 1 ---
+ *
+ * A real <button>, so the browser's own defaults have to be undone before the base
+ * `.mon-chip` rules read the same on both elements. `font: inherit` and `color: inherit`
+ * are the two that matter: without them the name inside a button renders at the UA's form
+ * font and the row stops matching every other row on the board.
+ *
+ * `text-align: left` because a button centres its content and a span does not — the one
+ * remaining way the two elements would lay out differently at the same width.
+ *
+ * COLOUR IS NEVER THE ONLY SIGNAL (03-UI-SPEC §Colour). The signal here is not a hue at
+ * all: it is that this is a button and every other cell is not. The pointer cursor, the
+ * hover response and the focus ring are all things no other board cell has, and each of
+ * them is perceivable without colour vision.
+ *
+ * No :focus rule, on `MonCard.css`'s precedent — the global accent ring in `app.css` covers
+ * every focusable element, and a per-component ring is how a design system drifts.
+ *
+ * Motion budget: colour only, at most 120ms. No transform, no lift, no entrance.
+ */
+.mon-chip--swappable {
+  /* The base rules above already set display, gap, padding, background and radius. */
+  border: var(--hairline-w) dashed var(--color-border-strong);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.mon-chip--swappable:hover {
+  background: var(--color-surface-raised);
 }

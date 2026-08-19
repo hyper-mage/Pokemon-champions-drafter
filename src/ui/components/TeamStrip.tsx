@@ -46,6 +46,17 @@ export interface TeamStripProps {
    * be a lie about a draft that ran strict alternation and never dealt a card.
    */
   hand: readonly number[] | null;
+  /**
+   * Arms a swap out of the 1-based round handed back, or `null` when none of THIS player's
+   * cells are swap targets — 03-UI-SPEC Amendment 1.
+   *
+   * The composition root decides. Three of Amendment 1's four conditions are facts about the
+   * tournament rather than about a cell — `swapBudget > 0`, this player being on the clock,
+   * and `selectSwapsRemaining` — so they are resolved into this one nullable handler before
+   * it arrives. The fourth, "the cell is filled", is the only one this component can see, and
+   * it is the only one it decides.
+   */
+  onSwap?: ((round: number) => void) | null;
 }
 
 export function TeamStrip({
@@ -57,6 +68,7 @@ export function TeamStrip({
   showName,
   cardValues,
   hand,
+  onSwap = null,
 }: TeamStripProps) {
   return (
     <>
@@ -76,10 +88,25 @@ export function TeamStrip({
         const entry = monId === null ? undefined : entryById.get(monId);
         const isNext = nextSlotIndex === index;
 
+        /*
+          Amendment 1's fourth condition, and the ONE this component owns.
+
+          `entry !== undefined` rather than `monId !== null`, deliberately: a slot holding a
+          species this roster no longer carries renders the id as text and has no chip to make
+          a button of. Keyed on the entry the chip actually needs, the two cannot disagree.
+
+          A round is 1-based and a slot index is 0-based, which is `selectTeams`' own join
+          (`slots[round - 1]`) read backwards. It is written out once, here, so the number that
+          reaches the accessible name and the number that reaches `swap/made` are one value.
+        */
+        const round = index + 1;
+        const swappable = onSwap !== null && entry !== undefined;
+
         const className = [
           'board__cell',
           monId === null ? 'board__cell--empty' : 'board__cell--filled',
           isNext ? 'board__cell--next' : '',
+          swappable ? 'board__cell--swappable' : '',
         ]
           .filter((token) => token !== '')
           .join(' ');
@@ -87,7 +114,16 @@ export function TeamStrip({
         return (
           <div class={className} key={`${player.id}-${index}`}>
             {entry !== undefined ? (
-              <MonChip entry={entry} spriteMeta={spriteMeta} showName={showName} />
+              <MonChip
+                entry={entry}
+                spriteMeta={spriteMeta}
+                showName={showName}
+                swap={
+                  swappable && onSwap !== null
+                    ? { round, onSwap: () => onSwap(round) }
+                    : null
+                }
+              />
             ) : (
               /*
                 A FILLED SLOT WHOSE SPECIES THIS ROSTER NO LONGER CARRIES.

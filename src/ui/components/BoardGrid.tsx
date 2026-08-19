@@ -114,6 +114,24 @@ export interface BoardGridProps {
    * what it is handed and works nothing out, exactly as it does for `schedule`.
    */
   hands: Record<string, number[]> | null;
+  /**
+   * The ONE player whose filled cells are swap-target buttons, or `null` — Amendment 1.
+   *
+   * A single id rather than a set or a per-player flag, because Amendment 1 admits exactly
+   * one: the player on the clock. A set would make "two players' rows are both interactive"
+   * representable, which is a state this application does not have and a shared screen should
+   * never show.
+   *
+   * `null` covers every reason a board has no swap targets — `swapBudget: 0`, the card phase,
+   * a completed draft, a player who has spent their budget — and this component does not care
+   * which. The composition root resolves them; a component may not own a game rule.
+   */
+  swapPlayerId?: string | null;
+  /**
+   * Arms a swap on `(playerId, round)`. Read only when `swapPlayerId` names a player, so a
+   * caller cannot supply the handler and forget the id and get a silently inert board.
+   */
+  onArmSwap?: ((playerId: string, round: number) => void) | null;
 }
 
 export function BoardGrid({
@@ -128,6 +146,8 @@ export function BoardGrid({
   showName,
   firstPlayerName,
   hands,
+  swapPlayerId = null,
+  onArmSwap = null,
 }: BoardGridProps) {
   /**
    * The round numbers, and — the same list — every priority-card value the tournament
@@ -225,6 +245,14 @@ export function BoardGrid({
               // has no entry for this player hands over an empty hand, which renders six
               // struck pips. Only a `hands` of null suppresses the strip entirely.
               hand={hands === null ? null : hands[player.id] ?? []}
+              // Resolved to a per-row handler HERE, so `TeamStrip` never has to compare a
+              // player id to decide whether its own cells are interactive — the same shape
+              // `nextSlotIndex` above already takes for the next-slot marker.
+              onSwap={
+                swapPlayerId === player.id && onArmSwap !== null
+                  ? (round: number) => onArmSwap(player.id, round)
+                  : null
+              }
             />
           ))}
         </div>

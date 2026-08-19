@@ -687,3 +687,171 @@ describe('the hand strip on a board row', () => {
     expect(all('a')).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The swappable board cell — 03-UI-SPEC Amendment 1, SWAP-02, D-27
+// ---------------------------------------------------------------------------
+
+/**
+ * Real names, because two of the assertions below are on an exact sentence.
+ *
+ * `entryAt` produces `Mon 0`, which would make `Swap Mon 0 out of round 1` read as a
+ * template that leaked. The copy contract is a contract down to the wording, so the fixture
+ * has to carry a species name a person would recognise.
+ */
+const NAMED_ENTRIES: RosterEntry[] = ['Blastoise', 'Garchomp', 'Rotom-Wash'].map(
+  (name, index) => ({ ...entryAt(index), id: `named-${index}`, name }),
+);
+
+const NAMED_BY_ID: ReadonlyMap<string, RosterEntry> = new Map(
+  NAMED_ENTRIES.map((entry) => [entry.id, entry]),
+);
+
+const NAMED_SPRITE_META: SpriteMeta = {
+  nativeWidth: 96,
+  nativeHeight: 96,
+  byRosterId: Object.fromEntries(
+    NAMED_ENTRIES.map((entry) => [
+      entry.id,
+      { pokeapiId: entry.num, file: `${entry.num}.png`, slug: entry.id },
+    ]),
+  ),
+};
+
+describe('a board cell is a button under four conditions and no others', () => {
+  const PLAYERS = playersOf(3);
+  const ROUNDS = 3;
+
+  /** `p1` holds two species; `p2` holds one; `p3` holds none. */
+  function partialTeams(): Record<string, (string | null)[]> {
+    return {
+      p1: ['named-0', 'named-1', null],
+      p2: ['named-2', null, null],
+      p3: [null, null, null],
+    };
+  }
+
+  function renderSwapBoard(options: {
+    swapPlayerId?: string | null;
+    onArmSwap?: ((playerId: string, round: number) => void) | null;
+    showName?: boolean;
+    omitSwapProps?: boolean;
+  }) {
+    const swapProps = options.omitSwapProps
+      ? {}
+      : {
+          swapPlayerId: options.swapPlayerId ?? null,
+          onArmSwap: options.onArmSwap ?? null,
+        };
+
+    render(
+      <BoardGrid
+        players={PLAYERS}
+        rounds={ROUNDS}
+        schedule={openSchedule(ROUNDS)}
+        teams={partialTeams()}
+        currentTurn={null}
+        entryById={NAMED_BY_ID}
+        spriteMeta={NAMED_SPRITE_META}
+        pickCount={3}
+        showName={options.showName ?? true}
+        firstPlayerName={null}
+        hands={null}
+        {...swapProps}
+      />,
+      host,
+    );
+  }
+
+  it('names the swap it starts, and names the round it starts it from', () => {
+    renderSwapBoard({ swapPlayerId: 'p1', onArmSwap: () => {} });
+
+    const buttons = all('.board__grid button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]?.getAttribute('aria-label')).toBe('Swap Blastoise out of round 1');
+    expect(buttons[1]?.getAttribute('aria-label')).toBe('Swap Garchomp out of round 2');
+  });
+
+  it('leaves the sprite decorative, because the button carries the name', () => {
+    renderSwapBoard({ swapPlayerId: 'p1', onArmSwap: () => {} });
+
+    for (const sprite of all('.board__cell--swappable .mon-chip__sprite')) {
+      expect(sprite.getAttribute('alt')).toBe('');
+    }
+  });
+
+  it('keeps the sprite decorative in split too, where there is no visible name', () => {
+    // The INVERSE of the `nameText` rule, and the reason the two are derived together.
+    // Without a swap the sprite has to carry the name in `split`; with one the button
+    // already does, and a sprite repeating it would announce the species twice and the
+    // purpose never.
+    renderSwapBoard({ swapPlayerId: 'p1', onArmSwap: () => {}, showName: false });
+
+    const buttons = all('.board__grid button');
+    expect(buttons[0]?.getAttribute('aria-label')).toBe('Swap Blastoise out of round 1');
+    expect(all('.board__cell--swappable .mon-chip__sprite')[0]?.getAttribute('alt')).toBe('');
+  });
+
+  it('does not make a cell belonging to anybody else a button', () => {
+    renderSwapBoard({ swapPlayerId: 'p1', onArmSwap: () => {} });
+
+    // p2 holds a filled cell and is not on the clock, so it stays a readout.
+    const cells = all('.board__cell--filled');
+    const p2Cell = cells.find((cell) => cell.textContent?.includes('Rotom-Wash'));
+    expect(p2Cell).toBeDefined();
+    expect(p2Cell?.querySelector('button')).toBeNull();
+    expect(p2Cell?.className).not.toContain('board__cell--swappable');
+  });
+
+  it('does not make an EMPTY cell a button, even for the player on the clock', () => {
+    renderSwapBoard({ swapPlayerId: 'p1', onArmSwap: () => {} });
+
+    for (const cell of all('.board__cell--empty')) {
+      expect(cell.querySelector('button')).toBeNull();
+      expect(cell.className).not.toContain('board__cell--swappable');
+    }
+  });
+
+  it('renders zero buttons in the whole board grid when no player may swap', () => {
+    // `swapBudget: 0` reaches this component as `swapPlayerId: null`, and the entire
+    // feature disappears rather than rendering inert.
+    renderSwapBoard({ swapPlayerId: null, onArmSwap: null });
+
+    expect(all('.board__grid button')).toHaveLength(0);
+    expect(all('.board__cell--swappable')).toHaveLength(0);
+  });
+
+  it('is byte-identical to a board that was never told about swaps at all', () => {
+    // The Amendment 1 promise, asserted rather than claimed: a tournament with no swap
+    // budget sees no change from Phase 2, down to the markup.
+    renderSwapBoard({ omitSwapProps: true });
+    const untold = host.innerHTML;
+
+    renderSwapBoard({ swapPlayerId: null, onArmSwap: null });
+    expect(host.innerHTML).toBe(untold);
+  });
+
+  it('hands the composition root the player id and the 1-based round, and nothing else', () => {
+    const armed: { playerId: string; round: number }[] = [];
+    renderSwapBoard({
+      swapPlayerId: 'p1',
+      onArmSwap: (playerId, round) => armed.push({ playerId, round }),
+    });
+
+    all('.board__grid button')[1]?.click();
+
+    // Round 2, not slot index 1 — `selectTeams` files a round-`r` pick into slot `r - 1`,
+    // and `swap/made` names the ROUND.
+    expect(armed).toEqual([{ playerId: 'p1', round: 2 }]);
+  });
+
+  it('renders a real button rather than a div wearing a role', () => {
+    renderSwapBoard({ swapPlayerId: 'p1', onArmSwap: () => {} });
+
+    const button = all('.board__grid button')[0];
+    expect(button?.tagName).toBe('BUTTON');
+    // `type="button"` and not the default `submit`, which would post a form if the board
+    // ever landed inside one.
+    expect(button?.getAttribute('type')).toBe('button');
+  });
+});
