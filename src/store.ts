@@ -410,13 +410,19 @@ function selectPlayerName(state: DraftState | null, playerId: string): string {
  * screen, which on a shared draft screen is most of the room.
  *
  * A card undo needs no species name and must not invent one — `resolveSpeciesName` is
- * consulted for a pick and for nothing else.
+ * consulted for a pick and for a swap, which are the two kinds that move a species, and for
+ * nothing else. A pass moves nothing at all and names no species.
  */
 function undoAnnouncement(
   removed: UndoRemoval,
   playerName: string,
   resolveSpeciesName?: (monId: string) => string,
 ): string {
+  const speciesName = (monId: string | null): string => {
+    const id = monId ?? '';
+    return resolveSpeciesName?.(id) ?? id;
+  };
+
   if (removed.kind === 'card') {
     return `Undid ${playerName}'s card — ${removed.cardValue} is back in their hand.`;
   }
@@ -425,7 +431,17 @@ function undoAnnouncement(
     return `Undid round ${removed.round}'s pick order — ${playerName}'s ${removed.cardValue} is back in their hand.`;
   }
 
-  const monId = removed.monId ?? '';
-  const species = resolveSpeciesName?.(monId) ?? monId;
-  return `Undid Round ${removed.round} — ${species} is back in the pool.`;
+  if (removed.kind === 'swap') {
+    // Both directions, because a swap moved two species in opposite ones. `monId` is what
+    // goes back to the pool and `outMonId` is what goes back to the slot — `UndoRemoval`
+    // states that pairing, and reading it backwards yields a sentence that is grammatical
+    // and exactly wrong.
+    return `Undid the swap — ${speciesName(removed.monId)} is back in the pool and ${speciesName(removed.outMonId)} returns to ${playerName}'s round ${removed.round} slot.`;
+  }
+
+  if (removed.kind === 'pass') {
+    return `Undid ${playerName}'s pass in swap round ${removed.swapRound}.`;
+  }
+
+  return `Undid Round ${removed.round} — ${speciesName(removed.monId)} is back in the pool.`;
 }

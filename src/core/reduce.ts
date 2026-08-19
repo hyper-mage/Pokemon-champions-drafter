@@ -32,10 +32,12 @@ import {
   isPoolBuiltAction,
   isScheduleCompiledAction,
   isSwapMadeAction,
+  isSwapPassedAction,
   ORDER_RESOLVED,
   POOL_BUILT,
   SCHEDULE_COMPILED,
   SWAP_MADE,
+  SWAP_PASSED,
   type AnyAction,
 } from './actions';
 import { initialState, type DraftState, type TournamentDoc } from './model';
@@ -44,12 +46,14 @@ import {
   selectCardsPlayedThisRound,
   selectCardTurn,
   selectCurrentRound,
+  selectCurrentSwapRound,
   selectCurrentTurn,
   selectHand,
   selectIsComplete,
   selectPhase,
   selectPlayableCards,
   selectResolvedOrder,
+  selectSwapRoundPosition,
   selectSwapsRemaining,
 } from './selectors';
 
@@ -110,7 +114,18 @@ export type RejectionReason =
    */
   | 'nothingToSwap'
   /** That player has spent their whole `config.swapBudget`, or never had one (SWAP-01). */
-  | 'noSwapsLeft';
+  | 'noSwapsLeft'
+  /**
+   * No dedicated swap round is running that this action could belong to — SWAP-03.
+   *
+   * ONE reason for three situations, on `nothingToSwap`'s precedent: the picks are not
+   * complete, the number is outside `1..config.swapRounds`, or an earlier swap round has
+   * not finished. From the host's side they are the same failure — the action names a swap
+   * round this tournament is not in — and no host could act differently on the difference.
+   */
+  | 'notSwapRound'
+  /** Every player has already moved in that swap round, so its clock is spent. */
+  | 'swapRoundComplete';
 
 export type CanApplyResult = { ok: true } | { ok: false; reason: RejectionReason };
 
@@ -287,6 +302,31 @@ export function apply(state: DraftState, action: AnyAction): DraftState {
       };
     }
 
+    case SWAP_PASSED: {
+      if (!isSwapPassedAction(action)) return state;
+
+      // An append and nothing else. A pass changes no slot, returns nothing to the pool and
+      // spends no budget — its entire effect is to exist, so that the swap round's clock can
+      // count it and step past the player who chose nothing (SWAP-07).
+      //
+      // No no-op branch, because there is no fact about the state a pass could disagree
+      // with. A `swap/passed` naming a round this document does not have is inert rather
+      // than wrong: `swapRoundMoveCount` only counts rounds `1..config.swapRounds`, and
+      // `apply` is not a validator.
+      return {
+        ...state,
+        passes: [
+          ...state.passes,
+          {
+            playerId: action.playerId,
+            swapRound: action.swapRound,
+            // Off the ENVELOPE, for `swap/made`'s reason directly above.
+            seq: action.seq,
+          },
+        ],
+      };
+    }
+
     default:
       // Forward compatibility. An action type this build has never heard of is not an
       // error; it is a newer client's business.
@@ -450,16 +490,31 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
       if (!isSwapMadeAction(action)) return reject('malformedPayload');
       if (state.order.length === 0) return reject('draftNotStarted');
 
-      // D-25: a mid-draft swap is spent BY the player on the clock, and the turn still
-      // ends with that round's pick. `selectCurrentTurn` is null during the card phase and
-      // once every team is full, and both of those are correctly out of turn for a
-      // `swapRound: 0` spend.
+      // WHOSE TURN IT IS, asked of whichever clock the WINDOW names — D-25, D-29.
       //
-      // A dedicated swap round (`swapRound >= 1`) runs when the picks are complete and the
-      // pick clock is therefore null, so 03-11 widens THIS check — the swap-round clock is
-      // a different selector — rather than adding a second `canApply` arm beside it.
-      const turn = selectCurrentTurn(state);
-      if (turn === null || action.playerId !== turn.playerId) return reject('notYourTurn');
+      // A mid-draft swap and a swap-round swap are the SAME action in two windows, and
+      // `swapRound` is what names the window. So this is one widened check rather than a
+      // second arm: the budget, the slot predicate, the pool accounting and the replacement
+      // are all identical either way, and a second arm would have been four duplicated
+      // rules kept in step by hand.
+      //
+      //   `swapRound: 0`   the pick clock. `selectCurrentTurn` is null during the card
+      //                    phase and once every team is full, and both are correctly out of
+      //                    turn for a mid-draft spend — the turn still ends with a pick.
+      //   `swapRound >= 1` the swap-round clock. The picks are complete by then, so the
+      //                    pick clock is null and reading it would refuse every legal move.
+      const onTheClock =
+        action.swapRound >= 1
+          ? (selectSwapRoundPosition(state, action.swapRound)?.playerId ?? null)
+          : (selectCurrentTurn(state)?.playerId ?? null);
+      if (onTheClock === null || action.playerId !== onTheClock) return reject('notYourTurn');
+
+      // A later swap round may not open while an earlier one is unfinished. Asked only of
+      // the dedicated case, because `selectCurrentSwapRound` is null for the whole draft
+      // and a mid-draft spend has no swap round to be out of sequence with.
+      if (action.swapRound >= 1 && action.swapRound !== selectCurrentSwapRound(state)) {
+        return reject('notSwapRound');
+      }
 
       // BEFORE the pool and the budget. All three can be wrong at once, and a host told
       // "you have no swaps left" about a slot that was never theirs has been sent to the
@@ -491,6 +546,36 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
       // SWAP-05 true by construction rather than by rejection (D-27). A hand-edited
       // document can still carry a violating swap; that is T-03-39, accepted and reported
       // by the non-blocking adoption notice, never repaired here.
+      return OK;
+    }
+
+    case SWAP_PASSED: {
+      if (!isSwapPassedAction(action)) return reject('malformedPayload');
+      if (state.order.length === 0) return reject('draftNotStarted');
+
+      // The two situations that mean "there is no such swap round to pass in", stated
+      // before anything is asked about the player. A host told "it is not your turn" about
+      // a round the tournament does not have has been sent to the wrong problem — the same
+      // ordering argument `swap/made`'s `nothingToSwap` check makes above.
+      if (!selectIsComplete(state)) return reject('notSwapRound');
+      if (action.swapRound < 1 || action.swapRound > state.config.swapRounds) {
+        return reject('notSwapRound');
+      }
+
+      // Null here means the round already holds a move from every player. That is a
+      // DIFFERENT failure from "this round has not opened yet", which is why the sequence
+      // check below is separate rather than folded into the null.
+      const position = selectSwapRoundPosition(state, action.swapRound);
+      if (position === null) return reject('swapRoundComplete');
+
+      if (action.swapRound !== selectCurrentSwapRound(state)) return reject('notSwapRound');
+      if (action.playerId !== position.playerId) return reject('notYourTurn');
+
+      // WHAT THIS DELIBERATELY DOES NOT CHECK: the budget.
+      //
+      // A pass is not a spend (D-29), so a player with no swaps left may still pass — and
+      // in fact must be able to, because passing is the only way their swap round ends.
+      // Rejecting `noSwapsLeft` here would hang the round on the first player to run out.
       return OK;
     }
 

@@ -51,6 +51,8 @@ import {
   isCardsPlayedAction,
   isOrderResolvedAction,
   isPickMadeAction,
+  isSwapMadeAction,
+  isSwapPassedAction,
   type Action,
   type CardsPlayedAction,
   type PickMadeAction,
@@ -109,9 +111,9 @@ const NEVER_UNDONE: readonly string[] = [POOL_BUILT, SCHEDULE_COMPILED, DRAFT_ST
  *
  * Both halves are load-bearing and they are not redundant.
  *
- * The DENY-LIST is the invariant. It states the boundary in one place, so the day swap
- * actions join the allow-list below nobody has to re-derive whether a growing allow-list
- * could reach `pool/built`.
+ * The DENY-LIST is the invariant. It states the boundary in one place, so when the swap
+ * actions joined the allow-list below nobody had to re-derive whether a growing allow-list
+ * could reach `pool/built`. It could not, and that was the point of writing it that way.
  *
  * The ALLOW-LIST is the structural check, and it is why this is not simply "anything not
  * excluded". An imported or hand-edited log is untrusted input: it can carry an action
@@ -121,10 +123,24 @@ const NEVER_UNDONE: readonly string[] = [POOL_BUILT, SCHEDULE_COMPILED, DRAFT_ST
  * a different route. `draft/pickUndone` is excluded by the same rule and deliberately:
  * removing a compensating action would resurrect the pick it compensated, which is a redo,
  * and D-10 declines to have one.
+ *
+ * `swap/made` and `swap/passed` attach TOGETHER, in 03-11, and the pairing is not a
+ * scheduling convenience. `UndoRemoval` had to widen for both at once — a swap needs two
+ * mon ids where a pick needs one, and a pass needs a swap round where neither of the others
+ * has one — so adding the first alone would have meant reshaping the same type twice.
+ * Until they landed, `Undo last move` stepped PAST a swap to the last pick and the swap
+ * survived: nothing corrupted, but the one move a host is most likely to regret was the one
+ * move they could not take back.
  */
 function isUndoable(action: Action): boolean {
   if (NEVER_UNDONE.includes(action.type)) return false;
-  return isPickMadeAction(action) || isCardsPlayedAction(action) || isOrderResolvedAction(action);
+  return (
+    isPickMadeAction(action) ||
+    isCardsPlayedAction(action) ||
+    isOrderResolvedAction(action) ||
+    isSwapMadeAction(action) ||
+    isSwapPassedAction(action)
+  );
 }
 
 /** Index of the last entry undo would touch, or `-1`. */
@@ -202,15 +218,48 @@ function removalIndices(doc: TournamentDoc): number[] {
 /** What an undo would take, and from whom. Every field is a fact, never a sentence. */
 export interface UndoRemoval {
   /** Which of the undoable actions is at the top of the stack. */
-  kind: 'pick' | 'card' | 'order';
-  /** 1-based round of the action being removed. */
+  kind: 'pick' | 'card' | 'order' | 'swap' | 'pass';
+  /**
+   * 1-based round of the action being removed.
+   *
+   * For a pick, a card play or a resolution, the round it belongs to. For a SWAP, the pick
+   * round of the slot being restored — which is the round the announcement names. For a
+   * PASS, `config.rounds`: a pass belongs to a swap round rather than a pick round, and
+   * `config.rounds` is where the draft is standing while the swap rounds run, so a caller
+   * comparing this against the current round gets the honest answer "no round was crossed".
+   * {@link UndoRemoval.swapRound} is the field that actually identifies a pass.
+   */
   round: number;
   /** Whose move it was. The UI resolves the display name; core never holds one. */
   playerId: string;
-  /** The species returning to the pool, for a pick. `null` otherwise. */
+  /**
+   * The species returning to the POOL — a pick's own species, or a swap's INCOMING one.
+   *
+   * One field, one meaning, across two kinds. Undoing a pick returns what was picked;
+   * undoing a swap returns what the swap brought in, because the swap took it out of the
+   * pool. `null` for a card play, a resolution and a pass, none of which touch the pool.
+   */
   monId: string | null;
+  /**
+   * The species returning to the SLOT. A swap only; `null` for every other kind.
+   *
+   * This is the widening deferred item 5 predicted. `monId` alone could describe a pick,
+   * where one species moves in one direction, and a swap moves two in opposite directions
+   * — 03-UI-SPEC's `Undo, swap` row names both of them, and one field could not write that
+   * sentence without re-reading the log at the announcement.
+   */
+  outMonId: string | null;
   /** The value returning to a hand, for a card play or a resolution. `null` for a pick. */
   cardValue: number | null;
+  /**
+   * 1-based dedicated swap round, for a pass and for a swap-round swap.
+   *
+   * `null` for a pick, a card play, a resolution — and for a MID-DRAFT swap, whose
+   * `swapRound` is `0` and which belongs to no dedicated round. Null therefore reads as
+   * "this move was not made in a swap round", which is precisely the question
+   * {@link undoCrossesRoundBoundary} needs answered.
+   */
+  swapRound: number | null;
   /** Log entries the operation removes — 2 for a resolution and its trigger, else 1. */
   removedCount: number;
 }
@@ -237,7 +286,9 @@ export function undoRemoval(doc: TournamentDoc): UndoRemoval | null {
       round: primary.round,
       playerId: primary.playerId,
       monId: primary.monId,
+      outMonId: null,
       cardValue: null,
+      swapRound: null,
       removedCount: indices.length,
     };
   }
@@ -248,7 +299,42 @@ export function undoRemoval(doc: TournamentDoc): UndoRemoval | null {
       round: primary.round,
       playerId: primary.playerId,
       monId: null,
+      outMonId: null,
       cardValue: primary.value,
+      swapRound: null,
+      removedCount: indices.length,
+    };
+  }
+
+  if (isSwapMadeAction(primary)) {
+    // Both directions, named for what they DO rather than for the payload field they came
+    // from: `inMonId` went into the slot and comes back out to the pool, `outMonId` left
+    // the slot and goes back into it. Reading them the other way round produces a sentence
+    // that is grammatical, plausible and exactly backwards.
+    return {
+      kind: 'swap',
+      round: primary.round,
+      playerId: primary.playerId,
+      monId: primary.inMonId,
+      outMonId: primary.outMonId,
+      cardValue: null,
+      // `0` is the mid-draft spend and is not a dedicated round — see the field's doc.
+      swapRound: primary.swapRound >= 1 ? primary.swapRound : null,
+      removedCount: indices.length,
+    };
+  }
+
+  if (isSwapPassedAction(primary)) {
+    return {
+      kind: 'pass',
+      // See `UndoRemoval.round`: a pass belongs to no pick round, and the round the draft
+      // is standing in while the swap rounds run is the last one.
+      round: doc.config.rounds,
+      playerId: primary.playerId,
+      monId: null,
+      outMonId: null,
+      cardValue: null,
+      swapRound: primary.swapRound,
       removedCount: indices.length,
     };
   }
@@ -265,7 +351,9 @@ export function undoRemoval(doc: TournamentDoc): UndoRemoval | null {
     round: isOrderResolvedAction(primary) ? primary.round : (card?.round ?? 1),
     playerId: card?.playerId ?? '',
     monId: null,
+    outMonId: null,
     cardValue: card?.value ?? null,
+    swapRound: null,
     removedCount: indices.length,
   };
 }
@@ -307,6 +395,13 @@ export function undoLast(doc: TournamentDoc): TournamentDoc {
 
   return { ...doc, log };
 }
+
+/**
+ * The kinds whose `round` is a PICK round, and therefore comparable to the one the draft is
+ * standing in. See the argument inside {@link undoCrossesRoundBoundary} for why a swap and
+ * a pass are not on this list.
+ */
+const ROUND_COMPARABLE_KINDS: readonly UndoRemoval['kind'][] = ['pick', 'card'];
 
 /** What an undo would reach back into. Every field is a fact, never a sentence. */
 export interface RoundBoundaryCrossing {
@@ -387,7 +482,30 @@ export function undoCrossesRoundBoundary(
     the round it just resolved, so `removed.round < currentRound` is false exactly when the
     confirm matters most.
   */
-  const crosses = removed.kind === 'order' || removed.round < currentRound;
+  /*
+    A SWAP and a PASS never cross, and that is a decision rather than an omission.
+
+    03-UI-SPEC §12 lists exactly three new confirm sets for this phase and none of them is
+    "undo a swap" or "undo a pass". Two independent reasons agree with it.
+
+    The MECHANISM does not apply. D-37's confirm exists because undoing a pick from an
+    earlier round is the start of walking several picks back — the host is warned that they
+    are reaching behind the round the room is standing in. A swap or a pass is the most
+    recent move in the log, `removedCount` is 1, and undoing it takes nothing else with it.
+    A swap's `round` is the PICK round of the slot it changed, which can be round 1 while
+    the draft stands at round 6, so a bare round comparison would fire on every swap of an
+    early slot and describe a walk-back that is not happening.
+
+    The COPY does not apply either. `UNDO_BOUNDARY_CONFIRM` reads "This undoes {name}'s pick
+    from round {r}" — pick-specific prose that would be a plain untruth over a swap, on the
+    one surface whose whole job is telling the host what is about to change.
+
+    Written as an allow-list of the kinds whose `round` is comparable at all, so the three
+    kinds that had this behaviour before 03-11 keep it byte for byte.
+  */
+  const crosses =
+    removed.kind === 'order' ||
+    (ROUND_COMPARABLE_KINDS.includes(removed.kind) && removed.round < currentRound);
 
   return {
     crosses,

@@ -311,7 +311,15 @@ export function selectSlotStone(
   return forme === null ? null : forme.requiredItem;
 }
 
-/** True exactly when every player holds a full set of `rounds` picks. */
+/**
+ * True exactly when every player holds a full set of `rounds` picks.
+ *
+ * This is PICKS-complete, and its definition is deliberately unchanged by 03-11. Every
+ * caller it had before the dedicated swap rounds existed still means exactly this, and
+ * {@link selectIsTournamentComplete} is a new sibling rather than a redefinition — see
+ * there for what hangs off which, and for why retyping this one would have been the D-31
+ * bug rather than the D-31 fix.
+ */
 export function selectIsComplete(state: DraftState): boolean {
   if (state.order.length === 0) return false;
 
@@ -532,6 +540,153 @@ export function selectPlayableCards(state: DraftState, playerId: string): number
 export function selectResolvedOrder(state: DraftState, round: number): string[] | null {
   const resolved = state.resolvedOrders.find((entry) => entry.round === round);
   return resolved === undefined ? null : [...resolved.order];
+}
+
+// ---------------------------------------------------------------------------
+// Dedicated swap rounds — SWAP-03, SWAP-04, SWAP-07, D-28…D-31
+// ---------------------------------------------------------------------------
+
+/**
+ * The order the dedicated swap rounds run in — D-28, SWAP-04.
+ *
+ * The reverse of the LAST pick round's resolved order: whoever picked last in round
+ * `config.rounds` swaps first. That is computed from a value the log already holds, so
+ * there is no new randomness, no new config field and nothing extra to materialize — and
+ * the room can check it against a line they read off the screen an hour earlier.
+ *
+ * Reversal is the point rather than a flourish. Priority cards are all spent by the last
+ * pick (CARD-06 gives each player one card per round and the draft has exactly `rounds`
+ * rounds), so there is no bidding left to decide a swap order with; reversing the last one
+ * hands the first swap to whoever the last round treated worst.
+ *
+ * ## The fallback, and why it is not silent
+ *
+ * A migrated schema-2 document resolved no round at all, and an imported one can be missing
+ * the entry for any reason. The answer then is the reverse of `state.order`, which is
+ * deterministic and is the order that draft actually ran in. What makes it acceptable is
+ * {@link selectSwapOrderSource}: the screen says WHICH source is in force, so a host reading
+ * `Swap order reverses the starting order.` is not being told a different sentence about
+ * the same thing. SWAP-04 asks for the order to be explicit, and a fallback nobody was told
+ * about would not be (T-03-44).
+ *
+ * Freshly built, like everything in this file — a caller cannot reach a log entry's array
+ * through the return value, and `reverse()` mutates in place.
+ */
+export function selectSwapRoundOrder(state: DraftState): string[] {
+  const resolved = selectResolvedOrder(state, state.config.rounds);
+  return [...(resolved ?? state.order)].reverse();
+}
+
+/**
+ * Which source {@link selectSwapRoundOrder} used — SWAP-04's "explicit" made checkable.
+ *
+ * One selector rather than a nullable return from the order itself, because the two answer
+ * different questions and only one of them is a list. The phase line renders a different
+ * sentence per value; nothing else branches on it.
+ */
+export function selectSwapOrderSource(state: DraftState): 'lastRound' | 'startingOrder' {
+  return selectResolvedOrder(state, state.config.rounds) === null ? 'startingOrder' : 'lastRound';
+}
+
+/**
+ * How many moves — swaps AND passes — are recorded for one dedicated swap round.
+ *
+ * The `+` that {@link DraftState.passes} exists to keep in exactly one place. A round
+ * advances on either kind, which is the whole of why a pass had to become an action
+ * (T-03-45): counted this way a round cannot step past a player the log does not represent,
+ * and a pass cannot be forged as an absence.
+ *
+ * `swapRound` 0 counts nothing, because 0 is the mid-draft spend and belongs to no round.
+ */
+function swapRoundMoveCount(state: DraftState, swapRound: number): number {
+  if (swapRound < 1) return 0;
+
+  const swaps = state.swaps.filter((swap) => swap.swapRound === swapRound).length;
+  const passes = state.passes.filter((pass) => pass.swapRound === swapRound).length;
+  return swaps + passes;
+}
+
+/**
+ * Which dedicated swap round is on the clock, or `null` when none is.
+ *
+ * The LOWEST round `1..config.swapRounds` that is still short of a move from everybody, so
+ * round 2 cannot open while round 1 is unfinished. Null before the picks are complete
+ * (there is no swap round yet), and null once every round is full — which is the same
+ * question {@link selectIsTournamentComplete} asks, and it asks it here rather than
+ * repeating the loop.
+ *
+ * A hand-edited document whose last resolved order is empty answers `null`, which reads as
+ * "no swap round is running". That is the safe direction: the alternative is a clock naming
+ * nobody, on a screen whose only control belongs to the player it cannot name.
+ */
+export function selectCurrentSwapRound(state: DraftState): number | null {
+  if (!selectIsComplete(state)) return null;
+
+  const order = selectSwapRoundOrder(state);
+  if (order.length === 0) return null;
+
+  for (let swapRound = 1; swapRound <= state.config.swapRounds; swapRound++) {
+    if (swapRoundMoveCount(state, swapRound) < order.length) return swapRound;
+  }
+
+  return null;
+}
+
+/**
+ * Who is on the clock in a given swap round, and where in the order they stand.
+ *
+ * The player at index `count(moves recorded for that round)` in {@link
+ * selectSwapRoundOrder}, or `null` when that count has reached the order's length — which
+ * is the round being finished.
+ *
+ * Per-round arithmetic and nothing more: it does NOT ask whether an earlier round is still
+ * running, because "which player would be next in round `s`" and "is round `s` allowed to
+ * be running" are two questions and the sequencing one is
+ * {@link selectCurrentSwapRound}'s. `canApply` asks both.
+ *
+ * Null while the picks are still owed, and null for a round outside
+ * `1..config.swapRounds` — including `0`, which is the mid-draft spend and is not a round.
+ */
+export function selectSwapRoundPosition(
+  state: DraftState,
+  swapRound: number,
+): { playerId: string; index: number } | null {
+  if (!selectIsComplete(state)) return null;
+  if (!Number.isSafeInteger(swapRound)) return null;
+  if (swapRound < 1 || swapRound > state.config.swapRounds) return null;
+
+  const order = selectSwapRoundOrder(state);
+  const index = swapRoundMoveCount(state, swapRound);
+  if (index >= order.length) return null;
+
+  const playerId = order[index];
+  return playerId === undefined ? null : { playerId, index };
+}
+
+/**
+ * Every team full AND every dedicated swap round finished — D-31, and the export gate.
+ *
+ * ## A NEW SELECTOR beside {@link selectIsComplete}, never a redefinition of it
+ *
+ * Retyping the older one would have changed every caller it already had, silently and all
+ * at once — `selectPhase`, `selectCurrentTurn`, `undoCrossesRoundBoundary` and the board's
+ * own completion arithmetic all mean PICKS-complete and are all correct as they stand. D-31
+ * asks for a second question to be answerable, not for the first one to be replaced.
+ *
+ * ## What hangs off which
+ *
+ *   {@link selectIsComplete}  the picks are in: no more turns, no more pool cells to click
+ *   this one                  the teams are FINAL: exports and the PERS-06 checkpoint open
+ *
+ * That split is the whole of D-31's consequence. A per-player export panel opening while a
+ * swap round was still running would invite somebody to copy a paste that is about to
+ * change, and they would not find out (T-03-46).
+ *
+ * With `swapRounds: 0` the two coincide exactly, which is what keeps a swap-free tournament
+ * byte-identical to the one Phase 2 shipped.
+ */
+export function selectIsTournamentComplete(state: DraftState): boolean {
+  return selectIsComplete(state) && selectCurrentSwapRound(state) === null;
 }
 
 /**

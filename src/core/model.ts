@@ -349,6 +349,26 @@ export interface DraftState {
    * order- and identity-sensitive, and sync rule 14 forbids deriving either from a key set.
    */
   swaps: SwapRecord[];
+  /**
+   * Every pass recorded in a dedicated swap round, in log order, from `swap/passed`.
+   *
+   * ## Why it is a sibling of {@link DraftState.swaps} and not folded into it
+   *
+   * A swap and a pass are both MOVES — the swap round's clock counts them together, which
+   * is what lets a round step past somebody who chose nothing. But they are not the same
+   * event and a shared array would have to say which, through a null `inMonId` or a `kind`
+   * discriminant, and every reader would then have to filter before it could count.
+   * `selectSwapsRemaining` in particular counts `swaps` and must never see a pass: a pass
+   * costs no budget, and one forgotten filter would spend an allowance for a non-event.
+   *
+   * Two arrays, one `+` at the single place the clock is derived, and neither reader can
+   * make that mistake.
+   *
+   * Nothing derived is stored here either. Which player is on the clock, whether the round
+   * is finished and whether the tournament is complete are all computed from these entries
+   * on every read — see `selectSwapRoundPosition` and `selectIsTournamentComplete`.
+   */
+  passes: SwapPass[];
 }
 
 /**
@@ -370,6 +390,20 @@ export interface SwapRecord {
   outMonId: string;
   inMonId: string;
   /** `0` for a mid-draft spend; 1-based for a dedicated swap round (03-11). */
+  swapRound: number;
+  seq: number;
+}
+
+/**
+ * One pass, as the fold remembers it — SWAP-07.
+ *
+ * Three fields and no slot, because a pass names no slot. `seq` carries {@link SwapRecord}'s
+ * justification: it is the sequence number of the action that recorded the pass, taken off
+ * the envelope rather than off an array length, so a log with gaps stays addressable.
+ */
+export interface SwapPass {
+  playerId: string;
+  /** 1-based dedicated swap round. There is no mid-draft pass, so this is never `0`. */
   swapRound: number;
   seq: number;
 }
@@ -420,5 +454,6 @@ export function initialState(config: TournamentConfig): DraftState {
     cardsPlayed: [],
     resolvedOrders: [],
     swaps: [],
+    passes: [],
   };
 }

@@ -771,6 +771,29 @@ function buildLogEntry(value: unknown): Action | null {
       };
     }
 
+    case 'swap/passed': {
+      // Two fields, and `swapRound` takes a DIFFERENT bound from `swap/made`'s — which is
+      // the one place in this switch where two arms disagree about the same field name.
+      //
+      // Zero is a legal `swap/made`: it is the mid-draft spend. There is no mid-draft PASS
+      // — declining to spend a mid-draft swap is not an event, because the turn ends with a
+      // pick either way — so zero here would fold to a pass belonging to no round, counted
+      // by nothing and undoable as a move that never happened.
+      //
+      // The upper bound is `MAX_SWAP_ROUNDS` for the allocation reason, not an integrity
+      // one: a file declaring a pass in round four billion reaches the swap-round clock,
+      // which counts moves per round, and the render that follows is what T-03-43 is about.
+      // Whether the document actually ran that many swap rounds is `canApply`'s question,
+      // asked against a state this function cannot see.
+      const playerId = raw['playerId'];
+      const swapRound = raw['swapRound'];
+
+      if (typeof playerId !== 'string') return null;
+      if (!isPositiveInteger(swapRound) || swapRound > MAX_SWAP_ROUNDS) return null;
+
+      return { type: 'swap/passed', playerId, swapRound, ...envelope };
+    }
+
     default:
       // Envelope only. The cast is honest about what is happening: `TournamentDoc.log` is
       // typed as actions this build understands, and this is an action it does not.

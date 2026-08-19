@@ -28,6 +28,9 @@
  * satisfies the target slot's predicate — that is a fact about a roster entry, and no
  * roster is in reach of either. The constraint is enforced by the OFFER instead
  * (`selectSwapTargets`), which is the same posture picks already take.
+ *
+ * `swap/passed` is the ninth, and it is the one type here that records somebody doing
+ * NOTHING. See {@link SwapPassedPayload} for why that is an action rather than an absence.
  */
 
 export const POOL_BUILT = 'pool/built';
@@ -38,6 +41,7 @@ export const DRAFT_PICK_UNDONE = 'draft/pickUndone';
 export const CARDS_PLAYED = 'cards/played';
 export const ORDER_RESOLVED = 'order/resolved';
 export const SWAP_MADE = 'swap/made';
+export const SWAP_PASSED = 'swap/passed';
 
 /**
  * What `dispatch` adds to every intent.
@@ -267,6 +271,39 @@ export interface SwapMadePayload {
   swapRound: number;
 }
 
+/**
+ * One player declining their turn in a dedicated swap round — SWAP-07.
+ *
+ * ## Why doing nothing is an ACTION and not an absence
+ *
+ * This is the only type in this file that records a non-event, and both reasons it has to
+ * are structural rather than stylistic.
+ *
+ * A swap round advances by COUNTING the moves recorded for it: position is
+ * `count(swap/made) + count(swap/passed)` for that `swapRound`, which is why both types
+ * carry the field. Without a recorded pass there is nothing to count, so the round could
+ * never step past a player who chose not to swap — the clock would sit on them forever, and
+ * the only way out would be a "skip" that mutates something outside the log.
+ *
+ * Undo needs the same distinction from the other side. "Has not gone yet" and "went, and
+ * chose nothing" are the same fold if a pass leaves no trace, so `Undo last move` could not
+ * tell whether there was anything to walk back — and a host who passed by mistake at the
+ * end of the last swap round would find the tournament simply finished.
+ *
+ * There is deliberately no mid-draft pass. Declining to spend a mid-draft swap is not an
+ * event: the turn ends with a pick either way (D-25), and nothing waits on it. So
+ * `swapRound` is 1-based here where {@link SwapMadePayload}'s is 0-based, and the import
+ * guard bounds the two differently for exactly that reason.
+ *
+ * No `round` field, because a pass names no slot. That is the whole of what it says.
+ */
+export interface SwapPassedPayload {
+  type: typeof SWAP_PASSED;
+  playerId: string;
+  /** 1-based. A pass belongs to a dedicated round; there is no mid-draft pass. */
+  swapRound: number;
+}
+
 export type Intent =
   | PoolBuiltPayload
   | ScheduleCompiledPayload
@@ -275,7 +312,8 @@ export type Intent =
   | PickUndonePayload
   | CardsPlayedPayload
   | OrderResolvedPayload
-  | SwapMadePayload;
+  | SwapMadePayload
+  | SwapPassedPayload;
 
 export type PoolBuiltAction = PoolBuiltPayload & ActionEnvelope;
 export type ScheduleCompiledAction = ScheduleCompiledPayload & ActionEnvelope;
@@ -285,6 +323,7 @@ export type PickUndoneAction = PickUndonePayload & ActionEnvelope;
 export type CardsPlayedAction = CardsPlayedPayload & ActionEnvelope;
 export type OrderResolvedAction = OrderResolvedPayload & ActionEnvelope;
 export type SwapMadeAction = SwapMadePayload & ActionEnvelope;
+export type SwapPassedAction = SwapPassedPayload & ActionEnvelope;
 
 /** A stamped action this build understands. */
 export type Action = Intent & ActionEnvelope;
@@ -407,6 +446,17 @@ export function swapMade(swap: {
     inMonId: swap.inMonId,
     swapRound: swap.swapRound,
   };
+}
+
+/**
+ * A pass, which is two fields and no more.
+ *
+ * Named rather than spread for {@link swapMade}'s reason, and the smaller payload makes the
+ * rule easier to break rather than harder: a caller holding a `{ playerId, round,
+ * swapRound }` object would spread a PICK round into a pass that has no concept of one.
+ */
+export function swapPassed(pass: { playerId: string; swapRound: number }): SwapPassedPayload {
+  return { type: SWAP_PASSED, playerId: pass.playerId, swapRound: pass.swapRound };
 }
 
 // ---------------------------------------------------------------------------
@@ -532,4 +582,17 @@ export function isSwapMadeAction(action: AnyAction): action is SwapMadeAction {
     isSafeInteger(action['round']) &&
     isSafeInteger(action['swapRound'])
   );
+}
+
+/**
+ * Types only, and `swapRound` is not optional here either.
+ *
+ * The 1-based constraint is deliberately NOT checked. This function types one entry in
+ * isolation, and "which swap rounds this tournament has" is a fact about the config —
+ * `canApply` asks it, and `buildLogEntry` bounds it for the allocation reason. A guard that
+ * reached for the config would be a second authority on the same rule.
+ */
+export function isSwapPassedAction(action: AnyAction): action is SwapPassedAction {
+  if (action.type !== SWAP_PASSED || !isRecord(action)) return false;
+  return typeof action['playerId'] === 'string' && isSafeInteger(action['swapRound']);
 }
