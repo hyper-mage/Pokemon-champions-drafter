@@ -55,10 +55,11 @@ files_reviewed_list:
   - src/ui/tokens.css
 findings:
   critical: 2
+  critical_fixed: 2
   warning: 8
   info: 4
   total: 14
-status: issues_found
+status: blockers_fixed
 ---
 
 # Phase 3: Code Review Report
@@ -66,7 +67,41 @@ status: issues_found
 **Reviewed:** 2026-08-19T23:14:46Z
 **Depth:** standard
 **Files Reviewed:** 49
-**Status:** issues_found
+**Status:** blockers_fixed — both criticals resolved 2026-08-19; 8 warnings and 4 info remain open
+
+## Resolution of the two blockers
+
+Both were reproduced independently before being fixed, and both carry a regression test that
+fails against the previous implementation.
+
+**CR-01 — fixed in `fde7a83`.** `admitsDistinctRepresentatives` now decides Hall's condition by
+Kuhn's matching rather than by subset enumeration. Equivalence was established first: 15150
+exhaustive small cases (hands over 1–4 distinct values, 1–3 hands, with and without used values)
+agree with the old implementation on every one. Measured on the reachable worst case —
+24 players over 24 rounds, which is `players == rounds` and therefore passes GUARD 1 —
+**11185ms before, 0.056ms after**. `tests/core/cards.test.ts` gains a 250ms budget on that shape.
+
+*One correction to this report's CR-01 as written.* It states the exponential blowup is reachable
+with a 20-player/20-round document, which is right, and implies the 32-bit overflow of
+`1 << count` is reachable too, which is not. `cardOffer` returns at GUARD 1 whenever
+`players > rounds`, and `MAX_ROUNDS` is 24, so `count` never exceeds 23 and the shift never
+overflows through this call path. The overflow was a latent landmine — live only if GUARD 1 ever
+changed or a second caller appeared — not a live defect. The matching removes it either way.
+
+**CR-02 — fixed in `3601677`.** The staleness rule now lives in one derived `activeArmedSlot`,
+which both the pool surface and `handlePoolPick` read; neither reads the raw `armedSlot` any
+more. The report's severity call was sound but its impact framing needs one qualification:
+`apply(SWAP_MADE)` matches on `pick.monId` and folds a disagreeing swap to a no-op (T-03-38), so
+no document could be corrupted. The defect was an inescapable-looking armed state — the disarm
+control gone from the screen while clicks still opened swap confirms — rather than data loss.
+`tests/ui/swap.test.tsx` gains two cases, one of which was confirmed to fail against the old
+handler.
+
+The 8 warnings and 4 info findings below are **not** addressed and remain open. WR-02
+(`handlePlayCard` deciding round-completion by length while `canApply` decides by set membership)
+and WR-03 (`canApply(ORDER_RESOLVED)` validating nothing about the array that drives
+`selectCurrentTurn`) are the two worth taking first, WR-03 especially — `canApply` is what a
+future `receive(remoteAction)` runs at the sync seam.
 
 ## Summary
 
