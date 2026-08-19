@@ -68,7 +68,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **CARD-01**: Each player holds priority cards numbered `1..R`, where R is the compiled pick-round count
 - [x] **CARD-02**: The full round schedule, including which rounds are Mega rounds, is visible before the first card is played
 - [ ] **CARD-03**: Cards are played open and sequentially in a rotating order, so later players see what has already been played
-- [ ] **CARD-04**: When players are fewer than or equal to rounds, a value already played this round cannot be played again
+- [x] **CARD-04**: When players are fewer than or equal to rounds, a value already played this round cannot be played again
 - [ ] **CARD-05**: When players outnumber rounds, ties resolve by an explicit, visible, deterministic rule — never a silent sort
 - [ ] **CARD-06**: A played card is spent and unavailable for the remaining rounds
 - [ ] **CARD-07**: Every player's remaining cards are visible to everyone
@@ -235,7 +235,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CARD-01 | Phase 3 | Pending |
 | CARD-02 | Phase 3 | Complete |
 | CARD-03 | Phase 3 | Pending |
-| CARD-04 | Phase 3 | Pending |
+| CARD-04 | Phase 3 | Complete |
 | CARD-05 | Phase 3 | Pending |
 | CARD-06 | Phase 3 | Pending |
 | CARD-07 | Phase 3 | Pending |
