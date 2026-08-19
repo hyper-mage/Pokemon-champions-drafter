@@ -84,6 +84,20 @@
    * --target-min in both axes. */
   --pill-h: 24px;
 
+  /* Square minimum of a priority-card face. The content needs less in both axes and 64
+   * governs both:
+   *
+   *   height   8 pad + 41 digit (--text-display, 36 x 1.15) + 8 pad = 57
+   *   width   16 pad + ~20 digit + 16 pad                           = 52
+   *
+   * TWO consumers must stay in lockstep — the hand on the clock and the played-this-round
+   * row. A played 3 and a holdable 3 at different sizes read as two different objects on a
+   * screen a whole room is watching. It is a named token rather than a repeated length
+   * because DRFT-14 assertion 11 cites the card face as an acceptance criterion, and a
+   * value an assertion cites has to be regressable, exactly as --sprite-lg is. Multiple of
+   * 4, and clears --target-min in both axes. */
+  --card-min: 64px;
+
   /* --- Font families. --font-mono carries no size of its own. --- */
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;

@@ -1,0 +1,46 @@
+/*
+ * CardFace — one priority card, playable or already down.
+ *
+ * Tokens only: no raw hex and no raw length. No :focus rule — the global accent ring in
+ * app.css covers every focusable element, and a per-component ring is how a design system
+ * drifts.
+ *
+ * Both states share every box rule, which is the point: --card-min governs the square in
+ * both, so a played 3 and a holdable 3 are the same object at the same size.
+ */
+
+.card-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: var(--card-min);
+  min-height: var(--card-min);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  color: var(--color-text);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  /* The digit is the entire information content of the surface the room is watching, so it
+   * takes the largest token in the scale. */
+  font: var(--text-display);
+}
+
+.card-face--playable {
+  cursor: pointer;
+  /* Motion budget: colour only, at most 120ms. No flip, no deal, no entrance. */
+  transition: background-color 120ms ease;
+}
+
+.card-face--playable:hover {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * A played card is not a disabled control and is not dimmed. It is a move that everyone at
+ * the table watched, and the row it sits in IS the tiebreak rule made visible (D-22) — so
+ * it has to stay as legible as the cards still in hand.
+ */
+.card-face--played {
+  background: var(--color-surface-raised);
+}

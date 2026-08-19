@@ -1,0 +1,69 @@
+/*
+ * CardPanel — the card-play step, in the pool pane's place.
+ *
+ * Tokens only: no raw hex and no raw length. No :focus rule — the global accent ring in
+ * app.css covers every focusable element.
+ *
+ * No accent anywhere in this file. 03-UI-SPEC §Colour keeps the accent at exactly three
+ * uses and the card surfaces add none: playing a card is the action and the faces are its
+ * target.
+ */
+
+.card-panel {
+  display: flex;
+  flex-direction: column;
+  /* The gap between the panel's blocks — heading, hand, played row, still-to-play. */
+  gap: var(--space-4);
+  padding: var(--space-3);
+  background: var(--color-surface);
+}
+
+.card-panel__heading {
+  margin: 0;
+  font: var(--text-heading);
+  color: var(--color-text);
+}
+
+.card-panel__hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.card-panel__empty {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}
+
+.card-panel__played {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card-panel__played-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/*
+ * The player name under a played card takes --text-heading, matching the board row label.
+ * Player identity and card value are the two things read at a distance, and giving them one
+ * size is what makes the played row scannable from across a room.
+ */
+.card-panel__played-name {
+  font: var(--text-heading);
+  color: var(--color-text);
+}
+
+.card-panel__still {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text-muted);
+}
