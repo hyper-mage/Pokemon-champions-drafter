@@ -4,16 +4,26 @@ verified: 2026-08-19T23:56:22Z
 status: human_needed
 score: 5/5 roadmap success criteria verified; 23/23 requirement IDs have code evidence
 overrides_applied: 0
+# `human_verification:` holds ONLY items still awaiting a human. Settled ones move to
+# `human_verification_resolved:` below, keeping their full text and a resolution.
+#
+# The split is not cosmetic. `gsd-sdk query audit-uat` emits every entry under
+# `human_verification:` whenever this file's `status:` is `human_needed`, and it does NOT
+# read a per-item `resolved: true` (see sdk/dist/query/uat.js, parseVerificationFrontmatterItems
+# — it copies test/expected/why_human and nothing else). Leaving settled items in the array
+# therefore makes every future audit re-report work that is already done, which is how a real
+# outstanding item gets lost in noise. Do not merge these two keys back together.
 human_verification:
+  - test: "Play a full 4-8 player draft with real players and observe whether playing last in the card rotation feels like an advantage (D-18), whether players expect a HIGH card to win priority rather than LOW (D-23), whether a struck-through unplayable card is understood without an explanation, and whether the resolved pick order stays findable mid-round."
+    expected: "The rotation and low-plays-first tie rule hold up under real play, or a concrete change request is filed against selectCardPlayOrder / resolvePickOrder."
+    why_human: "This is a game-feel and comprehension question a unit test cannot ask. 03-12 Task 3 was explicitly deferred to a beta playtest by host decision on 2026-08-19, not skipped by oversight. Re-confirmed unchanged on 2026-08-20."
+human_verification_resolved:
   - test: "Run a real screen reader (NVDA, VoiceOver, or Windows Narrator) through a schedule reorder (SchedulePreview move), a card-resolution focus handoff (CardPanel to PoolGrid), and the two pane-expand transitions in SplitPanes."
     expected: "The polite announcement and the newly-focused control's own accessible name are both heard, or — if the announcement is preempted — the fact is recorded in SchedulePreview.tsx, CardPanel.tsx and SplitPanes.tsx's doc blocks as 03-UI-SPEC requires."
     why_human: "happy-dom performs no accessibility-tree computation and cannot confirm what a screen reader actually announces. 03-12 Task 2 explicitly recorded this as NOT RUN — no screen reader was configured on the host's machine — rather than papering over it."
     resolved: true
     resolution: "DESCOPED 2026-08-20 — settled by decision, not by testing. During the /gsd-audit-uat sweep the host said `it mostly works but I do not want this project to put anymore effort into screen reading` and directed that the item be archived. Deliberately NOT recorded as a pass: `mostly works` is an informal impression, not the four-transition walk this check specifies. Nothing in the delivered mechanism depends on the answer — every announced fact is redundantly carried by a focused control's own accessible name or by persistent on-screen text — so the descope forfeits no verified behaviour. The documentation obligation it carried is discharged: SchedulePreview.tsx and SplitPanes.tsx now record the descope rather than an unmet check, and CardPanel.tsx never carried a claim to correct. Reopening conditions are in deferred-items.md section 7."
     resolved_by: "host decision relayed 2026-08-20; recorded without re-testing because no test was run"
-  - test: "Play a full 4-8 player draft with real players and observe whether playing last in the card rotation feels like an advantage (D-18), whether players expect a HIGH card to win priority rather than LOW (D-23), whether a struck-through unplayable card is understood without an explanation, and whether the resolved pick order stays findable mid-round."
-    expected: "The rotation and low-plays-first tie rule hold up under real play, or a concrete change request is filed against selectCardPlayOrder / resolvePickOrder."
-    why_human: "This is a game-feel and comprehension question a unit test cannot ask. 03-12 Task 3 was explicitly deferred to a beta playtest by host decision on 2026-08-19, not skipped by oversight."
   - test: "Load an 8-player draft with hand strips showing and confirm the board renders all eight rows with no internal vertical scrollbar."
     expected: "All eight rows fit without a scrollbar appearing inside the board pane."
     why_human: "03-12's host report covered the three-metre legibility pass as a whole but did not separately call out this fifth, structural check (DRFT-14 assertion 12). Nothing in the automated suite lays out real font metrics, so this is unconfirmed rather than failed."
