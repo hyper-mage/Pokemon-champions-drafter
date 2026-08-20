@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 03-06 — the Mega round's pool and the slot that decides the export
-last_updated: "2026-08-18T20:32:22.616Z"
-last_activity: 2026-08-18 -- Phase 03 execution started
+status: phase_complete
+stopped_at: Phase 03 complete (12/12 plans, verified 2026-08-19). Phase 04 not started.
+last_updated: "2026-08-20T20:30:00.000Z"
+last_activity: 2026-08-20 -- quick task 260820-l4u closed the last two Phase 03 human-UAT items
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 36
-  completed_plans: 30
-  percent: 40
+  completed_plans: 36
+  percent: 60
 ---
 
 # Project State
@@ -21,25 +21,32 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** A group of friends can run an entire draft tournament — rules, bans, picks, swaps, brackets, results — start to finish inside the tool, without anyone reaching for a spreadsheet or a Discord message to track state.
-**Current focus:** Phase 03 — compiled-rules-priority-cards-swaps
+**Current focus:** Phase 04 — blind-and-snake-bans (not started). See the sequencing note below.
 
 ## Current Position
 
-Phase: 03 (compiled-rules-priority-cards-swaps) — EXECUTING
-Plan: 1 of 12
-Plans: 8 of 8 written, 6 waves
-Status: Executing Phase 03
-Last activity: 2026-08-18 -- Phase 03 execution started
+Phase: 03 (compiled-rules-priority-cards-swaps) — COMPLETE (12/12 plans, verified 2026-08-19)
+Next: Phase 04 (blind-and-snake-bans) — not started, no directory, 0 plans
+Status: Between phases
+Last activity: 2026-08-20 -- quick task 260820-l4u closed the last two Phase 03 human-UAT items
 
-Progress: [████████░░] 83%
+Progress: [████████████░░░░░░░░] 36/36 plans in phases 1–3 (3 of 5 phases)
+
+**Sequencing note (2026-08-20).** ROADMAP's execution order is 1→5, but Phase 5 depends only on
+Phase 3 and its own entry says it is "independent of Phase 4 and buildable before it." Phase 5
+carries REFR-01…03 — in-app roster refresh and the `validUntil` staleness banner — and this
+file's own notes expect Champions regulation M-C around **2026-09-02**. If the rotation lands
+before Phase 5 ships, the committed snapshot goes stale with no in-app path off it. Phase 4 has
+no comparable clock, and its ROADMAP notes ask for a real playtest with the group — the same
+session the one outstanding UAT item needs. Not decided; recorded so the choice is deliberate.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 33
-- Average duration: —
-- Total execution time: 0.0 hours
+- Total plans completed: 36
+- Average duration: — (only 2 of 36 plans were timed)
+- Total execution time: not tracked
 
 **By Phase:**
 
@@ -47,7 +54,7 @@ Progress: [████████░░] 83%
 |-------|-------|-------|----------|
 | 01 | 11 | - | - |
 | 02 | 13 | - | - |
-| 03 | 2 | 70min | 35min |
+| 03 | 12 | - | - (only P01/P02 timed, 70min combined) |
 
 **Per-plan:**
 
