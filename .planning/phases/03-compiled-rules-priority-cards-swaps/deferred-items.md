@@ -224,3 +224,58 @@ Asserted at one remaining in `tests/ui/swap-rounds.test.tsx`, on the whole sente
 **What it was not.** Not a deviation from the spec's substance — the numbers, the subject and
 the sentence order are unchanged. Only the plural agreement differed, and the spec's own
 copywriting contract is what required the change.
+
+---
+
+## 7. Screen-reader verification is DESCOPED for this milestone
+
+**Found during:** `/gsd-audit-uat` sweep, 2026-08-20
+**Owner:** host — this is a scope decision, not an engineering finding
+**Severity:** none open; the obligation is closed, not outstanding
+
+The WR-02 question — whether an `aria-live="polite"` announcement queued in the same commit as
+a `.focus()` call is actually heard, or is preempted by the newly focused control's own name —
+has been open since Phase 2. Phase 3 added two more surfaces to the check list (the
+`SchedulePreview` reorder move and the card-resolution handoff from `CardPanel` to `PoolGrid`),
+and 03-12 Task 2 recorded it as NOT RUN because no screen reader was configured on the host's
+machine.
+
+**The decision.** On 2026-08-20 the host descoped it: *"it mostly works but I do not want this
+project to put anymore effort into screen reading."* Archived at their direction.
+
+**Recorded as descoped, not passed — deliberately.** "Mostly works" is an informal impression
+offered in passing, not the four-transition walk `03-HUMAN-UAT` test 1 specifies. Writing it
+down as a pass would fabricate a result, which is the exact thing 03-12 refused to do when it
+reported the check as not run rather than assumed.
+
+**What is still true, and why this costs nothing verified.** The design never depended on the
+answer. Every fact an announcement carries is redundantly carried by something else: the
+schedule reorder's destination is in the newly focused button's own accessible name, the
+resolved pick order is persistent on-screen text, and each pane's restore control names the
+new state as it takes focus. That redundancy is why `03-UI-SPEC` called a preempted
+announcement *a finding to record* rather than a blocker. Descoping the check removes an
+observation, not a guarantee.
+
+**What changed in `src/`.** Nothing behavioural. Two doc blocks that asserted an outstanding
+obligation would otherwise have become false, and CLAUDE.md treats comments as contracts:
+
+- `SchedulePreview.tsx` — the `## Screen-reader check still owed` block now records the
+  descope. The reasoning about why the surface does not depend on the answer is unchanged.
+- `SplitPanes.tsx` — the `UNRESOLVED, and deliberately not resolved by guessing` block, which
+  closed with `Record the outcome here either way`, now records the outcome: descoped. Its
+  analysis of what an honest fix would look like *if* preemption were ever observed is kept
+  verbatim, because that is the design note a future reader needs.
+- `CardPanel.tsx` — untouched. It never carried a screen-reader claim, so it has nothing stale.
+
+**What would reopen it.** Either of two things, and nothing less:
+
+1. A real user of this tool uses a screen reader. The friend group is the entire audience; if
+   that changes, so does this.
+2. Someone removes the redundancy the descope leans on — makes an announcement the *only*
+   carrier of a fact, rather than a second carrier. `SplitPanes.tsx`'s block names the specific
+   case: the collapse-to-split transition moves no focus, so its announcement is already the
+   sole signal there, and it was kept for that reason. Adding another such case reopens this.
+
+**Suggested first step if it is reopened:** Windows Narrator needs no install
+(`Ctrl` + `Win` + `Enter`). `03-HUMAN-UAT` test 1 preserves the four-transition script verbatim
+so a future run needs no reconstruction.

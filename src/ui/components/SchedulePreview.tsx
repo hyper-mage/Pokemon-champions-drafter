@@ -37,14 +37,19 @@ import './SchedulePreview.css';
  * this surface so the hook is not wired out of habit. Every button here is its own tab
  * stop, deliberately.
  *
- * ## Screen-reader check still owed
+ * ## Screen-reader check: DESCOPED, not answered
  *
- * 03-UI-SPEC adds the reorder move to the WR-02 check list: a polite announcement queued
- * alongside a focus move is routinely preempted, and that finding is unresolved. This
- * surface is built so it does not depend on the answer — the destination is carried by the
- * newly focused button's own accessible name, so nothing here exists only in the
- * announcement. The NVDA/VoiceOver pass is still outstanding and is recorded here rather
- * than assumed done.
+ * 03-UI-SPEC added the reorder move to the WR-02 check list: a polite announcement queued
+ * alongside a focus move is routinely preempted, and that finding was never resolved. The
+ * host descoped screen-reader verification for this milestone on 2026-08-20, so this block
+ * records a decision rather than a result — the NVDA/VoiceOver pass was not run, and no
+ * outcome should be inferred from its absence.
+ *
+ * The reason that is affordable is unchanged and still load-bearing: this surface does not
+ * depend on the answer. The destination is carried by the newly focused button's own
+ * accessible name, so nothing here exists only in the announcement. Keep it that way — if a
+ * future change makes an announcement the ONLY carrier of a fact on this surface, the
+ * descope no longer covers it. See `03/deferred-items.md` §7.
  */
 
 export type MoveDirection = 'up' | 'down';

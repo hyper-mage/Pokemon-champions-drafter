@@ -203,7 +203,7 @@ export function SplitPanes({
   /**
    * Report the pane change, then announce it.
    *
-   * --- AN OPEN QUESTION, RECORDED SO IT IS NOT RE-DERIVED (WR-02) ---
+   * --- DESCOPED 2026-08-20, RECORDED SO IT IS NOT RE-DERIVED (WR-02) ---
    *
    * On the two EXPAND transitions this `announce` is committed in the same tick as the focus
    * handoff below, and a focus move makes assistive technology speak the newly focused
@@ -212,19 +212,25 @@ export function SplitPanes({
    * full width.` are precisely the two messages most likely never to be heard, and 02-11
    * changed the conditions they operate under without re-checking them.
    *
-   * UNRESOLVED, and deliberately not resolved by guessing. Settling it needs a real screen
-   * reader (NVDA or VoiceOver): happy-dom computes no accessible name, no description and no
-   * announcement queue, so no test in this repo can reach it, and 02-13's human checkpoint
-   * did not cover it — that list is focus visibility, the hover exclusion, the 02-10
-   * alignment and the reason line.
+   * NEVER ANSWERED, and now not going to be. Settling it needs a real screen reader (NVDA or
+   * VoiceOver): happy-dom computes no accessible name, no description and no announcement
+   * queue, so no test in this repo can reach it, and 02-13's human checkpoint did not cover
+   * it — that list is focus visibility, the hover exclusion, the 02-10 alignment and the
+   * reason line. On 2026-08-20 the host descoped screen-reader verification for this
+   * milestone. This block therefore records a DECISION, not a result: the pass was not run,
+   * and nothing about whether these two messages are heard should be inferred from it.
    *
-   * If the message does turn out to be preempted, the honest resolution is to stop announcing
-   * on the two transitions that MOVE focus: the restore control's own name — `Show the pool` —
-   * already states the new state as it takes focus, and an announcement that is emitted and
-   * swallowed is worse than none. It is not removed pre-emptively, because the
-   * collapse-to-split transition moves no focus and the announcement is the only signal a
-   * screen-reader user gets there; dropping it on an untested premise would trade a possible
-   * silence for a certain one. Record the outcome here either way.
+   * The code below is unchanged by that, on purpose. If the message ever DOES turn out to be
+   * preempted, the honest resolution is to stop announcing on the two transitions that MOVE
+   * focus: the restore control's own name — `Show the pool` — already states the new state as
+   * it takes focus, and an announcement that is emitted and swallowed is worse than none. It
+   * is still not removed pre-emptively, because the collapse-to-split transition moves no
+   * focus and the announcement is the only signal a screen-reader user gets there; dropping
+   * it on an untested premise would trade a possible silence for a certain one.
+   *
+   * That last sentence is also the boundary of the descope. It leans on every other announced
+   * fact having a second carrier; collapse-to-split is the one place that is already untrue.
+   * Adding a second such place reopens this. See `03/deferred-items.md` §7.
    */
   function change(next: PaneState, message: string): void {
     onPaneChange(next);

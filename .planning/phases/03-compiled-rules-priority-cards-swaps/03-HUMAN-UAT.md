@@ -34,7 +34,7 @@ expected: |
   the outcome written into the `SchedulePreview`, `CardPanel` and `SplitPanes` doc blocks, not
   only here.
 result: descoped
-note: "Descoped by host decision on 2026-08-20 during the /gsd-audit-uat sweep: `it mostly works but I do not want this project to put anymore effort into screen reading`. Recorded as DESCOPED, not passed — the host's `mostly works` is an informal impression offered in passing, not the four-transition pass this test asks for, and writing it down as a pass would be exactly the fabrication the previous note refused. Nothing in the design depends on the answer, so descoping costs no verified behaviour; see `deferred-items.md` §5 for what would reopen it. The step text above is preserved verbatim so a future run needs no reconstruction."
+note: "Descoped by host decision on 2026-08-20 during the /gsd-audit-uat sweep: `it mostly works but I do not want this project to put anymore effort into screen reading`. Recorded as DESCOPED, not passed — the host's `mostly works` is an informal impression offered in passing, not the four-transition pass this test asks for, and writing it down as a pass would be exactly the fabrication the previous note refused. Nothing in the design depends on the answer, so descoping costs no verified behaviour; see `deferred-items.md` §7 for what would reopen it. The step text above is preserved verbatim so a future run needs no reconstruction."
 
 ### 2. Card-mechanic playtest with real players
 setup: |
@@ -83,4 +83,4 @@ descoped: 1
   severity: minor
   test: 1
   root_cause: "Not a code defect, and never was. The design deliberately does not depend on the answer: every fact an announcement carries is also carried by a focused control's own name or by persistent on-screen text, and 03-UI-SPEC states that a preempted announcement is a finding to record rather than a blocker. What the descope closes is the DOCUMENTATION obligation — the requirement that an outcome be written into three component doc blocks, and the Phase 2 question at SplitPanes.tsx:215-227. Both doc blocks now record the descope instead of an unmet obligation, so nothing in `src/` claims a check is owed."
-  disposition: "Logged in deferred-items.md §5 with the two conditions that would reopen it. No code change was made and none is warranted."
+  disposition: "Logged in deferred-items.md §7 with the two conditions that would reopen it. No code change was made and none is warranted."
