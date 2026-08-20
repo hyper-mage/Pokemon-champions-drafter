@@ -3,7 +3,7 @@ quick_id: 260820-l4u
 slug: close-phase-3-human-uat-pass-board-heigh
 status: complete
 date: 2026-08-20
-commits: [775d275, f4de8bc, b495465]
+commits: [775d275, f4de8bc, b495465, 558863e, 1cb78cb]
 files_modified:
   - .planning/phases/03-compiled-rules-priority-cards-swaps/03-HUMAN-UAT.md
   - .planning/phases/03-compiled-rules-priority-cards-swaps/03-VERIFICATION.md
