@@ -124,6 +124,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260813-tep | Fix WR-07 / T-02-15 — one inert gate around every screen, not just the draft | 2026-08-14 | d34cc2a | [260813-tep-wr-07-inert-shell-restructure](./quick/260813-tep-wr-07-inert-shell-restructure/) |
+| 260820-l4u | Close Phase 3 human-UAT — board-height check passed, screen-reader pass descoped | 2026-08-20 | b495465 | [260820-l4u-close-phase-3-human-uat-pass-board-heigh](./quick/260820-l4u-close-phase-3-human-uat-pass-board-heigh/) |
 
 ## Deferred Items
 
@@ -131,9 +132,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Human verification | 03-12 Task 1 — three-metre legibility pass (DRFT-14 assertions 9–12) | **passed 2026-08-19** | — |
-| Human verification | 03-12 Task 2 — screen-reader pass on the four focus-moving transitions (WR-02) | not run — no screen reader set up | 2026-08-19 |
-| Human verification | 03-12 Task 3 — playtest the rotation and low-plays-first with real players (ROADMAP Notes) | deferred to beta test | 2026-08-19 |
+| Human verification | 03-12 Task 1 — three-metre legibility pass (DRFT-14 assertions 9–12) | **passed 2026-08-19**; assertion 12 (8-player board height) separately **passed 2026-08-20** | — |
+| Human verification | 03-12 Task 2 — screen-reader pass on the four focus-moving transitions (WR-02) | **DESCOPED 2026-08-20** — host decision, not a test result. See `03/deferred-items.md` §7 | closed |
+| Human verification | 03-12 Task 3 — playtest the rotation and low-plays-first with real players (ROADMAP Notes) | deferred to beta test — **the one item still outstanding** | 2026-08-19 |
 
 **Task 1 — passed.** Host verified at three metres on a **~24" 1080p monitor**. Reported as a
 pass overall rather than itemised per surface; the five surfaces the plan names are the card
