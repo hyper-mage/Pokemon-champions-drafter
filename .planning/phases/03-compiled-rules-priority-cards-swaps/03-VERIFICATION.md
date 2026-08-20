@@ -8,12 +8,18 @@ human_verification:
   - test: "Run a real screen reader (NVDA, VoiceOver, or Windows Narrator) through a schedule reorder (SchedulePreview move), a card-resolution focus handoff (CardPanel to PoolGrid), and the two pane-expand transitions in SplitPanes."
     expected: "The polite announcement and the newly-focused control's own accessible name are both heard, or — if the announcement is preempted — the fact is recorded in SchedulePreview.tsx, CardPanel.tsx and SplitPanes.tsx's doc blocks as 03-UI-SPEC requires."
     why_human: "happy-dom performs no accessibility-tree computation and cannot confirm what a screen reader actually announces. 03-12 Task 2 explicitly recorded this as NOT RUN — no screen reader was configured on the host's machine — rather than papering over it."
+    resolved: true
+    resolution: "DESCOPED 2026-08-20 — settled by decision, not by testing. During the /gsd-audit-uat sweep the host said `it mostly works but I do not want this project to put anymore effort into screen reading` and directed that the item be archived. Deliberately NOT recorded as a pass: `mostly works` is an informal impression, not the four-transition walk this check specifies. Nothing in the delivered mechanism depends on the answer — every announced fact is redundantly carried by a focused control's own accessible name or by persistent on-screen text — so the descope forfeits no verified behaviour. The documentation obligation it carried is discharged: SchedulePreview.tsx and SplitPanes.tsx now record the descope rather than an unmet check, and CardPanel.tsx never carried a claim to correct. Reopening conditions are in deferred-items.md section 5."
+    resolved_by: "host decision relayed 2026-08-20; recorded without re-testing because no test was run"
   - test: "Play a full 4-8 player draft with real players and observe whether playing last in the card rotation feels like an advantage (D-18), whether players expect a HIGH card to win priority rather than LOW (D-23), whether a struck-through unplayable card is understood without an explanation, and whether the resolved pick order stays findable mid-round."
     expected: "The rotation and low-plays-first tie rule hold up under real play, or a concrete change request is filed against selectCardPlayOrder / resolvePickOrder."
     why_human: "This is a game-feel and comprehension question a unit test cannot ask. 03-12 Task 3 was explicitly deferred to a beta playtest by host decision on 2026-08-19, not skipped by oversight."
   - test: "Load an 8-player draft with hand strips showing and confirm the board renders all eight rows with no internal vertical scrollbar."
     expected: "All eight rows fit without a scrollbar appearing inside the board pane."
     why_human: "03-12's host report covered the three-metre legibility pass as a whole but did not separately call out this fifth, structural check (DRFT-14 assertion 12). Nothing in the automated suite lays out real font metrics, so this is unconfirmed rather than failed."
+    resolved: true
+    resolution: "PASSED. Approved by the host on 2026-08-20 following the /gsd-audit-uat sweep, which surfaced this as the one outstanding item testable on one machine with no prerequisites. Consistent with the layout budget already recorded at BoardGrid.css:67-72 — the 8-player board lands at ~683px against ~851px available at 1080p — so the board pane's `overflow-y: auto` (SplitPanes.css:141) has headroom rather than being exercised. DRFT-14 assertion 12 is closed."
+    resolved_by: "host, 2026-08-20"
 ---
 
 # Phase 3: Compiled Rules, Priority Cards, Swaps — Verification Report
@@ -175,22 +181,28 @@ table, not a functional gap; it should be updated so the next phase's planner do
 
 See frontmatter `human_verification:` for the structured form. Narrative:
 
-1. **Screen-reader pass (WR-02 open question).** 03-12 Task 2 was explicitly not run — the host
-   had no screen reader configured. `SplitPanes.tsx`, `SchedulePreview.tsx`, and `CardPanel.tsx`
-   all defer this exact check in their own doc blocks rather than claiming an unobserved result.
-   Not a functional risk per those doc blocks (every announced fact is also carried by a focused
-   control's own name or by persistent on-screen text), but genuinely unverified.
-2. **Card-mechanic playtest.** 03-12 Task 3 was deferred to a beta playtest by explicit host
-   decision on 2026-08-19. The rotation and the low-plays-first tiebreak are implemented and
-   unit-tested for correctness, but whether they *feel* right to real players (D-18, D-23) is
-   an open design question, not a code defect.
-3. **8-player board scrollbar check.** Not separately confirmed in 03-12's host report (the
-   three-metre pass was reported as an overall result rather than itemized per surface). Low
-   risk — no evidence of a problem — but explicitly unconfirmed rather than passed.
+1. **Screen-reader pass (WR-02 open question).** ~~Outstanding~~ — **DESCOPED 2026-08-20** by
+   host decision during the `/gsd-audit-uat` sweep: *"it mostly works but I do not want this
+   project to put anymore effort into screen reading."* Settled by decision, not by testing, and
+   recorded as descoped rather than passed for exactly that reason. It costs no verified
+   behaviour: every announced fact is redundantly carried by a focused control's own accessible
+   name or by persistent on-screen text, which is why 03-UI-SPEC called a preempted announcement
+   a finding rather than a blocker in the first place. The doc-block obligation is discharged —
+   `SchedulePreview.tsx` and `SplitPanes.tsx` now record the descope instead of an owed check,
+   and `CardPanel.tsx` never carried a claim to correct. See `deferred-items.md` §5 for the two
+   conditions that reopen it.
+2. **Card-mechanic playtest.** STILL OUTSTANDING. 03-12 Task 3 was deferred to a beta playtest by
+   explicit host decision on 2026-08-19, re-confirmed unchanged on 2026-08-20. The rotation and
+   the low-plays-first tiebreak are implemented and unit-tested for correctness, but whether they
+   *feel* right to real players (D-18, D-23) is an open design question, not a code defect.
+3. **8-player board scrollbar check.** ~~Outstanding~~ — **PASSED 2026-08-20**, approved by the
+   host after the audit surfaced it as the one item testable on one machine with no
+   prerequisites. It agrees with the layout budget this phase already measured
+   (`BoardGrid.css:67-72`: ~683px of board against ~851px available at 1080p), so the pane's
+   `overflow-y: auto` has headroom rather than being exercised. DRFT-14 assertion 12 is closed.
 
-None of the three items above is a defect in the delivered mechanism; all three are the
-acceptance checks 03-UI-SPEC named as requiring a human, honestly recorded as outstanding rather
-than assumed.
+None of the three items above was a defect in the delivered mechanism. Two are now settled — one
+passed, one descoped — and the third is deferred by choice to a beta playtest.
 
 ### Gaps Summary
 
@@ -200,12 +212,17 @@ end to end (re-run independently, not taken on faith), both code-review blockers
 fixed with regression tests that were confirmed to fail against the prior implementation, and no
 debt markers (TBD/FIXME/XXX) exist in any file this phase touched.
 
-Status is `human_needed` rather than `passed` solely because three acceptance checks that
-03-UI-SPEC explicitly marks as requiring a human — a real screen-reader pass, a card-mechanic
-playtest, and one structural legibility check — were honestly recorded as not run / deferred
-rather than fabricated. This is the correct outcome to surface, not a failure to paper over.
+Status stays `human_needed` rather than `passed`, but for one reason now instead of three. Of
+the acceptance checks 03-UI-SPEC marks as requiring a human, the structural legibility check
+passed on 2026-08-20 and the screen-reader pass was descoped by the host the same day. The
+card-mechanic playtest remains genuinely unperformed — deferred to a beta session by choice, not
+skipped by oversight — and this report will not flip to `passed` on a check nobody ran. That is
+the correct outcome to surface, not a failure to paper over.
 
 ---
 
 _Verified: 2026-08-19T23:56:22Z_
 _Verifier: Claude (gsd-verifier)_
+_Amended: 2026-08-20 — human_verification items 1 and 3 settled (descoped / passed) following
+`/gsd-audit-uat`. No re-verification of the code was performed; nothing in `src/` changed
+behaviour._
