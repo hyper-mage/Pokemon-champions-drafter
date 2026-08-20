@@ -153,7 +153,7 @@ Do not re-derive the design from the requirement's wording without reading this 
 - **D-19:** **No re-ban is built. Collisions resolve as "both apply, one wasted", named
   explicitly at the reveal.** Both players' bans are recorded and attributed (D-13), the
   species is banned once, and the reveal renders a row saying so. The config screen still ships
-  the duplicate-policy control with `Re-ban — not yet available` rendered disabled — exactly
+  the duplicate-policy control with `Re-ban — Not yet available` rendered disabled — exactly
   the move Phase 2's D-12 used for blind and snake themselves, so BAN-07's config-time shape is
   settled now rather than rearranged around a late arrival, and a later milestone enables an
   option instead of adding a control plus a schema bump.
