@@ -469,6 +469,43 @@ function buildRoundSpecs(value: unknown): RoundSpec[] | null {
 }
 
 /**
+ * The reveal's attribution array, rebuilt record by record and array by array.
+ *
+ * The shape {@link buildRoundSpecs} takes, one level deeper — and the extra level is the
+ * whole reason this is a named function rather than three lines inside the arm. `bans` is
+ * an array of records each holding an array, so a rebuild that copied the outer level and
+ * assigned `ban.monIds` straight through would share every inner array with the parsed
+ * JSON. That is the aliasing `copyStringArray`'s own doc block exists to prevent, and it
+ * is invisible until something mutates one.
+ *
+ * Two DIFFERENT bounds, because the two levels hold different things: one record per
+ * player, one id per ban. Both are allocation bounds rather than integrity checks —
+ * whether these ids are the document's configured players, and whether the counts match
+ * its `bansPerPlayer`, are `canApply`'s questions, asked against a state this function
+ * cannot see.
+ */
+function buildRevealedBans(value: unknown): { playerId: string; monIds: string[] }[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length > MAX_PLAYERS) return null;
+
+  const bans: { playerId: string; monIds: string[] }[] = [];
+  for (const raw of value) {
+    const entry = safeObject(raw);
+    if (entry === null) return null;
+
+    const playerId = entry['playerId'];
+    if (typeof playerId !== 'string') return null;
+
+    const monIds = copyStringArray(entry['monIds'], MAX_BANS_PER_PLAYER);
+    if (monIds === null) return null;
+
+    bans.push({ playerId, monIds });
+  }
+
+  return bans;
+}
+
+/**
  * The config, rebuilt.
  *
  * ## Absent versus malformed — the distinction this function turns on
@@ -850,6 +887,52 @@ function buildLogEntry(value: unknown): Action | null {
       if (!isPositiveInteger(swapRound) || swapRound > MAX_SWAP_ROUNDS) return null;
 
       return { type: 'swap/passed', playerId, swapRound, ...envelope };
+    }
+
+    case 'bans/placed': {
+      // Every field NAMED, `pass` included — the same warning the `swap/made` arm above
+      // carries, against the same failure. `pass` has no consumer outside the ban board's
+      // `Pass {n}` column headers, which is exactly the condition under which a rebuild
+      // forgets one; a dropped `pass` survives in memory and in autosave, and turns every
+      // ban into a first-pass ban the moment a host shares the file.
+      const playerId = raw['playerId'];
+      const monId = raw['monId'];
+      const pass = raw['pass'];
+
+      if (typeof playerId !== 'string' || typeof monId !== 'string') return null;
+
+      // Bounded by the BAN cap rather than by `MAX_ROUNDS`: a pass is a ban, not a pick
+      // round, and the two numbers answer different questions. An allocation bound rather
+      // than an integrity check — `pass` becomes a column on the ban board, so four
+      // billion of them is an out-of-memory abort wearing a small number's clothes.
+      // Whether the document actually ran that many passes is `canApply`'s question.
+      if (!isPositiveInteger(pass) || pass > MAX_BANS_PER_PLAYER) return null;
+
+      return { type: 'bans/placed', playerId, monId, pass, ...envelope };
+    }
+
+    case 'bans/submitted': {
+      // Bounded by what the array HOLDS — one id per ban — which is the ban cap and not
+      // the pool or player one, on `order/resolved`'s reasoning above. Whether the count
+      // equals this document's `bansPerPlayer` is `canApply`'s `wrongBanCount`, and
+      // whether the ids repeat is its `duplicateBanIds`; both are asked against a state
+      // this function cannot see.
+      const playerId = raw['playerId'];
+      const monIds = copyStringArray(raw['monIds'], MAX_BANS_PER_PLAYER);
+
+      if (typeof playerId !== 'string') return null;
+      if (monIds === null) return null;
+
+      return { type: 'bans/submitted', playerId, monIds, ...envelope };
+    }
+
+    case 'bans/revealed': {
+      // The one arm in this switch whose payload is two levels deep, which is why the
+      // rebuild is a named function: see {@link buildRevealedBans} for why copying only
+      // the outer level would leave every `monIds` shared with the parsed JSON.
+      const bans = buildRevealedBans(raw['bans']);
+      if (bans === null) return null;
+      return { type: 'bans/revealed', bans, ...envelope };
     }
 
     default:

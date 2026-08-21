@@ -15,6 +15,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  bansPlaced,
+  bansRevealed,
+  bansSubmitted,
+  isBansPlacedAction,
+  isBansRevealedAction,
+  isBansSubmittedAction,
   isDraftStartedAction,
   isPoolBuiltAction,
   type AnyAction,
@@ -1959,5 +1965,414 @@ describe('a swap/passed log entry', () => {
     for (const value of [1.5, '1', null, Number.NaN]) {
       expect(rejection(parse(passDoc({ swapRound: value })))).toBe('wrongShape');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bans/placed, bans/submitted and bans/revealed at the untrusted boundary — T-04-11
+//
+// Pitfall 7 is what this block exists for. `buildLogEntry` rebuilds payloads FIELD BY
+// FIELD, so a field named in the interface, the creator and the structural guard but not
+// in the arm below survives in memory, survives an autosave, and disappears the moment a
+// host exports the document and somebody re-imports it. `pass` on `bans/placed` and the
+// nested `monIds` on `bans/revealed` are the two most likely to go, so both are asserted
+// on the rebuilt LOG ENTRY rather than on the fold: the entry is what a round trip
+// preserves or loses, and asserting on it keeps this block independent of the reducer.
+// ---------------------------------------------------------------------------
+
+/** Deliberate `seq` gaps, for the reason `cardDoc`'s own doc block gives. */
+const PLACED_ENTRY: Record<string, unknown> = {
+  type: 'bans/placed',
+  playerId: 'p1',
+  monId: 'kommoo',
+  pass: 2,
+  seq: 50,
+  at: 1_770_000_000_010,
+  actorId: 'host',
+};
+
+const SUBMITTED_ENTRY: Record<string, unknown> = {
+  type: 'bans/submitted',
+  playerId: 'p2',
+  monIds: ['venusaur', 'garchomp'],
+  seq: 60,
+  at: 1_770_000_000_011,
+  actorId: 'host',
+};
+
+const REVEALED_ENTRY: Record<string, unknown> = {
+  type: 'bans/revealed',
+  bans: [
+    { playerId: 'p1', monIds: ['kommoo'] },
+    { playerId: 'p2', monIds: ['venusaur', 'garchomp'] },
+  ],
+  seq: 70,
+  at: 1_770_000_000_012,
+  actorId: 'host',
+};
+
+function banDoc(entry: Record<string, unknown>, patch: Record<string, unknown> = {}): string {
+  return cardDoc([{ ...entry, ...patch }]);
+}
+
+function banDocWithout(entry: Record<string, unknown>, field: string): string {
+  const copy = { ...entry };
+  delete copy[field];
+  return cardDoc([copy]);
+}
+
+/** The last log entry of a document that must have parsed. */
+function lastEntry(result: ReturnType<typeof parseTournamentFile>): unknown {
+  expect(result.ok).toBe(true);
+  return result.ok ? result.doc.log[result.doc.log.length - 1] : undefined;
+}
+
+describe('a bans/placed log entry', () => {
+  it('survives the round trip field by field, pass and all', () => {
+    // `pass` is the field with no consumer outside the ban board's column headers, which
+    // is exactly the condition under which a rebuild forgets one — `swap/made`'s
+    // `swapRound` is the worked precedent.
+    expect(lastEntry(parse(banDoc(PLACED_ENTRY)))).toEqual({
+      type: 'bans/placed',
+      playerId: 'p1',
+      monId: 'kommoo',
+      pass: 2,
+      seq: 50,
+      at: 1_770_000_000_010,
+      actorId: 'host',
+    });
+  });
+
+  it('drops an unknown extra key rather than carrying it into state', () => {
+    // The rebuild is an allow-list. A file inventing `"revealed": true` on a ban must not
+    // be able to smuggle it past this boundary and into the fold.
+    expect(lastEntry(parse(banDoc(PLACED_ENTRY, { revealed: true })))).toEqual({
+      type: 'bans/placed',
+      playerId: 'p1',
+      monId: 'kommoo',
+      pass: 2,
+      seq: 50,
+      at: 1_770_000_000_010,
+      actorId: 'host',
+    });
+  });
+
+  it('refuses an entry missing any of its three payload fields', () => {
+    for (const field of ['playerId', 'monId', 'pass']) {
+      expect(rejection(parse(banDocWithout(PLACED_ENTRY, field))), field).toBe('wrongShape');
+    }
+  });
+
+  it('refuses a pass past the ban cap, and accepts one at it', () => {
+    // An ALLOCATION bound, not an integrity check: `pass` becomes a `Pass {n}` column on
+    // the ban board, so four billion of them is an out-of-memory abort wearing a small
+    // number's clothes. Whether the document actually ran that many passes is
+    // `canApply`'s question, asked against a state this function cannot see.
+    expect(rejection(parse(banDoc(PLACED_ENTRY, { pass: MAX_BANS_PER_PLAYER + 1 })))).toBe(
+      'wrongShape',
+    );
+    expect(rejection(parse(banDoc(PLACED_ENTRY, { pass: 4_000_000_000 })))).toBe('wrongShape');
+    expect(parse(banDoc(PLACED_ENTRY, { pass: MAX_BANS_PER_PLAYER })).ok).toBe(true);
+  });
+
+  it('refuses a pass of zero — passes are 1-based, like the board headers', () => {
+    expect(rejection(parse(banDoc(PLACED_ENTRY, { pass: 0 })))).toBe('wrongShape');
+  });
+
+  it('refuses a playerId or monId that is not a string, and a pass that is not an integer', () => {
+    for (const value of [42, null, ['p1'], { id: 'p1' }]) {
+      expect(rejection(parse(banDoc(PLACED_ENTRY, { playerId: value })))).toBe('wrongShape');
+      expect(rejection(parse(banDoc(PLACED_ENTRY, { monId: value })))).toBe('wrongShape');
+    }
+    for (const value of [1.5, '2', null, Number.NaN]) {
+      expect(rejection(parse(banDoc(PLACED_ENTRY, { pass: value })))).toBe('wrongShape');
+    }
+  });
+});
+
+describe('a bans/submitted log entry', () => {
+  it('survives the round trip with every element of monIds', () => {
+    expect(lastEntry(parse(banDoc(SUBMITTED_ENTRY)))).toEqual({
+      type: 'bans/submitted',
+      playerId: 'p2',
+      monIds: ['venusaur', 'garchomp'],
+      seq: 60,
+      at: 1_770_000_000_011,
+      actorId: 'host',
+    });
+  });
+
+  it('drops an unknown extra key', () => {
+    expect(lastEntry(parse(banDoc(SUBMITTED_ENTRY, { sealed: 'yes' })))).toEqual({
+      type: 'bans/submitted',
+      playerId: 'p2',
+      monIds: ['venusaur', 'garchomp'],
+      seq: 60,
+      at: 1_770_000_000_011,
+      actorId: 'host',
+    });
+  });
+
+  it('refuses an entry missing either of its two payload fields', () => {
+    for (const field of ['playerId', 'monIds']) {
+      expect(rejection(parse(banDocWithout(SUBMITTED_ENTRY, field))), field).toBe('wrongShape');
+    }
+  });
+
+  it('refuses more submitted ids than the ban cap allows', () => {
+    // Bounded by what the array HOLDS — one id per ban — which is `MAX_BANS_PER_PLAYER`
+    // rather than the pool or player cap. Whether the count matches this document's
+    // `bansPerPlayer` is `canApply`'s `wrongBanCount`, asked against a state this
+    // function cannot see.
+    const tooMany = Array.from({ length: MAX_BANS_PER_PLAYER + 1 }, (_, i) => `mon${i}`);
+    expect(rejection(parse(banDoc(SUBMITTED_ENTRY, { monIds: tooMany })))).toBe('wrongShape');
+    expect(parse(banDoc(SUBMITTED_ENTRY, { monIds: tooMany.slice(1) })).ok).toBe(true);
+  });
+
+  it('refuses a monIds that is not an array of strings', () => {
+    for (const value of [42, null, 'venusaur', { 0: 'venusaur' }, ['venusaur', 7]]) {
+      expect(rejection(parse(banDoc(SUBMITTED_ENTRY, { monIds: value })))).toBe('wrongShape');
+    }
+  });
+});
+
+describe('a bans/revealed log entry', () => {
+  it('survives the round trip with every nested monIds intact', () => {
+    // The nested array is the field a rebuild is most likely to flatten or drop. A reveal
+    // that lost `p2`'s second ban would show the room a banlist shorter than the one they
+    // watched being revealed.
+    expect(lastEntry(parse(banDoc(REVEALED_ENTRY)))).toEqual({
+      type: 'bans/revealed',
+      bans: [
+        { playerId: 'p1', monIds: ['kommoo'] },
+        { playerId: 'p2', monIds: ['venusaur', 'garchomp'] },
+      ],
+      seq: 70,
+      at: 1_770_000_000_012,
+      actorId: 'host',
+    });
+  });
+
+  it('drops an unknown extra key on the entry and inside a record', () => {
+    expect(lastEntry(parse(banDoc(REVEALED_ENTRY, { atReveal: 1 })))).toEqual({
+      type: 'bans/revealed',
+      bans: [
+        { playerId: 'p1', monIds: ['kommoo'] },
+        { playerId: 'p2', monIds: ['venusaur', 'garchomp'] },
+      ],
+      seq: 70,
+      at: 1_770_000_000_012,
+      actorId: 'host',
+    });
+
+    const withExtra = parse(
+      banDoc(REVEALED_ENTRY, {
+        bans: [{ playerId: 'p1', monIds: ['kommoo'], hidden: 'x' }],
+      }),
+    );
+    expect(lastEntry(withExtra)).toEqual({
+      type: 'bans/revealed',
+      bans: [{ playerId: 'p1', monIds: ['kommoo'] }],
+      seq: 70,
+      at: 1_770_000_000_012,
+      actorId: 'host',
+    });
+  });
+
+  it('refuses an entry with no bans array', () => {
+    expect(rejection(parse(banDocWithout(REVEALED_ENTRY, 'bans')))).toBe('wrongShape');
+  });
+
+  it('accepts an empty bans array — an empty reveal is a shape, not a rule', () => {
+    expect(parse(banDoc(REVEALED_ENTRY, { bans: [] })).ok).toBe(true);
+  });
+
+  it('refuses a record with a non-array monIds or a non-string inside one', () => {
+    for (const value of [42, null, 'venusaur', ['venusaur', 7]]) {
+      expect(
+        rejection(parse(banDoc(REVEALED_ENTRY, { bans: [{ playerId: 'p1', monIds: value }] }))),
+      ).toBe('wrongShape');
+    }
+  });
+
+  it('refuses a record that is not a record, or one with no playerId', () => {
+    for (const value of [42, null, 'p1', ['p1']]) {
+      expect(rejection(parse(banDoc(REVEALED_ENTRY, { bans: [value] })))).toBe('wrongShape');
+    }
+    expect(rejection(parse(banDoc(REVEALED_ENTRY, { bans: [{ monIds: ['kommoo'] }] })))).toBe(
+      'wrongShape',
+    );
+  });
+
+  it('refuses more attribution records than the player cap allows', () => {
+    // Bounded by what the array holds — one record per player — the same argument
+    // `draft/started.order` carries. Whether these ids are the document's configured
+    // players is referential integrity, which this function deliberately does not do.
+    const tooMany = Array.from({ length: MAX_PLAYERS + 1 }, (_, i) => ({
+      playerId: `p${i}`,
+      monIds: ['kommoo'],
+    }));
+    expect(rejection(parse(banDoc(REVEALED_ENTRY, { bans: tooMany })))).toBe('wrongShape');
+    expect(parse(banDoc(REVEALED_ENTRY, { bans: tooMany.slice(1) })).ok).toBe(true);
+  });
+
+  it('refuses a nested monIds longer than the ban cap', () => {
+    const tooMany = Array.from({ length: MAX_BANS_PER_PLAYER + 1 }, (_, i) => `mon${i}`);
+    expect(
+      rejection(parse(banDoc(REVEALED_ENTRY, { bans: [{ playerId: 'p1', monIds: tooMany }] }))),
+    ).toBe('wrongShape');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The ban creators — payload only, every field named, arrays copied
+// ---------------------------------------------------------------------------
+
+describe('the ban creators', () => {
+  it('bansPlaced returns the three fields and the type, and nothing else', () => {
+    // No `seq`, no `at`, no `actorId`. A creator that reached for a clock would be an
+    // ambient read inside the core and `check:pure` would fail the build for it.
+    expect(bansPlaced('p1', 'kommoo', 2)).toEqual({
+      type: 'bans/placed',
+      playerId: 'p1',
+      monId: 'kommoo',
+      pass: 2,
+    });
+  });
+
+  it('bansSubmitted does not alias the caller array', () => {
+    // The blind entry surface holds its in-progress selection in component state and
+    // re-renders it on every keystroke. A payload that aliased that array would let a
+    // later render mutate a log entry that has already been written.
+    const monIds = ['venusaur', 'garchomp'];
+    const payload = bansSubmitted('p2', monIds);
+    monIds.push('rotomwash');
+    monIds[0] = 'mutated';
+    expect(payload.monIds).toEqual(['venusaur', 'garchomp']);
+  });
+
+  it('bansRevealed copies BOTH levels', () => {
+    // The outer array and every inner `monIds`. Copying only the outer one leaves each
+    // record's array shared with whatever built it.
+    const inner = ['venusaur'];
+    const bans = [{ playerId: 'p2', monIds: inner }];
+    const payload = bansRevealed(bans);
+
+    inner.push('garchomp');
+    bans.push({ playerId: 'p1', monIds: ['kommoo'] });
+
+    expect(payload.bans).toEqual([{ playerId: 'p2', monIds: ['venusaur'] }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The ban structural guards — types only, and the omission is the design
+// ---------------------------------------------------------------------------
+
+function bansPlacedEntry(overrides: Record<string, unknown> = {}): AnyAction {
+  return { ...PLACED_ENTRY, ...overrides } as unknown as AnyAction;
+}
+
+function bansSubmittedEntry(overrides: Record<string, unknown> = {}): AnyAction {
+  return { ...SUBMITTED_ENTRY, ...overrides } as unknown as AnyAction;
+}
+
+function bansRevealedEntry(overrides: Record<string, unknown> = {}): AnyAction {
+  return { ...REVEALED_ENTRY, ...overrides } as unknown as AnyAction;
+}
+
+describe('isBansPlacedAction', () => {
+  it('accepts a complete payload', () => {
+    expect(isBansPlacedAction(bansPlacedEntry())).toBe(true);
+  });
+
+  it('refuses a payload missing any of its three fields', () => {
+    for (const field of ['playerId', 'monId', 'pass']) {
+      expect(isBansPlacedAction(without(bansPlacedEntry(), field)), field).toBe(false);
+    }
+  });
+
+  it.each([['2'], [Number.NaN], [1.5], [null]])('refuses a pass of %s', (pass: unknown) => {
+    expect(isBansPlacedAction(bansPlacedEntry({ pass }))).toBe(false);
+  });
+
+  it('does not ask whether monId is on the roster or whether pass is in range', () => {
+    // No roster is in reach of a structural guard, and `config.bansPerPlayer` is a fact
+    // about the STATE. Both live in `canApply`, which sees what this function cannot.
+    expect(isBansPlacedAction(bansPlacedEntry({ monId: 'not-a-species', pass: 99 }))).toBe(true);
+  });
+});
+
+describe('isBansSubmittedAction', () => {
+  it('accepts a complete payload', () => {
+    expect(isBansSubmittedAction(bansSubmittedEntry())).toBe(true);
+  });
+
+  it('accepts a monIds array of the WRONG LENGTH — the length is canApply’s question', () => {
+    // Stated as its own test because it is the omission most likely to be "fixed" by a
+    // later reader. A guard that reached for `config.bansPerPlayer` would be a second
+    // authority on the same rule, free to disagree with the first.
+    expect(isBansSubmittedAction(bansSubmittedEntry({ monIds: [] }))).toBe(true);
+    expect(isBansSubmittedAction(bansSubmittedEntry({ monIds: ['a', 'b', 'c', 'd', 'e'] }))).toBe(
+      true,
+    );
+  });
+
+  it('accepts duplicate ids — the duplicate is canApply’s question too', () => {
+    expect(isBansSubmittedAction(bansSubmittedEntry({ monIds: ['venusaur', 'venusaur'] }))).toBe(
+      true,
+    );
+  });
+
+  it('refuses a payload missing either field', () => {
+    for (const field of ['playerId', 'monIds']) {
+      expect(isBansSubmittedAction(without(bansSubmittedEntry(), field)), field).toBe(false);
+    }
+  });
+
+  it.each([[42], [null], ['venusaur'], [{ 0: 'venusaur' }]])(
+    'refuses a monIds of %s',
+    (monIds: unknown) => {
+      expect(isBansSubmittedAction(bansSubmittedEntry({ monIds }))).toBe(false);
+    },
+  );
+
+  it('refuses a monIds holding a non-string', () => {
+    expect(isBansSubmittedAction(bansSubmittedEntry({ monIds: ['venusaur', 7] }))).toBe(false);
+  });
+});
+
+describe('isBansRevealedAction', () => {
+  it('accepts the nested attribution array', () => {
+    expect(isBansRevealedAction(bansRevealedEntry())).toBe(true);
+  });
+
+  it('accepts an empty reveal', () => {
+    expect(isBansRevealedAction(bansRevealedEntry({ bans: [] }))).toBe(true);
+  });
+
+  it('refuses a payload with no bans array', () => {
+    expect(isBansRevealedAction(without(bansRevealedEntry(), 'bans'))).toBe(false);
+  });
+
+  it('refuses a record with a non-array monIds', () => {
+    for (const monIds of [42, null, 'venusaur', { 0: 'venusaur' }]) {
+      expect(isBansRevealedAction(bansRevealedEntry({ bans: [{ playerId: 'p1', monIds }] }))).toBe(
+        false,
+      );
+    }
+  });
+
+  it('refuses a non-string entry inside a nested monIds', () => {
+    expect(
+      isBansRevealedAction(bansRevealedEntry({ bans: [{ playerId: 'p1', monIds: ['a', 7] }] })),
+    ).toBe(false);
+  });
+
+  it('refuses a record that is not a record, or one with no playerId', () => {
+    for (const record of [42, null, 'p1', ['p1']]) {
+      expect(isBansRevealedAction(bansRevealedEntry({ bans: [record] }))).toBe(false);
+    }
+    expect(isBansRevealedAction(bansRevealedEntry({ bans: [{ monIds: ['kommoo'] }] }))).toBe(false);
   });
 });

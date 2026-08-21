@@ -115,6 +115,16 @@ const NEVER_UNDONE: readonly string[] = [POOL_BUILT, SCHEDULE_COMPILED, DRAFT_ST
  * actions joined the allow-list below nobody had to re-derive whether a growing allow-list
  * could reach `pool/built`. It could not, and that was the point of writing it that way.
  *
+ * D-11 makes that argument do MORE work than it used to, not less. `pool/built` is no
+ * longer the first action of every document: a `blind` or `snake` tournament writes it
+ * LAST, after the ban stage and the reveal, so it is now the most recent entry at exactly
+ * the moment a host is most likely to press `Undo last move`. The deny-list is what keeps
+ * that press from un-drawing the pool and leaving a started draft with nothing to pick
+ * from — and it holds without amendment, because it names the three originating types
+ * rather than reasoning about where they sit in the log. Anything that ever replaces it
+ * with a positional rule ("the first three entries") would be wrong for two of the three
+ * ban modes.
+ *
  * The ALLOW-LIST is the structural check, and it is why this is not simply "anything not
  * excluded". An imported or hand-edited log is untrusted input: it can carry an action
  * type this build has never heard of, which `apply` tolerates and folds to nothing, and it

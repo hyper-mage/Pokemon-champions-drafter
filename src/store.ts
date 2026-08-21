@@ -191,11 +191,21 @@ export interface CreateTournamentInput {
  *                      regulations rotate roughly every 2.5 months; a document that recorded
  *                      only "build a pool" would reopen next regulation as a different
  *                      tournament.
- *   schedule/compiled  the round schedule the host approved, after any reorder. AFTER the
- *                      pool, because a schedule is meaningful only against one; BEFORE the
- *                      draft, because `canApply(DRAFT_STARTED)` now requires it and because
+ *   schedule/compiled  the round schedule the host approved, after any reorder. BEFORE the
+ *                      draft, because `canApply(DRAFT_STARTED)` requires it and because
  *                      CARD-02 needs the schedule on screen before the first card is played.
  *   draft/started      the resolved starting order, and the seed it was rolled from.
+ *
+ * ## This ordering is the HOST-BANLIST one, and D-11 made it one of two
+ *
+ * The sequence above is what a `hostBanlist` tournament emits, and this function only ever
+ * creates one — D-01 keeps it atomic and unparameterised for exactly that reason. A `blind`
+ * or `snake` tournament runs `schedule/compiled` → `draft/started` → the ban stage →
+ * `bans/revealed` → **`pool/built` last**, because the serpentine reads `state.order` and
+ * the reveal is what decides what the draw may contain (D-23). `canApply` conditions both
+ * `poolNotBuilt` guards on the mode rather than dropping them, so the rule this function
+ * relies on is byte-for-byte the one it has always relied on. The second entry point is a
+ * SIBLING of this function, never a flag on it; two seams is what D-01 buys.
  *
  * Both seeds ride on the ACTION rather than in `config` or `rng`, which is what keeps a
  * later re-roll expressible: it emits a new action with a new seed and contradicts no

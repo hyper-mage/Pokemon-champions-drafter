@@ -20,10 +20,16 @@
  */
 
 import {
+  BANS_PLACED,
+  BANS_REVEALED,
+  BANS_SUBMITTED,
   CARDS_PLAYED,
   DRAFT_PICK_MADE,
   DRAFT_PICK_UNDONE,
   DRAFT_STARTED,
+  isBansPlacedAction,
+  isBansRevealedAction,
+  isBansSubmittedAction,
   isCardsPlayedAction,
   isDraftStartedAction,
   isOrderResolvedAction,
@@ -125,7 +131,50 @@ export type RejectionReason =
    */
   | 'notSwapRound'
   /** Every player has already moved in that swap round, so its clock is spent. */
-  | 'swapRoundComplete';
+  | 'swapRoundComplete'
+  /**
+   * There is no ban stage this action could belong to — BAN-03, BAN-04.
+   *
+   * ONE reason for three situations, on `nothingToSwap`'s precedent: the document is
+   * `hostBanlist` and has no player ban stage at all, the action belongs to the OTHER
+   * mode's stage (a `bans/placed` in a blind tournament, a `bans/submitted` in a snake
+   * one), or the reveal has already landed and the stage is over. From the host's side
+   * they are one failure — the action names a stage this tournament is not in — and no
+   * host could act differently on the difference.
+   */
+  | 'banStageNotRunning'
+  /**
+   * That player is not the serpentine clock's answer, or every allotment is spent.
+   *
+   * The empty clock is refused as out of turn rather than given its own reason, which is
+   * exactly what `canApply(CARDS_PLAYED)` does with a `selectCardTurn` of `undefined`.
+   */
+  | 'notYourBanTurn'
+  /** That player already submitted a blind allotment, and a submission is one act (D-05). */
+  | 'alreadySubmitted'
+  /**
+   * The allotment is not `config.bansPerPlayer` ids long.
+   *
+   * NOT collapsed into `duplicateBanIds` below, and the test for that is the one
+   * `nothingToSwap` states: would the host-facing copy be identical? It would not. "You
+   * chose three bans; this tournament gives each player two" and "you chose the same
+   * Pokémon twice" name different mistakes with different fixes, and a host can act
+   * differently on the difference.
+   */
+  | 'wrongBanCount'
+  /** One player named the same species twice — mirrors `duplicatePoolIds`. */
+  | 'duplicateBanIds'
+  /**
+   * That species is already banned in the open — snake only, D-20.
+   *
+   * `notInPool` is deliberately NOT borrowed for this. The ban stage runs BEFORE the pool
+   * exists, so a reason naming the pool would make a future reader believe there is one.
+   */
+  | 'banAlreadyPlaced'
+  /** Not every player has submitted yet, so there is nothing complete to reveal. */
+  | 'bansNotComplete'
+  /** The reveal is already recorded, so nothing about it can still change — mirrors `poolAlreadyBuilt`. */
+  | 'bansAlreadyRevealed';
 
 export type CanApplyResult = { ok: true } | { ok: false; reason: RejectionReason };
 
@@ -133,6 +182,48 @@ const OK: CanApplyResult = { ok: true };
 
 function reject(reason: RejectionReason): CanApplyResult {
   return { ok: false, reason };
+}
+
+/**
+ * Whose snake ban it is, and which pass they are on — D-12. `null` when nobody is.
+ *
+ * ## Why this lives HERE, which is not where it belongs
+ *
+ * The turn derivation belongs in `selectors.ts`, beside `selectStartingOrder`, and
+ * `canApply(CARDS_PLAYED)` above shows why: it asks `selectCardTurn` rather than working
+ * the rotation out locally, and the comment there records what happened when it did not —
+ * the card panel had to choose between importing from the reducer and deriving the
+ * rotation a second time, and a second copy of "who is on the clock" is a second thing
+ * that can disagree with the log.
+ *
+ * 04-04 builds `selectBanOrder` and `selectBanTurn` in `selectors.ts`. It runs one wave
+ * AFTER this plan, and this arm cannot import something that does not exist yet, so the
+ * derivation is written once here in the meantime. **When `selectBanTurn` lands, delete
+ * this function and import it** — and note that the serpentine cases pinned in
+ * `tests/core/reduce.test.ts` run through this arm, so a replacement that disagrees will
+ * fail them rather than diverge quietly.
+ *
+ * ## The serpentine itself
+ *
+ * `1→2→3→4` then `4→3→2→1`, repeating. A straight rotation compounds a first-mover
+ * advantage over every pass; reversing on alternate passes is what corrects it. The pass
+ * is 1-based to match the ban board's `Pass {n}` column headers.
+ */
+function banTurn(state: DraftState): { playerId: string; pass: number } | null {
+  const players = state.order.length;
+  const allotment = state.config.bansPerPlayer;
+  if (players === 0 || allotment <= 0) return null;
+
+  const placed = state.banPlacements.length;
+  if (placed >= players * allotment) return null;
+
+  const pass = Math.floor(placed / players) + 1;
+  const withinPass = placed % players;
+  // Odd passes run forwards, even passes backwards. That IS the serpentine.
+  const position = pass % 2 === 1 ? withinPass : players - 1 - withinPass;
+
+  const playerId = state.order[position];
+  return playerId === undefined ? null : { playerId, pass };
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +418,69 @@ export function apply(state: DraftState, action: AnyAction): DraftState {
       };
     }
 
+    case BANS_PLACED: {
+      if (!isBansPlacedAction(action)) return state;
+
+      // `pass` is CARRIED, never re-derived from `banPlacements.length`. An undo that
+      // removes a ban ahead of this one must not move it into a different board column.
+      return {
+        ...state,
+        banPlacements: [
+          ...state.banPlacements,
+          {
+            playerId: action.playerId,
+            monId: action.monId,
+            pass: action.pass,
+            // Off the ENVELOPE, never off the array's length — the log may legally have gaps.
+            seq: action.seq,
+          },
+        ],
+      };
+    }
+
+    case BANS_SUBMITTED: {
+      if (!isBansSubmittedAction(action)) return state;
+
+      // Appends, and deliberately does not replace an existing entry for the same player.
+      // `apply` is not a validator: a second submission is `canApply`'s `alreadySubmitted`
+      // to refuse on origination, and the selectors answer with the FIRST match, so a
+      // hand-edited file cannot rewrite what a player sealed by appending a second opinion.
+      //
+      // `monIds` element by element, so the folded state never shares an array with the
+      // log entry it was folded from.
+      return {
+        ...state,
+        banSubmissions: [
+          ...state.banSubmissions,
+          {
+            playerId: action.playerId,
+            monIds: action.monIds.map((id) => id),
+            // Off the ENVELOPE, for the reason directly above.
+            seq: action.seq,
+          },
+        ],
+      };
+    }
+
+    case BANS_REVEALED: {
+      if (!isBansRevealedAction(action)) return state;
+
+      // FIRST reveal wins, exactly as `selectResolvedOrder` answers with the first
+      // matching round. A hand-edited or imported log must not be able to rewrite the
+      // reveal the room already watched by appending a second one — `canApply` refuses it
+      // on origination, and this makes the fold agree.
+      if (state.bansRevealed !== null) return state;
+
+      // Freshly built records, and both levels: the outer array and every `monIds`.
+      return {
+        ...state,
+        bansRevealed: action.bans.map((ban) => ({
+          playerId: ban.playerId,
+          monIds: ban.monIds.map((id) => id),
+        })),
+      };
+    }
+
     default:
       // Forward compatibility. An action type this build has never heard of is not an
       // error; it is a newer client's business.
@@ -350,9 +504,18 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
 
     case SCHEDULE_COMPILED: {
       if (!isScheduleCompiledAction(action)) return reject('malformedPayload');
-      // After the pool, because a schedule is only meaningful against one, and before the
-      // draft, because `DRAFT_STARTED` below now requires it.
-      if (state.poolIds.length === 0) return reject('poolNotBuilt');
+
+      // The pool precedes the schedule only in host-banlist mode (D-01, D-11). Blind and
+      // snake compile the schedule and resolve the ORDER first, so the ban stage can read
+      // DRFT-16's starting order, and draw the pool after the reveal (D-23) — which is
+      // what makes one randomizer the source of turn order for bans and picks alike.
+      //
+      // CONDITIONED rather than deleted, and that is the whole of D-01's zero-regression
+      // posture: for `hostBanlist` this is byte-for-byte the rule Phase 3 verified.
+      if (state.config.banMode === 'hostBanlist' && state.poolIds.length === 0) {
+        return reject('poolNotBuilt');
+      }
+
       if (state.schedule.length > 0) return reject('scheduleAlreadyCompiled');
       if (state.order.length > 0) return reject('draftAlreadyStarted');
 
@@ -370,7 +533,14 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
 
     case DRAFT_STARTED: {
       if (!isDraftStartedAction(action)) return reject('malformedPayload');
-      if (state.poolIds.length === 0) return reject('poolNotBuilt');
+
+      // Conditioned on the mode for the reason `SCHEDULE_COMPILED` above states, and this
+      // is the arm D-11 is actually about: the ban stage needs `state.order` before there
+      // is a pool, because the serpentine reads it.
+      if (state.config.banMode === 'hostBanlist' && state.poolIds.length === 0) {
+        return reject('poolNotBuilt');
+      }
+
       // Origination is guarded; replay deliberately is not. `fold` does not run `canApply`
       // (see the bottom of this file), so a migrated schema-2 document — whose log has no
       // `schedule/compiled` in it, because `migrateV2ToV3` performs no log surgery — still
@@ -576,6 +746,120 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
       // A pass is not a spend (D-29), so a player with no swaps left may still pass — and
       // in fact must be able to, because passing is the only way their swap round ends.
       // Rejecting `noSwapsLeft` here would hang the round on the first player to run out.
+      return OK;
+    }
+
+    // -----------------------------------------------------------------------
+    // The ban stage — BAN-03, BAN-04.
+    //
+    // Every arm below is a BACKSTOP, and none of them should be reachable from the UI.
+    // `selectCardOffer`'s doc block in `selectors.ts` is the governing pattern for this
+    // whole phase: the constraint belongs upstream of the click, so the ban surfaces
+    // render an illegal species or an out-of-turn control inert WITH A REASON rather than
+    // letting it be clicked and refused. These arms refuse an action that arrived some
+    // other way — from a hand-edited or imported document — and a test that reaches one is
+    // testing that path, not the host's. If one ever fires for a real host, the offer and
+    // the rule have disagreed and that is a bug in the offer.
+    // -----------------------------------------------------------------------
+
+    case BANS_PLACED: {
+      if (!isBansPlacedAction(action)) return reject('malformedPayload');
+
+      // A snake ban belongs to a snake stage that has not ended. `hostBanlist` has no
+      // player ban stage at all, `blind` has a different one, and a landed reveal means
+      // this one is over — one reason for all three, per the member's own doc block.
+      if (state.config.banMode !== 'snake' || state.bansRevealed !== null) {
+        return reject('banStageNotRunning');
+      }
+      if (state.order.length === 0) return reject('draftNotStarted');
+
+      // `null` when every allotment is spent, which still fails the comparison below: the
+      // empty clock is refused as out of turn, exactly as the card clock is.
+      const turn = banTurn(state);
+      if (turn === null || action.playerId !== turn.playerId) return reject('notYourBanTurn');
+
+      // `pass` is stamped at the edge from the serpentine, so a mismatch can only arrive
+      // from an edited or imported log — the same argument `draft/pickMade` makes about
+      // `round` and `pickIndex`. `apply` records `pass` verbatim, so an unguarded
+      // mismatch would file the ban under a column the board renders in the wrong place.
+      if (action.pass !== turn.pass) return reject('wrongSlot');
+
+      // Already banned in the open — by the host up front, or by an earlier placement.
+      // Both are the same fact from a player's side: the species is gone. This is D-20's
+      // rule, and `selectPublicBanIds` is the surface-facing answer to the same question.
+      if (state.config.bans.includes(action.monId)) return reject('banAlreadyPlaced');
+      if (state.banPlacements.some((ban) => ban.monId === action.monId)) {
+        return reject('banAlreadyPlaced');
+      }
+
+      // WHAT THIS DELIBERATELY DOES NOT CHECK: whether `monId` is a species at all.
+      //
+      // The ban stage runs BEFORE the pool is drawn, so there is no id list to test
+      // membership against, and `DraftState` holds no roster and must not — the fold is a
+      // cache of the log. This is the position `draft/pickMade` is in with slot
+      // eligibility, and the answer is the same: the OFFER constrains it. The ban surface
+      // filters the roster before anything is clickable.
+      return OK;
+    }
+
+    case BANS_SUBMITTED: {
+      if (!isBansSubmittedAction(action)) return reject('malformedPayload');
+
+      if (state.config.banMode !== 'blind' || state.bansRevealed !== null) {
+        return reject('banStageNotRunning');
+      }
+      if (state.order.length === 0) return reject('draftNotStarted');
+
+      // The rotation, not `config.players`. A hand-edited document can carry an order
+      // shorter than its player list, and the players who can actually submit are the ones
+      // in the rotation — the same reading `selectCardOffer` takes of `state.order.length`.
+      if (!state.order.includes(action.playerId)) return reject('unknownPlayer');
+
+      // BEFORE the shape checks. A player told "you chose the wrong number of bans" about
+      // an allotment they already sealed has been sent to the wrong problem entirely.
+      if (state.banSubmissions.some((entry) => entry.playerId === action.playerId)) {
+        return reject('alreadySubmitted');
+      }
+
+      // The COUNT, which the structural guard could not ask about: it types an action in
+      // isolation and cannot see `config.bansPerPlayer`.
+      if (action.monIds.length !== state.config.bansPerPlayer) return reject('wrongBanCount');
+
+      // Within ONE submission only. Two players naming the same species is a COLLISION,
+      // which is a legal outcome of a blind stage under D-19's `bothApply` and the reveal
+      // screen's whole reason for showing attribution — refusing it here would make the
+      // second player's sealed allotment unsubmittable for a reason they cannot see.
+      if (new Set(action.monIds).size !== action.monIds.length) {
+        return reject('duplicateBanIds');
+      }
+
+      return OK;
+    }
+
+    case BANS_REVEALED: {
+      if (!isBansRevealedAction(action)) return reject('malformedPayload');
+
+      if (state.config.banMode !== 'blind') return reject('banStageNotRunning');
+      if (state.order.length === 0) return reject('draftNotStarted');
+
+      // Already recorded, so nothing about it can still change — the shape
+      // `poolAlreadyBuilt` takes, and stated BEFORE completeness for its reason: the more
+      // specific problem with the same action goes first.
+      if (state.bansRevealed !== null) return reject('bansAlreadyRevealed');
+
+      const submitted = new Set(state.banSubmissions.map((entry) => entry.playerId));
+      if (!state.order.every((playerId) => submitted.has(playerId))) {
+        return reject('bansNotComplete');
+      }
+
+      // WHAT THIS DELIBERATELY DOES NOT CHECK: whether the payload's `bans` agree with the
+      // submissions it is revealing.
+      //
+      // The reveal is a host act materialized into the log, not a computation over it
+      // (ARCHITECTURE Pattern 5) — re-deriving it here to compare would be the second
+      // authority the payload's own doc block exists to avoid. A hand-edited document can
+      // carry a reveal that disagrees with its submissions; that is reported by the
+      // non-blocking adoption notice, never repaired here.
       return OK;
     }
 

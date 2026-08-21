@@ -225,4 +225,37 @@ describe('initialState', () => {
     expect(state.config.bansPerPlayer).toBe(4);
     expect(state.config.duplicateBanPolicy).toBe('reBan');
   });
+
+  // -------------------------------------------------------------------------
+  // The ban fold — BAN-03, BAN-04. Three fields, and two of the three start empty
+  // where the third starts NULL, which is a distinction the screen reads.
+  // -------------------------------------------------------------------------
+
+  it('starts both ban arrays empty — nothing is banned until an action lands', () => {
+    const state = initialState(v4Config());
+
+    expect(state.banPlacements).toEqual([]);
+    expect(state.banSubmissions).toEqual([]);
+  });
+
+  it('starts bansRevealed at null, which is a DIFFERENT answer from an empty reveal', () => {
+    // `null` is "the reveal has not happened"; `[]` would be "it happened and nobody
+    // banned anything". The blind screen branches on exactly that difference, so a field
+    // initialised to `[]` would open every new tournament on the reveal.
+    const state = initialState(v4Config());
+
+    expect(state.bansRevealed).toBeNull();
+    expect(state.bansRevealed).not.toEqual([]);
+  });
+
+  it('stores nothing derived alongside them', () => {
+    // ARCHITECTURE rule 3, asserted rather than trusted. A ban count, a collision set and
+    // a public-ban set are all folds of these three fields plus `config.bans`, and a
+    // stored copy of any of them would be free to disagree with the log after an undo.
+    const keys = Object.keys(initialState(v4Config()));
+
+    expect(keys).not.toContain('banCount');
+    expect(keys).not.toContain('collisionSet');
+    expect(keys).not.toContain('publicBanIds');
+  });
 });
