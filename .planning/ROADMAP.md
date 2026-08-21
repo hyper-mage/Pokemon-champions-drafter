@@ -241,7 +241,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — schema 4: `bansPerPlayer`, `duplicateBanPolicy`, and every door a v3 document comes through (BAN-07)
+- [x] 04-01-PLAN.md — schema 4: `bansPerPlayer`, `duplicateBanPolicy`, and every door a v3 document comes through (BAN-07)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -308,7 +308,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
-| 4. Blind and Snake Bans | 0/1 | Not started | - |
+| 4. Blind and Snake Bans | 1/11 | In Progress|  |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
 ## Requirement Coverage
