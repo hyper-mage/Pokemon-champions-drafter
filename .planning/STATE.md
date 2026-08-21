@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 4 UI-SPEC approved
-last_updated: "2026-08-21T13:50:01.804Z"
-last_activity: 2026-08-21 -- Phase 04 planning complete
+last_updated: "2026-08-21T17:53:17.792Z"
+last_activity: 2026-08-21 -- Phase 04 execution started
 progress:
   total_phases: 5
   completed_phases: 3
@@ -21,14 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** A group of friends can run an entire draft tournament — rules, bans, picks, swaps, brackets, results — start to finish inside the tool, without anyone reaching for a spreadsheet or a Discord message to track state.
-**Current focus:** Phase 04 — blind-and-snake-bans (not started). See the sequencing note below.
+**Current focus:** Phase 04 — blind-and-snake-bans
 
 ## Current Position
 
-Phase: 03 (compiled-rules-priority-cards-swaps) — COMPLETE (12/12 plans, verified 2026-08-19)
+Phase: 04 (blind-and-snake-bans) — EXECUTING
+Plan: 1 of 11
 Next: Phase 04 (blind-and-snake-bans) — not started, no directory, 0 plans
-Status: Ready to execute
-Last activity: 2026-08-21 -- Phase 04 planning complete
+Status: Executing Phase 04
+Last activity: 2026-08-21 -- Phase 04 execution started
 
 Progress: [████████████░░░░░░░░] 36/36 plans in phases 1–3 (3 of 5 phases)
 
