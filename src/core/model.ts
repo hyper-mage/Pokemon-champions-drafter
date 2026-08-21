@@ -429,6 +429,76 @@ export interface DraftState {
    * on every read — see `selectSwapRoundPosition` and `selectIsTournamentComplete`.
    */
   passes: SwapPass[];
+  /**
+   * Every snake ban placed so far, in log order, recorded by `bans/placed`. `[]` outside
+   * a `snake` tournament, and `[]` until the first ban lands inside one.
+   *
+   * An ARRAY rather than a `Record<playerId, string[]>`, for exactly the reason
+   * {@link CardPlay} gives: sync rule 14 forbids deriving anything order-sensitive from a
+   * key set, and the ban stage's turn is nothing BUT order. Whose turn it is, which pass
+   * is current and how many bans each player has left are all read off this list's
+   * length and its serpentine position — a record would lose the interleaving between
+   * players that the whole derivation runs on.
+   */
+  banPlacements: BanPlacement[];
+  /**
+   * Every blind submission, in log order, recorded by `bans/submitted`. `[]` outside a
+   * `blind` tournament.
+   *
+   * A sibling array of {@link DraftState.banPlacements} rather than a shared list with a
+   * discriminant, on `swaps`/`passes`' precedent above: a snake ban and a blind submission
+   * are not the same event — one is a species, the other is a whole allotment — and a
+   * shared array would make every reader filter before it could count.
+   */
+  banSubmissions: BanSubmission[];
+  /**
+   * The reveal, recorded by `bans/revealed`. `null` until it lands.
+   *
+   * `null` and `[]` are DIFFERENT answers here, and only one of them is reachable. `null`
+   * is "the reveal has not happened", which is what the blind stage renders its shield and
+   * its entry surface for; `[]` would be "the reveal happened and nobody had banned
+   * anything", which `canApply`'s `bansNotComplete` makes unreachable in any document this
+   * build originates. A field initialised to `[]` would open every new tournament on the
+   * reveal screen.
+   *
+   * Materialized rather than derived from {@link DraftState.banSubmissions}, for the
+   * reason `BansRevealedPayload`'s own doc block gives: the reveal is a host act at a
+   * point in the log, and a build that re-derived it would be free to disagree about which
+   * submissions were in it after an undo.
+   */
+  bansRevealed: { playerId: string; monIds: string[] }[] | null;
+}
+
+/**
+ * One snake ban, as the fold remembers it — BAN-03.
+ *
+ * `pass` is 1-based and CARRIED rather than derived from this array's position, for
+ * {@link DraftPick}'s reason applied one level along: an undo that removes a ban ahead of
+ * this one must not renumber what remains, or every ban after it moves into a different
+ * `Pass {n}` column on the board.
+ *
+ * `seq` is the sequence number of the action that recorded it, taken off the envelope
+ * rather than off an array length, so a log with gaps stays addressable.
+ */
+export interface BanPlacement {
+  playerId: string;
+  monId: string;
+  /** 1-based, matching the ban board's `Pass {n}` column headers. */
+  pass: number;
+  seq: number;
+}
+
+/**
+ * One player's whole blind allotment, as the fold remembers it — BAN-04.
+ *
+ * `monIds` is the WHOLE allotment in one record rather than one record per ban, which is
+ * what makes an undo removable as one act (D-05). The count is not stored beside it:
+ * `monIds.length` is the count, and `config.bansPerPlayer` is what it should equal.
+ */
+export interface BanSubmission {
+  playerId: string;
+  monIds: string[];
+  seq: number;
 }
 
 /**
@@ -520,5 +590,10 @@ export function initialState(config: TournamentConfig): DraftState {
     resolvedOrders: [],
     swaps: [],
     passes: [],
+    banPlacements: [],
+    banSubmissions: [],
+    // `null`, not `[]`. See the field's own doc block: the two are different answers and
+    // only `null` means "the reveal has not happened".
+    bansRevealed: null,
   };
 }

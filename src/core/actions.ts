@@ -70,6 +70,14 @@ export interface ActionEnvelope {
 /**
  * The pool, materialized. Replay reads these ids; it never re-derives them.
  *
+ * ## It is not always the FIRST action, and after D-11 it is sometimes the last
+ *
+ * A `hostBanlist` document opens with this one, which is what Phase 2 and Phase 3 both
+ * assumed everywhere. A `blind` or `snake` document does not: it compiles the schedule,
+ * resolves the order, runs the ban stage, reveals, and draws the pool AFTERWARDS, because
+ * the reveal is what decides which species the draw may contain (D-23). See
+ * {@link DraftStartedPayload} for the two orderings side by side.
+ *
  * ## Why `seed` lives here and not in `RngState`
  *
  * This is ARCHITECTURE Pattern 5 — a materialized result carrying its own provenance —
@@ -169,7 +177,22 @@ export interface ScheduleCompiledPayload {
   rounds: RoundSpec[];
 }
 
-/** The starting order, materialized from the seed at creation time. */
+/**
+ * The starting order, materialized from the seed at creation time.
+ *
+ * ## Where it sits in the log depends on the ban mode (D-11)
+ *
+ * A `hostBanlist` document writes `pool/built` → `schedule/compiled` → `draft/started`,
+ * which is the order Phase 2 and Phase 3 verified and the only order those two phases
+ * could produce. A `blind` or `snake` document writes `schedule/compiled` →
+ * `draft/started` → the ban actions → `bans/revealed` → **`pool/built` last**, because the
+ * ban stage's serpentine reads `state.order` and the pool cannot be drawn until the reveal
+ * has decided what may be in it (D-23).
+ *
+ * So this action does NOT always follow the pool, and nothing may assume it does.
+ * `canApply` states the same split, conditioned on `config.banMode` rather than deleted,
+ * so the host-banlist rule is byte-for-byte the one it has always been.
+ */
 export interface DraftStartedPayload {
   type: typeof DRAFT_STARTED;
   order: string[];
