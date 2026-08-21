@@ -1105,6 +1105,18 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       // compiler cannot see that, and 0 rather than an invented number.
       swapBudget: swapBudget ?? 0,
       swapRounds: swapRounds ?? 0,
+      // Version 4's two fields, written as literals because this screen has no control for
+      // either one yet — 04-05 owns the `Bans per player` field and the `Duplicate bans`
+      // segmented control, and this plan is the schema that has to exist before a control
+      // can write to it.
+      //
+      // `0` rather than the config screen's eventual default of `1`, and that is not the
+      // constant from `migrate.ts` being reused: it is the same reasoning arriving at the
+      // same number. `blind` and `snake` are still disabled above, so every tournament this
+      // build creates is `hostBanlist`, and `hostBanlist` has no per-player bans. When the
+      // control lands it will supply a host-chosen number and this literal goes away.
+      bansPerPlayer: 0,
+      duplicateBanPolicy: 'bothApply',
     };
 
     const created = createTournament({

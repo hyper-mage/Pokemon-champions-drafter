@@ -478,6 +478,8 @@ const APP_CONFIG: TournamentConfig = {
   megaFormeBans: [],
   swapBudget: 0,
   swapRounds: 0,
+  bansPerPlayer: 0,
+  duplicateBanPolicy: 'bothApply',
 };
 
 /** Rounds 1 and 2 Mega, the rest open — what `compile` emits for a two-Mega tournament. */

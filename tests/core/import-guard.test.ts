@@ -21,6 +21,7 @@ import {
 } from '../../src/core/actions';
 import {
   isValidTournament,
+  MAX_BANS_PER_PLAYER,
   MAX_COMPOSITION_RULES,
   MAX_IMPORT_BYTES,
   MAX_LOG_ENTRIES,
@@ -32,6 +33,7 @@ import {
   MAX_SWAP_ROUNDS,
   parseTournamentFile,
 } from '../../src/core/import-guard';
+import { V3_CONFIG_DEFAULTS } from '../../src/core/migrate';
 import { SCHEMA_VERSION, type TournamentDoc } from '../../src/core/model';
 import { fold } from '../../src/core/reduce';
 
@@ -79,6 +81,8 @@ function validDoc(): TournamentDoc {
       megaFormeBans: [],
       swapBudget: 0,
       swapRounds: 0,
+      bansPerPlayer: 0,
+      duplicateBanPolicy: 'bothApply',
     },
     rng: { seed: 12345, cursor: 0 },
     log: [
@@ -888,6 +892,23 @@ function v3AbsentText(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify(doc);
 }
 
+/**
+ * A serialized document whose config has both version 4 keys REMOVED, then `overrides`
+ * applied on top.
+ *
+ * The same builder-per-version reason {@link v3AbsentText} gives: the fixture already
+ * carries the version 4 keys, and `Object.assign` cannot express "this key was never
+ * written". This is the shape every schema 3 document on disk actually has.
+ */
+function v4AbsentText(overrides: Record<string, unknown> = {}): string {
+  const doc = validDoc() as unknown as Record<string, unknown>;
+  const config = doc['config'] as Record<string, unknown>;
+  delete config['bansPerPlayer'];
+  delete config['duplicateBanPolicy'];
+  Object.assign(config, overrides);
+  return JSON.stringify(doc);
+}
+
 describe('version 3 config fields', () => {
   it('returns every one of them unchanged, field by field', () => {
     const result = parse(
@@ -1002,6 +1023,165 @@ describe('version 3 config fields', () => {
 
     expect(result.doc.config.swapBudget).toBe(MAX_SWAP_BUDGET);
     expect(result.doc.config.swapRounds).toBe(MAX_SWAP_ROUNDS);
+  });
+
+  // -------------------------------------------------------------------------
+  // Version 4 — BAN-03/BAN-04 and BAN-07. One bounded number and one bounded
+  // union, and they take DIFFERENT dispositions on a bad value. See below.
+  // -------------------------------------------------------------------------
+
+  it('bounds bans per player at the same number the swap budget uses', () => {
+    // Not derived from `MAX_SWAP_BUDGET` — chosen to match it. The assertion pins the
+    // value so that changing one of the two is a deliberate act rather than a side effect,
+    // and `04-UI-SPEC` §1 independently specifies 24 as the field's `max`.
+    expect(MAX_BANS_PER_PLAYER).toBe(24);
+    expect(MAX_BANS_PER_PLAYER).toBe(MAX_SWAP_BUDGET);
+  });
+
+  it('returns both version 4 fields unchanged when the file carries them', () => {
+    const result = parse(configuredText({ bansPerPlayer: 3, duplicateBanPolicy: 'reBan' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.bansPerPlayer).toBe(3);
+    expect(result.doc.config.duplicateBanPolicy).toBe('reBan');
+  });
+
+  it('carries reBan through, because it is a declared member of the union', () => {
+    // Nothing READS this value in Phase 4, which is exactly why the guard has to be right
+    // about it: the first build that starts reading it will read what was stored now.
+    const result = parse(configuredText({ duplicateBanPolicy: 'reBan' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.duplicateBanPolicy).toBe('reBan');
+  });
+
+  it('lands the absent keys on the version 3 defaults, not on undefined', () => {
+    // The keys are OPTIONAL here for the ordering reason the function's doc block gives:
+    // `buildConfig` runs before `migrate`, so requiring them would refuse every schema 3
+    // document one step before the migration that exists to upgrade it.
+    const result = parse(v4AbsentText());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { config } = result.doc;
+    expect(config.bansPerPlayer).toBe(V3_CONFIG_DEFAULTS.bansPerPlayer);
+    expect(config.bansPerPlayer).toBe(0);
+    expect(config.duplicateBanPolicy).toBe(V3_CONFIG_DEFAULTS.duplicateBanPolicy);
+    expect(config.duplicateBanPolicy).toBe('bothApply');
+    expect(Number.isNaN(config.bansPerPlayer)).toBe(false);
+  });
+
+  it('refuses a bans-per-player count that would draw a four-billion-mon pool', () => {
+    // T-04-01. This number is multiplied by the player count and reaches `drawPool`, which
+    // documents a deliberate uncaught `RangeError` on an oversized count. Refused, never
+    // clamped, so there is no document at all to inspect for a repaired value.
+    const result = parse(configuredText({ bansPerPlayer: 4_000_000_000 }));
+
+    expect(rejection(result)).toBe('wrongShape');
+    expect('doc' in result).toBe(false);
+  });
+
+  it.each([
+    ['a bansPerPlayer one past its cap', { bansPerPlayer: MAX_BANS_PER_PLAYER + 1 }],
+    ['a negative bansPerPlayer', { bansPerPlayer: -1 }],
+    ['a fractional bansPerPlayer', { bansPerPlayer: 2.5 }],
+    ['a bansPerPlayer written as a string', { bansPerPlayer: '3' }],
+    ['a bansPerPlayer that is null', { bansPerPlayer: null }],
+    ['a bansPerPlayer that is an object', { bansPerPlayer: { valueOf: 3 } }],
+    ['a bansPerPlayer that is an array', { bansPerPlayer: [3] }],
+    ['a bansPerPlayer that is a boolean', { bansPerPlayer: true }],
+  ])('refuses %s', (_label, overrides) => {
+    expect(rejection(parse(configuredText(overrides)))).toBe('wrongShape');
+  });
+
+  it('refuses NaN and Infinity, which reach the guard as null through JSON', () => {
+    // JSON cannot carry either one — `JSON.stringify({ n: NaN })` emits `{"n":null}` — so
+    // the hand-edited file that meant to smuggle one arrives at the null branch. Asserting
+    // that here rather than pretending a `NaN` literal could survive the wire.
+    expect(JSON.parse(JSON.stringify({ n: Number.NaN })).n).toBeNull();
+    expect(rejection(parse(configuredText({ bansPerPlayer: Number.NaN })))).toBe('wrongShape');
+    expect(rejection(parse(configuredText({ bansPerPlayer: Number.POSITIVE_INFINITY })))).toBe(
+      'wrongShape',
+    );
+  });
+
+  it('accepts a bans-per-player count exactly at its cap', () => {
+    const result = parse(configuredText({ bansPerPlayer: MAX_BANS_PER_PLAYER }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.bansPerPlayer).toBe(MAX_BANS_PER_PLAYER);
+  });
+
+  it('accepts zero bans per player, which is what hostBanlist is', () => {
+    // The range starts at 0 rather than 1 deliberately. `0` is the legitimate
+    // `hostBanlist` value and the value every migrated schema 3 document carries; the
+    // `>= 1` requirement at `blind` and `snake` is the feasibility gate's question.
+    const result = parse(configuredText({ bansPerPlayer: 0, banMode: 'hostBanlist' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.bansPerPlayer).toBe(0);
+  });
+
+  it.each([
+    ['a policy this build has no rule for', 'sudden-death'],
+    ['a policy that is a number', 42],
+    ['a policy that is null', null],
+    ['a policy that is an empty string', ''],
+    ['a policy that is an object', { kind: 'reBan' }],
+    ['a policy whose case does not match the union', 'BothApply'],
+  ])('coerces %s to bothApply rather than refusing the file', (_label, policy) => {
+    // The disposition DIFFERS from `banMode`, which refuses, and the difference is the
+    // point rather than an inconsistency: nothing reads `duplicateBanPolicy` in Phase 4,
+    // so an unrecognised value cannot produce a wrong tournament — only a wrong stored
+    // string. Refusing the whole file over a field with no reader would lose a real
+    // tournament to a typo in a field that does nothing.
+    const result = parse(configuredText({ duplicateBanPolicy: policy }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.duplicateBanPolicy).toBe('bothApply');
+  });
+
+  it('never lets a value outside the union reach the document', () => {
+    // The bound exists because a stored value outside the union becomes live the moment a
+    // later milestone starts reading it — T-04-02.
+    const result = parse(configuredText({ duplicateBanPolicy: 'sudden-death' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(['bothApply', 'reBan']).toContain(result.doc.config.duplicateBanPolicy);
+  });
+
+  it('round-trips both fields through stringify and back', () => {
+    // The whole-document round trip, not merely the parse: this is the path a host takes
+    // when they export a tournament and reimport it on another machine.
+    const source = validDoc();
+    source.config.bansPerPlayer = 5;
+    source.config.duplicateBanPolicy = 'reBan';
+
+    const result = parse(JSON.stringify(source));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.bansPerPlayer).toBe(5);
+    expect(result.doc.config.duplicateBanPolicy).toBe('reBan');
+  });
+
+  it('still drops a config carrying a poison key, unchanged by the two new fields', () => {
+    // Both additions are scalars and neither introduces a new object shape, so the
+    // reviver's behaviour must be exactly what it was — T-04-05 is accepted, not reworked.
+    const text = configuredText({ bansPerPlayer: 2 }).replace(
+      '"bansPerPlayer":2',
+      '"bansPerPlayer":2,"__proto__":{"polluted":true}',
+    );
+
+    parse(text);
+
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
   });
 
   it('carries a forme id spelled __proto__ through as a plain string', () => {

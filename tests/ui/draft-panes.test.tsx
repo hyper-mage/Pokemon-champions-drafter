@@ -158,6 +158,8 @@ function configOf(poolSize: number): TournamentConfig {
     megaFormeBans: [],
     swapBudget: 0,
     swapRounds: 0,
+    bansPerPlayer: 0,
+    duplicateBanPolicy: 'bothApply',
   };
 }
 

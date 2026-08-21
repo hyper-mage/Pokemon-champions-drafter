@@ -94,6 +94,8 @@ const CONFIG: TournamentConfig = {
   megaFormeBans: [],
   swapBudget: 0,
   swapRounds: 0,
+  bansPerPlayer: 0,
+  duplicateBanPolicy: 'bothApply',
 };
 
 const ORDER = ['p1', 'p2'];

@@ -466,6 +466,8 @@ function seedSavedDraft(bans: readonly string[]): void {
     megaFormeBans: [],
     swapBudget: 0,
     swapRounds: 0,
+    bansPerPlayer: 0,
+    duplicateBanPolicy: 'bothApply',
   };
 
   const doc: TournamentDoc = {

@@ -36,13 +36,22 @@ import type { Action, RoundSpec } from './actions';
  * carrying the true answer in `megasRequiredPerTeam` — so a draft saved by Phase 1 or
  * Phase 2 is upgraded rather than refused.
  *
+ * Version 4 widens it a third time, with the two things Phase 4's ban stage makes a host
+ * decision: how many bans each player gets, and what happens when two players ban the
+ * same Pokémon. Both have a lossless default rather than a derivation, and the reason is
+ * narrower than it looks: a version 3 document was necessarily `hostBanlist`, because
+ * `blind` and `snake` shipped disabled on the config screen, so "zero player bans, and
+ * the duplicate question never arose" is the TRUE answer for every document that exists
+ * at version 3 rather than a guess standing in for one. `migrate.ts` states the same
+ * thing beside the defaults themselves.
+ *
  * `migrate.ts` owns that upgrade step and is the only module that knows how to perform
  * it. Nothing else compares a document's version against this constant: `store.ts`,
  * `adapters/persistence.ts` and `import-guard.ts` all route through `migrate` instead,
  * so there is one answer to "can this build read this document" rather than three that
  * can drift apart.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export interface PlayerConfig {
   id: string;
@@ -68,6 +77,27 @@ export type BanMode =
   | 'blind'
   /** Players take turns banning in snake order. Phase 4, disabled in Phase 2 (D-12). */
   | 'snake';
+
+/**
+ * What happens when two players ban the same Pokémon.
+ *
+ * A string-literal union for exactly {@link BanMode}'s reason, and it matters more here
+ * than there: these strings are written into a saved document by a build that does not
+ * yet read them back, so the first build that DOES read one will be reading a string
+ * chosen now. Renaming a member later breaks every tournament already on disk.
+ */
+export type DuplicateBanPolicy =
+  /**
+   * Both bans stand and the duplicate is simply spent. The only policy Phase 4 implements
+   * (D-19), and the default every migrated and every newly created document carries.
+   */
+  | 'bothApply'
+  /**
+   * The later player bans again. RESERVED — declared so the value is bounded from the
+   * first document that could contain it, and so the config screen's disabled
+   * `Re-ban — Not yet available` option has something to name. Nothing reads it (D-19).
+   */
+  | 'reBan';
 
 /**
  * How far past the last pick the tournament runs.
@@ -206,6 +236,36 @@ export interface TournamentConfig {
    * the only authority on what is satisfiable.
    */
   swapRounds: number;
+  /**
+   * BAN-03/BAN-04, D-10. How many bans each player gets in the `blind` and `snake` ban
+   * stages. `0` means the players ban nothing, which is what `hostBanlist` is and what
+   * every document migrated up from schema 3 carries.
+   *
+   * The bound is owned by `MAX_BANS_PER_PLAYER` in `import-guard.ts`, and the feasibility
+   * gate reads THAT constant rather than restating the number. The invariant is argued at
+   * `feasibility.ts:60-67` and it is not stylistic: this value is multiplied by the player
+   * count and reaches `drawPool`, so a gate that accepted a number the guard refuses would
+   * be a build creating documents it will not re-open.
+   *
+   * The `>= 1` requirement at `blind` and `snake` is the gate's question rather than this
+   * type's. `0` is legitimate at `hostBanlist`, so all the type can say is "a non-negative
+   * integer" — satisfiability is decided where the ban mode is also known.
+   */
+  bansPerPlayer: number;
+  /**
+   * BAN-07, D-19/D-20. What happens when two players ban the same Pokémon.
+   *
+   * STORED AND READ BY NOTHING in Phase 4, deliberately, and it is exactly the posture
+   * `depth` documents above. Only `'bothApply'` is implemented, `'reBan'` is a reserved
+   * value the config screen renders disabled, and D-20 makes the control inert in `snake`
+   * regardless. Recording it now costs one field and means no saved tournament needs
+   * migrating for it when a later milestone starts reading it.
+   *
+   * Its value is bounded against `DUPLICATE_BAN_POLICIES` in `import-guard.ts` even though
+   * nothing reads it, because a stored value outside the union becomes live the moment
+   * something does.
+   */
+  duplicateBanPolicy: DuplicateBanPolicy;
 }
 
 /**
@@ -438,6 +498,11 @@ function copyConfig(config: TournamentConfig): TournamentConfig {
     megaFormeBans: config.megaFormeBans.map((id) => id),
     swapBudget: config.swapBudget,
     swapRounds: config.swapRounds,
+    // Both version 4 fields are scalars, so they are named rather than spread. A spread
+    // would be shorter and would defeat the whole reason this function is written out: the
+    // compiler's omission check only works against an explicit literal.
+    bansPerPlayer: config.bansPerPlayer,
+    duplicateBanPolicy: config.duplicateBanPolicy,
   };
 }
 
