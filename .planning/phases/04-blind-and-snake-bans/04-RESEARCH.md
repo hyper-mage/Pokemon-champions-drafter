@@ -1930,7 +1930,7 @@ art" is the repository's own, and it moved twice since the documents this phase 
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does snake need its own action type, or can it reuse `bans/submitted` with a single-element
    `monIds`?**
@@ -1938,7 +1938,7 @@ art" is the repository's own, and it moved twice since the documents this phase 
      Undo semantics differ (snake's is visible and does not confirm; blind's is invisible and
      does, per `04-UI-SPEC` §8).
    - What's unclear: whether one action with a discriminating field is cleaner than two types.
-   - **Recommendation: two types.** `swap/made` vs `swap/passed` is the precedent
+   - **RESOLVED — Recommendation: two types.** `swap/made` vs `swap/passed` is the precedent
      (`model.ts:352-362`): "they are not the same event and a shared array would have to say
      which, through a null field or a `kind` discriminant, and every reader would then have to
      filter before it could count." A shared type would also force one `UndoRemoval.kind` for two
@@ -1949,7 +1949,7 @@ art" is the repository's own, and it moved twice since the documents this phase 
    - What we know: `drawPool` is pure; the seed is ambient and must be stamped at the edge;
      `ConfigScreen` currently owns the draw and passes results to `createTournament`.
    - What's unclear: whether `BanReveal` should call `drawPool` directly or a `store.ts` helper.
-   - **Recommendation: a `store.ts` sibling** — `drawPoolForBanStage(entries, spriteMeta)` — that
+   - **RESOLVED — Recommendation: a `store.ts` sibling** — `drawPoolForBanStage(entries, spriteMeta)` — that
      rolls the seed with `newSeed()` and dispatches `pool/built`. Keeps `newSeed` out of a
      component and matches `createTournament`'s "the results handed in are the ones already on
      screen" posture, since the reveal has already shown the arithmetic.
@@ -1959,14 +1959,14 @@ art" is the repository's own, and it moved twice since the documents this phase 
      offers it; `PoolBuiltPayload`'s doc block (`actions.ts:73-78`) states a re-roll "emits a NEW
      `pool/built` with a new seed", but `canApply(POOL_BUILT)` rejects `poolAlreadyBuilt` — so no
      second `pool/built` is currently possible in a live document.
-   - **Recommendation: no.** D-23 gives exactly one draw, after the reveal, and the group has
+   - **RESOLVED — Recommendation: no.** D-23 gives exactly one draw, after the reveal, and the group has
      already read the reveal. Adding a re-roll here would mean loosening `poolAlreadyBuilt`,
      which is a Phase-5 conversation.
 
 4. **Is `duplicateBanPolicy` read by anything this phase?**
    - What we know: D-19 builds only `bothApply`; D-20 makes the control inert in snake.
    - What's unclear: whether the reducer should assert the value at all.
-   - **Recommendation: store it, read it nowhere, guard its value in `import-guard.buildConfig`
+   - **RESOLVED — Recommendation: store it, read it nowhere, guard its value in `import-guard.buildConfig`
      against a `DUPLICATE_BAN_POLICIES` union.** This is exactly `depth`'s posture
      (`model.ts:73-79`: "Phase 2 only records this. Phase 5 is what consumes it") and
      `dualMegaChoices`' at `ConfigScreen.tsx:1088-1091`.
