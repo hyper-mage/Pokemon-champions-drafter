@@ -882,6 +882,204 @@ describe('the two-arm Mega sentence (Pitfall 9)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// D-21 - the pessimistic player-ban term, on all three predicates that need it
+// ---------------------------------------------------------------------------
+
+describe('the q term (D-21)', () => {
+  it('blocks the Pitfall 2 reproduction instead of letting drawPool throw', () => {
+    // THE test this task exists for. Five steps, no import and no hand-edit:
+    // `poolTooLarge` fired only ABOVE `legalCount`, the pool-size field is deliberately
+    // unclamped (Phase 2 D-06), `drawPool` deliberately does not clamp either
+    // (`draw.ts:108-112`), so 8 players banning 2 each on a pool sized to the whole legal
+    // roster reached `Start draft` and threw a RangeError on a shared screen mid-ritual.
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: ROSTER_SIZE,
+        banMode: 'blind',
+        bansPerPlayer: 2,
+      }),
+    );
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('poolTooLarge');
+  });
+
+  it('is the ban mode that makes the difference, not the pool size', () => {
+    // The same configuration one field apart. `hostBanlist` has no player bans, so it is
+    // satisfiable and must stay so - this is the half of the Pitfall 2 case that proves
+    // the block comes from `q` rather than from a tightened comparison.
+    const result = checkFeasibility(
+      base({ playerNames: manyPlayers(8), poolSize: ROSTER_SIZE, bansPerPlayer: 2 }),
+    );
+
+    expect(result.blocked).toBe(false);
+    expect(result.problems).toEqual([]);
+  });
+
+  it('quotes the pessimistic figures in the pool sentence, so it is true as written', () => {
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: ROSTER_SIZE,
+        banMode: 'blind',
+        bansPerPlayer: 2,
+      }),
+    );
+
+    expect(messageFor(result, 'poolTooLarge')).toBe(
+      `Pool is too large. Only ${ROSTER_SIZE - 16} Pokémon are draftable after 16 bans; the pool is set to ${ROSTER_SIZE}.`,
+    );
+  });
+
+  it('blames the player count when the party plus its bans outruns the roster', () => {
+    // 39 x 6 = 234 seats on a 235-entry roster: the largest party the roster can hold, and
+    // an existing test pins that it passes. One ban each is 39 more species gone.
+    const seated = checkFeasibility(base({ playerNames: manyPlayers(39), poolSize: 234 }));
+    expect(codes(seated)).not.toContain('tooManyPlayersForRoster');
+
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(39),
+        poolSize: 234,
+        banMode: 'snake',
+        bansPerPlayer: 1,
+      }),
+    );
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('tooManyPlayersForRoster');
+    expect(messageFor(result, 'tooManyPlayersForRoster')).toBe(
+      `Too many players for the roster. 39 players × 6 rounds needs 234 Pokémon; only ${ROSTER_SIZE - 39} are draftable after 39 bans.`,
+    );
+  });
+
+  it('subtracts the player bans from megaEligibleLegalCount ONCE, not on top of the ban terms', () => {
+    // The double-subtraction trap. D-21's prose reads as
+    // `megaEligible - megaBans - players x bansPerPlayer`, but `megaEligibleLegalCount`
+    // already has the species bans AND the forme bans taken out of it (its own doc block
+    // says so). Subtracting them again would report 30 here rather than 40, and would
+    // block configurations that are satisfiable.
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 6,
+        bannedIds: megaBans(10),
+        banMode: 'blind',
+        bansPerPlayer: 3,
+      }),
+    );
+
+    expect(result.megaEligibleLegalCount).toBe(MEGA_ELIGIBLE_TOTAL - 10);
+    expect(result.blocked).toBe(true);
+    expect(messageFor(result, 'notEnoughMegas')).toBe(
+      'Not enough Pokémon can Mega. 8 players × 6 Mega rounds needs 48; 40 can still Mega after 10 species bans, 0 Mega-forme bans and 24 player bans. Lower the Mega requirement, lower bans per player, or unban a Mega forme.',
+    );
+  });
+
+  it('passes at the exact boundary the pessimistic arithmetic allows', () => {
+    // One ban each fewer: 8 x 2 = 16 player bans leaves 48, which is exactly the 48 the
+    // Mega rounds need. `>` and not `>=`, the same comparison Phase 3 shipped.
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 6,
+        bannedIds: megaBans(10),
+        banMode: 'blind',
+        bansPerPlayer: 2,
+      }),
+    );
+
+    expect(codes(result)).not.toContain('notEnoughMegas');
+  });
+
+  it('leaves every hostBanlist verdict exactly where Phase 3 put it', () => {
+    // `bansPerPlayer` is void at `hostBanlist`, so a non-zero value must move NOTHING -
+    // not the codes, not the severities and not one byte of the interpolated sentences.
+    const inputs: Partial<FeasibilityInput>[] = [
+      { playerNames: manyPlayers(8), poolSize: ROSTER_SIZE },
+      { playerNames: manyPlayers(39), poolSize: 234 },
+      { playerNames: manyPlayers(40), poolSize: 240 },
+      { playerNames: manyPlayers(8), poolSize: ROSTER_SIZE + 1 },
+      { playerNames: manyPlayers(8), poolSize: 12 },
+      { playerNames: manyPlayers(8), poolSize: 48, megasRequiredPerTeam: 6, bannedIds: megaBans(27) },
+      { poolSize: 18, swapBudget: 3, swapRounds: 2 },
+    ];
+
+    for (const overrides of inputs) {
+      const before = checkFeasibility(base(overrides));
+      const after = checkFeasibility(base({ ...overrides, bansPerPlayer: 5 }));
+
+      expect(after.problems).toEqual(before.problems);
+      expect(after.blocked).toBe(before.blocked);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RULE-08 - the post-reveal re-check is this same function
+// ---------------------------------------------------------------------------
+
+describe('the post-reveal re-check (RULE-08)', () => {
+  /** 8 players, blind, 2 bans each, on a pool the config-time gate accepts. */
+  const CONFIGURED: Partial<FeasibilityInput> = {
+    playerNames: manyPlayers(8),
+    poolSize: 48,
+    banMode: 'blind',
+    bansPerPlayer: 2,
+  };
+
+  it('accepts the configuration at config time, with room for every pessimistic ban', () => {
+    const result = checkFeasibility(base(CONFIGURED));
+
+    expect(result.blocked).toBe(false);
+
+    // The invariant that makes the reveal safe: what the gate accepted still holds after
+    // `q` further species leave the roster.
+    const q = 8 * 2;
+    expect(result.legalCount - q).toBeGreaterThanOrEqual(48);
+  });
+
+  it('returns the same verdict once the bans are materialised into the banlist', () => {
+    // The exact call 04-11 makes: `checkFeasibility` ITSELF, with the union banlist and
+    // NO pending player bans. Not a second arithmetic - a second arithmetic is a second
+    // thing that can disagree about whether the night can proceed.
+    const revealed = ENTRIES.slice(0, 16).map((entry) => entry.id);
+
+    const afterReveal = checkFeasibility(
+      base({
+        ...CONFIGURED,
+        bannedIds: revealed,
+        banMode: 'hostBanlist',
+        bansPerPlayer: 0,
+      }),
+    );
+
+    expect(afterReveal.legalCount).toBe(ROSTER_SIZE - 16);
+    expect(afterReveal.blocked).toBe(false);
+    expect(codes(afterReveal)).not.toContain('poolTooLarge');
+  });
+
+  it('does not ask a materialised document about a field it can no longer edit', () => {
+    // `bansPerPlayer: 0` at a mode that requires at least 1 would be a problem statement
+    // with no next action, which is why a caller whose bans are already in `bannedIds`
+    // passes `'hostBanlist'` as well as `0`.
+    const afterReveal = checkFeasibility(
+      base({
+        ...CONFIGURED,
+        bannedIds: ENTRIES.slice(0, 16).map((entry) => entry.id),
+        banMode: 'hostBanlist',
+        bansPerPlayer: 0,
+      }),
+    );
+
+    expect(codes(afterReveal)).not.toContain('bansPerPlayerNotPositive');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // D-32 - degenerate but satisfiable, so it warns and never blocks
 // ---------------------------------------------------------------------------
 
