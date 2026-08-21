@@ -236,7 +236,47 @@ Plans:
   3. Pressing the back button or restoring the tab from cache cannot resurrect a player's private ban screen.
   4. All blind bans reveal together, the host-chosen duplicate policy — both apply with one wasted, or a collision grants a re-ban — is applied and displayed, and feasibility is re-checked against the post-ban pool before the draft is allowed to start.
 
-**Plans**: 1 plan
+**Plans**: 11 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — schema 4: `bansPerPlayer`, `duplicateBanPolicy`, and every door a v3 document comes through (BAN-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-02-PLAN.md — the pessimistic feasibility gate, and the `drawPool` RangeError it closes (RULE-08)
+- [ ] 04-03-PLAN.md — the ban action family, the fold, the eight guards, and D-11's `draft/started` reorder (BAN-03, BAN-04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04-04-PLAN.md — the ban stage selectors: the serpentine, whose turn it is, and what the room may see (BAN-03, BAN-04)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04-05-PLAN.md — `createBanStage`, the two config controls, and the fourth Screen (BAN-03, BAN-07, RULE-08)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 04-06-PLAN.md — inert cells and inert typeahead options: the snake pool pane knows what is gone (BAN-03)
+- [ ] 04-07-PLAN.md — undo across the ban stage, and the exhaustive announcement that cannot speak a private ban (BAN-03, BAN-04)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 04-08-PLAN.md — the player × pass ban board, whose blind arm cannot hold a species (BAN-03, BAN-04)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 04-09-PLAN.md — the blind locked state, the narrowed `Bans (N)` disclosure, and `Blind` enabled (BAN-04, BAN-05)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 04-10-PLAN.md — the full-screen entry surface and the bfcache / visibility shield (BAN-04, BAN-05, BAN-06)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 04-11-PLAN.md — the reveal, collisions, RULE-08's re-check, D-23's separate pool draw, and the three-metre human pass (BAN-04, BAN-07, RULE-08) — **checkpoint, not autonomous**
+
 **UI hint**: yes
 **Notes**: Research need MEDIUM and it is a UX problem, not a technical one — the nearest precedents are party apps (Werewolf, Mafia, Spy) and tabletop games, not draft tools; no surveyed Pokémon draft tool attempts bans at all. This needs an actual playtest with the target group. The back-button leak (BAN-06) is a bfcache / `pageshow` guard and is easy to get silently wrong. Host banlist mode already shipped in Phase 2 and already unblocked the compiler's Mega-ban list, which is why this phase can sit this late without holding anything up.
 
