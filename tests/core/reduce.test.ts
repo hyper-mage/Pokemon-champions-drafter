@@ -11,6 +11,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  bansPlaced,
+  bansRevealed,
+  bansSubmitted,
   CARDS_PLAYED,
   cardsPlayed,
   DRAFT_PICK_MADE,
@@ -1239,5 +1242,520 @@ describe('canApply draft/pickMade during the card phase', () => {
     const action = stamp(pickMade({ playerId: 'p1', monId: 'venusaur', round: 1, pickIndex: 0 }), 2);
 
     expect(canApply(state, action)).toEqual({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The ban stage — BAN-03, BAN-04, D-11
+//
+// Every fixture below is a hand-constructed document with zero mocks, which is the same
+// property the rest of this file has and the reason the core/adapters split exists.
+// ---------------------------------------------------------------------------
+
+/** Two players, blind bans, two bans each. Four submitted ids in total. */
+const BLIND_CONFIG: TournamentConfig = {
+  ...CONFIG,
+  banMode: 'blind',
+  bansPerPlayer: 2,
+};
+
+/**
+ * FOUR players, snake bans, two each — eight placements over two passes.
+ *
+ * Four rather than two on purpose: a two-player serpentine is `p1,p2` then `p2,p1`, which
+ * a straight rotation with an off-by-one also produces. Four players is the smallest count
+ * at which the serpentine and every near-miss disagree.
+ */
+const SNAKE_CONFIG: TournamentConfig = {
+  ...CONFIG,
+  players: [
+    { id: 'p1', name: 'Player 1' },
+    { id: 'p2', name: 'Player 2' },
+    { id: 'p3', name: 'Player 3' },
+    { id: 'p4', name: 'Player 4' },
+  ],
+  banMode: 'snake',
+  bansPerPlayer: 2,
+};
+
+const SNAKE_ORDER = ['p1', 'p2', 'p3', 'p4'];
+
+function makeDocWith(config: TournamentConfig, log: readonly Action[]): TournamentDoc {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'ban-stage-fixture',
+    createdAt: CREATED_AT,
+    config,
+    rng: { seed: SEED, cursor: 0 },
+    log: [...log],
+  };
+}
+
+/**
+ * The blind and snake opening: SCHEDULE then ORDER, and no pool at all.
+ *
+ * This is D-11's whole point. `draft/started` comes before `pool/built` for these two
+ * modes so the ban stage can read DRFT-16's starting order, and the pool is drawn after
+ * the reveal because the reveal is what decides which species it may contain (D-23).
+ */
+function banOpeningLog(order: readonly string[]): Action[] {
+  return [
+    stamp(scheduleCompiled(OPEN_SCHEDULE), 0),
+    stamp(draftStarted(order, 9), 1),
+  ];
+}
+
+/** Walk a log entry by entry, asserting `canApply` accepts each one before folding it. */
+function foldAsserting(config: TournamentConfig, log: readonly Action[]) {
+  let state = initialState(config);
+  for (const action of log) {
+    expect(canApply(state, action), `entry seq ${String(action.seq)} (${action.type})`).toEqual({
+      ok: true,
+    });
+    state = apply(state, action);
+  }
+  return state;
+}
+
+// ---------------------------------------------------------------------------
+// D-11 — the two relaxed guards, and the mode that must not have moved
+// ---------------------------------------------------------------------------
+
+describe('the poolNotBuilt guards under hostBanlist', () => {
+  it('still refuses schedule/compiled with an empty pool', () => {
+    // D-01's zero-regression posture, met structurally: for `hostBanlist` the guard is
+    // byte-for-byte the rule Phase 3 verified.
+    const state = initialState(CONFIG);
+
+    expect(canApply(state, stamp(scheduleCompiled(OPEN_SCHEDULE), 0))).toEqual({
+      ok: false,
+      reason: 'poolNotBuilt',
+    });
+  });
+
+  it('still refuses draft/started with an empty pool', () => {
+    const state = initialState(CONFIG);
+
+    expect(canApply(state, stamp(draftStarted(ORDER, 9), 0))).toEqual({
+      ok: false,
+      reason: 'poolNotBuilt',
+    });
+  });
+
+  it('still refuses draft/started with a pool but no schedule', () => {
+    // The check that is unrelated to the pool and therefore unmoved by D-11.
+    const state = fold(makeDoc([stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 0)]));
+
+    expect(canApply(state, stamp(draftStarted(ORDER, 9), 1))).toEqual({
+      ok: false,
+      reason: 'scheduleNotCompiled',
+    });
+  });
+});
+
+describe('the poolNotBuilt guards under blind and snake', () => {
+  it('accepts schedule/compiled with no pool', () => {
+    expect(canApply(initialState(BLIND_CONFIG), stamp(scheduleCompiled(OPEN_SCHEDULE), 0))).toEqual(
+      { ok: true },
+    );
+    expect(canApply(initialState(SNAKE_CONFIG), stamp(scheduleCompiled(OPEN_SCHEDULE), 0))).toEqual(
+      { ok: true },
+    );
+  });
+
+  it('accepts draft/started with no pool, once the schedule is compiled', () => {
+    const state = fold(makeDocWith(BLIND_CONFIG, [stamp(scheduleCompiled(OPEN_SCHEDULE), 0)]));
+
+    expect(state.poolIds).toEqual([]);
+    expect(canApply(state, stamp(draftStarted(ORDER, 9), 1))).toEqual({ ok: true });
+  });
+
+  it('still requires the schedule before the order', () => {
+    // `schedule/compiled` must still precede `draft/started`: that check is about the
+    // schedule, not the pool, and D-11 moved only the pool.
+    expect(canApply(initialState(BLIND_CONFIG), stamp(draftStarted(ORDER, 9), 0))).toEqual({
+      ok: false,
+      reason: 'scheduleNotCompiled',
+    });
+  });
+
+  it('accepts pool/built arriving LAST, after the order and the reveal', () => {
+    // `canApply(POOL_BUILT)` needed no change at all — it asks about the pool and asserts
+    // nothing about the draft having started.
+    const log = [
+      ...banOpeningLog(ORDER),
+      stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 2),
+      stamp(bansSubmitted('p2', ['blastoise', 'garchomp']), 3),
+      stamp(
+        bansRevealed([
+          { playerId: 'p1', monIds: ['venusaur', 'charizard'] },
+          { playerId: 'p2', monIds: ['blastoise', 'garchomp'] },
+        ]),
+        4,
+      ),
+    ];
+    const state = foldAsserting(BLIND_CONFIG, log);
+
+    expect(canApply(state, stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 5))).toEqual({ ok: true });
+  });
+
+  it('folds the whole blind sequence with no rejection at any step', () => {
+    // schedule/compiled → draft/started → bans/submitted ×2 → bans/revealed → pool/built.
+    const log = [
+      ...banOpeningLog(ORDER),
+      stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 2),
+      stamp(bansSubmitted('p2', ['blastoise', 'garchomp']), 3),
+      stamp(
+        bansRevealed([
+          { playerId: 'p1', monIds: ['venusaur', 'charizard'] },
+          { playerId: 'p2', monIds: ['blastoise', 'garchomp'] },
+        ]),
+        4,
+      ),
+      stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 5),
+    ];
+    const state = foldAsserting(BLIND_CONFIG, log);
+
+    expect(state.order).toEqual(ORDER);
+    expect(state.poolIds).toEqual(POOL);
+    expect(state.banSubmissions).toHaveLength(2);
+    expect(state.bansRevealed).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// apply — the three ban arms
+// ---------------------------------------------------------------------------
+
+describe('apply(bans/placed)', () => {
+  it('records the ENVELOPE’s seq, not the array index', () => {
+    // The log may legally have gaps: `store.ts` allocates `max(seq) + 1` so a removal
+    // from the middle cannot reissue an id that is still in use. A `seq` taken off
+    // `banPlacements.length` would renumber every ban after an undo.
+    const log = [
+      ...banOpeningLog(SNAKE_ORDER),
+      stamp(bansPlaced('p1', 'venusaur', 1), 500),
+      stamp(bansPlaced('p2', 'charizard', 1), 900),
+    ];
+    const state = fold(makeDocWith(SNAKE_CONFIG, log));
+
+    expect(state.banPlacements).toEqual([
+      { playerId: 'p1', monId: 'venusaur', pass: 1, seq: 500 },
+      { playerId: 'p2', monId: 'charizard', pass: 1, seq: 900 },
+    ]);
+  });
+
+  it('keeps the pass the action carried rather than deriving it from position', () => {
+    const log = [...banOpeningLog(SNAKE_ORDER), stamp(bansPlaced('p1', 'venusaur', 2), 7)];
+
+    expect(fold(makeDocWith(SNAKE_CONFIG, log)).banPlacements[0]?.pass).toBe(2);
+  });
+});
+
+describe('apply(bans/submitted)', () => {
+  it('appends the submission with the envelope’s seq', () => {
+    const log = [...banOpeningLog(ORDER), stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 42)];
+
+    expect(fold(makeDocWith(BLIND_CONFIG, log)).banSubmissions).toEqual([
+      { playerId: 'p1', monIds: ['venusaur', 'charizard'], seq: 42 },
+    ]);
+  });
+
+  it('copies monIds rather than aliasing the log entry’s array', () => {
+    // The folded state must never share an array with the log entry it was folded from —
+    // the rule `copyConfig` states for the document and `apply(SCHEDULE_COMPILED)` for
+    // the schedule.
+    const action = stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 42);
+    const state = apply(fold(makeDocWith(BLIND_CONFIG, banOpeningLog(ORDER))), action);
+
+    expect(state.banSubmissions[0]?.monIds).not.toBe(
+      (action as { monIds: string[] }).monIds,
+    );
+    expect(state.banSubmissions[0]?.monIds).toEqual(['venusaur', 'charizard']);
+  });
+});
+
+describe('apply(bans/revealed)', () => {
+  it('sets bansRevealed to freshly built records', () => {
+    const action = stamp(
+      bansRevealed([
+        { playerId: 'p1', monIds: ['venusaur'] },
+        { playerId: 'p2', monIds: ['charizard', 'blastoise'] },
+      ]),
+      50,
+    );
+    const state = apply(fold(makeDocWith(BLIND_CONFIG, banOpeningLog(ORDER))), action);
+
+    expect(state.bansRevealed).toEqual([
+      { playerId: 'p1', monIds: ['venusaur'] },
+      { playerId: 'p2', monIds: ['charizard', 'blastoise'] },
+    ]);
+    expect(state.bansRevealed?.[0]).not.toBe((action as { bans: unknown[] }).bans[0]);
+    expect(state.bansRevealed?.[1]?.monIds).not.toBe(
+      (action as { bans: { monIds: string[] }[] }).bans[1]?.monIds,
+    );
+  });
+
+  it('ignores a SECOND reveal rather than rewriting the first', () => {
+    // `apply` is not a validator, and `order/resolved` sets the precedent: a hand-edited
+    // file must not be able to rewrite what the room already watched by appending a
+    // second opinion. `canApply` refuses this on origination; the fold ignores it.
+    const log = [
+      ...banOpeningLog(ORDER),
+      stamp(bansRevealed([{ playerId: 'p1', monIds: ['venusaur'] }]), 50),
+      stamp(bansRevealed([{ playerId: 'p1', monIds: ['mewtwo'] }]), 51),
+    ];
+
+    expect(fold(makeDocWith(BLIND_CONFIG, log)).bansRevealed).toEqual([
+      { playerId: 'p1', monIds: ['venusaur'] },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// canApply — the eight backstops
+//
+// Every arm below should be UNREACHABLE from the UI: the surfaces render an illegal
+// option inert with a reason rather than letting it be clicked and refused. A test that
+// reaches one of these is testing the IMPORTED-document path, not the host path.
+// ---------------------------------------------------------------------------
+
+describe('canApply(bans/placed)', () => {
+  const snakeStart = () => fold(makeDocWith(SNAKE_CONFIG, banOpeningLog(SNAKE_ORDER)));
+
+  it('refuses banStageNotRunning under hostBanlist', () => {
+    const state = fold(makeDoc(openingLog()));
+
+    expect(canApply(state, stamp(bansPlaced('p1', 'venusaur', 1), 9))).toEqual({
+      ok: false,
+      reason: 'banStageNotRunning',
+    });
+  });
+
+  it('refuses banStageNotRunning under blind — a snake ban is not a blind act', () => {
+    const state = fold(makeDocWith(BLIND_CONFIG, banOpeningLog(ORDER)));
+
+    expect(canApply(state, stamp(bansPlaced('p1', 'venusaur', 1), 9))).toEqual({
+      ok: false,
+      reason: 'banStageNotRunning',
+    });
+  });
+
+  it('refuses draftNotStarted before the order lands', () => {
+    const state = fold(makeDocWith(SNAKE_CONFIG, [stamp(scheduleCompiled(OPEN_SCHEDULE), 0)]));
+
+    expect(canApply(state, stamp(bansPlaced('p1', 'venusaur', 1), 9))).toEqual({
+      ok: false,
+      reason: 'draftNotStarted',
+    });
+  });
+
+  it('walks a true serpentine — 1,2,3,4 then 4,3,2,1', () => {
+    // D-12. The straight rotation this replaces compounds a first-mover advantage; the
+    // serpentine is what corrects it. Asserted one step at a time, refusing every other
+    // player at each step, so an off-by-one cannot hide behind a happy path.
+    const expected = ['p1', 'p2', 'p3', 'p4', 'p4', 'p3', 'p2', 'p1'];
+    let state = snakeStart();
+
+    expected.forEach((onTheClock, index) => {
+      const pass = Math.floor(index / SNAKE_ORDER.length) + 1;
+      const monId = POOL[index] as string;
+
+      for (const playerId of SNAKE_ORDER) {
+        const action = stamp(bansPlaced(playerId, monId, pass), 100 + index);
+        expect(canApply(state, action), `${playerId} at index ${String(index)}`).toEqual(
+          playerId === onTheClock ? { ok: true } : { ok: false, reason: 'notYourBanTurn' },
+        );
+      }
+
+      state = apply(state, stamp(bansPlaced(onTheClock, monId, pass), 100 + index));
+    });
+
+    // Every allotment is spent, so nobody is on the clock and the stage is over.
+    expect(canApply(state, stamp(bansPlaced('p1', 'skarmory', 3), 200))).toEqual({
+      ok: false,
+      reason: 'notYourBanTurn',
+    });
+  });
+
+  it('refuses wrongSlot when the carried pass disagrees with the clock', () => {
+    // `pass` is stamped at the edge, so a mismatch can only arrive from an edited or
+    // imported log — which is exactly the path that must not be able to file a ban under
+    // a pass the board will render in the wrong column.
+    expect(canApply(snakeStart(), stamp(bansPlaced('p1', 'venusaur', 2), 9))).toEqual({
+      ok: false,
+      reason: 'wrongSlot',
+    });
+  });
+
+  it('refuses banAlreadyPlaced for a species already banned in the open', () => {
+    const state = apply(snakeStart(), stamp(bansPlaced('p1', 'venusaur', 1), 9));
+
+    expect(canApply(state, stamp(bansPlaced('p2', 'venusaur', 1), 10))).toEqual({
+      ok: false,
+      reason: 'banAlreadyPlaced',
+    });
+  });
+
+  it('refuses banAlreadyPlaced for a species the HOST already banned', () => {
+    const hostBanned: TournamentConfig = { ...SNAKE_CONFIG, bans: ['venusaur'] };
+    const state = fold(makeDocWith(hostBanned, banOpeningLog(SNAKE_ORDER)));
+
+    expect(canApply(state, stamp(bansPlaced('p1', 'venusaur', 1), 9))).toEqual({
+      ok: false,
+      reason: 'banAlreadyPlaced',
+    });
+  });
+
+  it('refuses banStageNotRunning once a reveal has landed', () => {
+    const state = apply(
+      snakeStart(),
+      stamp(bansRevealed([{ playerId: 'p1', monIds: ['venusaur'] }]), 9),
+    );
+
+    expect(canApply(state, stamp(bansPlaced('p1', 'charizard', 1), 10))).toEqual({
+      ok: false,
+      reason: 'banStageNotRunning',
+    });
+  });
+});
+
+describe('canApply(bans/submitted)', () => {
+  const blindStart = () => fold(makeDocWith(BLIND_CONFIG, banOpeningLog(ORDER)));
+
+  it('accepts a well-formed first submission', () => {
+    expect(
+      canApply(blindStart(), stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 9)),
+    ).toEqual({ ok: true });
+  });
+
+  it('refuses banStageNotRunning under hostBanlist and under snake', () => {
+    expect(
+      canApply(fold(makeDoc(openingLog())), stamp(bansSubmitted('p1', ['venusaur']), 9)),
+    ).toEqual({ ok: false, reason: 'banStageNotRunning' });
+    expect(
+      canApply(
+        fold(makeDocWith(SNAKE_CONFIG, banOpeningLog(SNAKE_ORDER))),
+        stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 9),
+      ),
+    ).toEqual({ ok: false, reason: 'banStageNotRunning' });
+  });
+
+  it('refuses banStageNotRunning once the reveal has landed', () => {
+    const state = apply(
+      blindStart(),
+      stamp(bansRevealed([{ playerId: 'p1', monIds: ['venusaur'] }]), 9),
+    );
+
+    expect(canApply(state, stamp(bansSubmitted('p2', ['blastoise', 'garchomp']), 10))).toEqual({
+      ok: false,
+      reason: 'banStageNotRunning',
+    });
+  });
+
+  it('refuses unknownPlayer for somebody outside the rotation', () => {
+    expect(
+      canApply(blindStart(), stamp(bansSubmitted('p9', ['venusaur', 'charizard']), 9)),
+    ).toEqual({ ok: false, reason: 'unknownPlayer' });
+  });
+
+  it('refuses alreadySubmitted for a SECOND submission by one player', () => {
+    // D-05: a submission is one act, so it is submitted once and walked back whole.
+    const state = apply(blindStart(), stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 9));
+
+    expect(canApply(state, stamp(bansSubmitted('p1', ['blastoise', 'garchomp']), 10))).toEqual({
+      ok: false,
+      reason: 'alreadySubmitted',
+    });
+  });
+
+  it('refuses wrongBanCount when the allotment does not match bansPerPlayer', () => {
+    expect(canApply(blindStart(), stamp(bansSubmitted('p1', ['venusaur']), 9))).toEqual({
+      ok: false,
+      reason: 'wrongBanCount',
+    });
+    expect(
+      canApply(blindStart(), stamp(bansSubmitted('p1', ['venusaur', 'charizard', 'blastoise']), 9)),
+    ).toEqual({ ok: false, reason: 'wrongBanCount' });
+  });
+
+  it('refuses duplicateBanIds when one player names the same species twice', () => {
+    expect(
+      canApply(blindStart(), stamp(bansSubmitted('p1', ['venusaur', 'venusaur']), 9)),
+    ).toEqual({ ok: false, reason: 'duplicateBanIds' });
+  });
+
+  it('ACCEPTS two players naming the same species — that is a collision, not an error', () => {
+    // D-19's `bothApply`: a duplicate across players is a legal outcome of a blind stage
+    // and the reveal screen's whole reason for showing attribution.
+    const state = apply(blindStart(), stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 9));
+
+    expect(canApply(state, stamp(bansSubmitted('p2', ['venusaur', 'blastoise']), 10))).toEqual({
+      ok: true,
+    });
+  });
+});
+
+describe('canApply(bans/revealed)', () => {
+  const blindStart = () => fold(makeDocWith(BLIND_CONFIG, banOpeningLog(ORDER)));
+
+  const fullReveal = () =>
+    bansRevealed([
+      { playerId: 'p1', monIds: ['venusaur', 'charizard'] },
+      { playerId: 'p2', monIds: ['blastoise', 'garchomp'] },
+    ]);
+
+  function bothSubmitted() {
+    let state = blindStart();
+    state = apply(state, stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 9));
+    return apply(state, stamp(bansSubmitted('p2', ['blastoise', 'garchomp']), 10));
+  }
+
+  it('accepts the reveal once every player has submitted', () => {
+    expect(canApply(bothSubmitted(), stamp(fullReveal(), 11))).toEqual({ ok: true });
+  });
+
+  it('refuses bansNotComplete before the LAST submission', () => {
+    const state = apply(blindStart(), stamp(bansSubmitted('p1', ['venusaur', 'charizard']), 9));
+
+    expect(canApply(state, stamp(fullReveal(), 10))).toEqual({
+      ok: false,
+      reason: 'bansNotComplete',
+    });
+  });
+
+  it('refuses bansNotComplete when nobody has submitted at all', () => {
+    expect(canApply(blindStart(), stamp(fullReveal(), 9))).toEqual({
+      ok: false,
+      reason: 'bansNotComplete',
+    });
+  });
+
+  it('refuses bansAlreadyRevealed for a second reveal', () => {
+    const state = apply(bothSubmitted(), stamp(fullReveal(), 11));
+
+    expect(canApply(state, stamp(fullReveal(), 12))).toEqual({
+      ok: false,
+      reason: 'bansAlreadyRevealed',
+    });
+  });
+
+  it('refuses banStageNotRunning under hostBanlist and under snake', () => {
+    expect(canApply(fold(makeDoc(openingLog())), stamp(fullReveal(), 9))).toEqual({
+      ok: false,
+      reason: 'banStageNotRunning',
+    });
+    expect(
+      canApply(fold(makeDocWith(SNAKE_CONFIG, banOpeningLog(SNAKE_ORDER))), stamp(fullReveal(), 9)),
+    ).toEqual({ ok: false, reason: 'banStageNotRunning' });
+  });
+
+  it('refuses draftNotStarted before the order lands', () => {
+    const state = fold(makeDocWith(BLIND_CONFIG, [stamp(scheduleCompiled(OPEN_SCHEDULE), 0)]));
+
+    expect(canApply(state, stamp(fullReveal(), 9))).toEqual({
+      ok: false,
+      reason: 'draftNotStarted',
+    });
   });
 });
