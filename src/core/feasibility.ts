@@ -43,6 +43,26 @@
  * with `canApply` in `reduce.ts` — that returns the first failure, because a rejected action
  * needs one reason. This gate renders the first plus a count of the rest, so it needs them all.
  *
+ * ## RULE-08 — the post-reveal re-check is THIS function, and there is no second one
+ *
+ * After a blind or snake reveal the bans have to be re-checked against the pool. That check
+ * is a call to `checkFeasibility`. It is NOT a second gate function beside it, and no such
+ * function may be added — a grep for one is an acceptance criterion of the plan that wrote
+ * this section and of the plan that consumes it:
+ *
+ *   - `bannedIds` is the UNION of the host banlist and every revealed player ban, deduped.
+ *   - `bansPerPlayer` is `0` and `banMode` is `'hostBanlist'`, because those two fields mean
+ *     "player bans this configuration has NOT YET put in `bannedIds`". By the reveal there
+ *     are none: counting the ritual again would double-count every ban, and validating a
+ *     field the host can no longer edit would state a problem with no next action.
+ *
+ * A second arithmetic is a second thing that can disagree with the first about whether the
+ * night can proceed, and this module's first sentence is that there is one place that knows
+ * what is satisfiable. Reuse also gets the pool-size and player-count branches for free — a
+ * Mega-only re-check would miss exactly the crash D-21 does not name. The caller renders
+ * blocking problems only: `poolExactlyMinimum` and `swapRoundsOnExactPool` are config-time
+ * warnings, and the reveal is a screen where D-22 has removed every exit but abandonment.
+ *
  * ## Two Mega counts, and why both are returned
  *
  * `megaCapableLegalCount` counts the `megaCapable` FLAG. `megaEligibleLegalCount` counts the
@@ -569,6 +589,30 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
       ? null
       : asSafeInteger(input.bansPerPlayer, 1, MAX_BANS_PER_PLAYER);
 
+  /**
+   * D-21's pessimistic player-ban term: every player spends every ban, and every ban lands
+   * on a species this configuration needed.
+   *
+   * Zero at `hostBanlist` because that mode has no player bans at all — a non-zero term
+   * there would block configurations Phase 2 verified, and the whole of D-01's
+   * zero-regression posture rests on this line.
+   *
+   * A malformed field contributes `NaN` rather than a number, deliberately. Every relational
+   * comparison with `NaN` is false, which SUPPRESSES the three arithmetic sentences below
+   * while the field is unreadable — the same posture `poolSizeNotAnInteger` takes one field
+   * along, and for the same reason: a sentence computed from a number the host is still
+   * typing tells them about a field they are not editing. `bansPerPlayerNotAnInteger` has
+   * already blocked, so nothing reaches the draw either way.
+   *
+   * A collision between two players WASTES a ban rather than removing an extra species, so
+   * the post-reveal pool is always at least as large as this worst case (D-21). That is what
+   * makes the post-reveal re-check belt-and-braces rather than a live trap.
+   */
+  const q =
+    banMode === 'hostBanlist'
+      ? 0
+      : players * (bansPerPlayerMalformed ? Number.NaN : (input.bansPerPlayer ?? 0));
+
   // Checks are grouped by the field the host would change, then sorted by PRECEDENCE. The
   // grouping is for the reader; the order the host sees is the declared one.
   const problems: FeasibilityProblem[] = [];
@@ -593,18 +637,43 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
     problems.push(blocking('poolSizeNotAnInteger', POOL_SIZE_NOT_AN_INTEGER));
   }
 
-  const tooManyPlayers = needed > legalCount;
+  // Both sentences quote the PESSIMISTIC figures — `legalCount - q` draftable after
+  // `banCount + q` bans — rather than today's. The string is Phase 2's, unchanged to the
+  // byte; only the interpolations move, exactly as `{y}` moves in the Mega sentence, and
+  // for the identical reason: at `q > 0` the un-adjusted figures make the sentence read as
+  // no problem at all ("only 235 draftable; the pool is set to 235"). At `q === 0` both
+  // reduce to the numbers Phase 2 verified.
+  const pessimisticLegal = legalCount - q;
+  const pessimisticBans = banCount + q;
+
+  const tooManyPlayers = needed > pessimisticLegal;
   if (tooManyPlayers) {
     problems.push(
       blocking(
         'tooManyPlayersForRoster',
-        tooManyPlayersForRosterMessage(players, rounds, needed, legalCount, banCount),
+        tooManyPlayersForRosterMessage(
+          players,
+          rounds,
+          needed,
+          pessimisticLegal,
+          pessimisticBans,
+        ),
       ),
     );
   }
 
-  if (poolSize !== null && !tooManyPlayers && poolSize > legalCount) {
-    problems.push(blocking('poolTooLarge', poolTooLargeMessage(legalCount, banCount, poolSize)));
+  // The correction D-21 does not name, and the more important of the two: this fired only
+  // ABOVE `legalCount`, the pool-size field is deliberately unclamped (Phase 2 D-06), and
+  // `drawPool` deliberately does not clamp either — `draw.ts:108-112` states that a `count`
+  // larger than `pool.length` reaches `nextInt` with an empty range and the `RangeError`
+  // surfaces, because clamping would hand back a pool quietly smaller than the one the host
+  // configured. That throw is upstream POLICY BEING HONOURED, not a bug to fix in `draw.ts`.
+  // Without `q` here the ordinary config flow reaches it on a shared screen mid-ritual
+  // (Pitfall 2, T-04-06); with it, the pool the gate accepts still fits after the reveal.
+  if (poolSize !== null && !tooManyPlayers && poolSize > pessimisticLegal) {
+    problems.push(
+      blocking('poolTooLarge', poolTooLargeMessage(pessimisticLegal, pessimisticBans, poolSize)),
+    );
   }
 
   if (poolSize !== null && poolSize < needed) {
@@ -676,7 +745,14 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
   // rather than a shortcut: `ConfigScreen` guards the draw on `blocked`, so the draw is `null`
   // whenever this gate has anything to say. `drawPool`'s stage 2 carries the count into the
   // pool by construction, which is what makes D-11's wording reachable from here.
-  if (megasPerTeam !== null && players * megasPerTeam > megaEligibleLegalCount) {
+  // D-21 subtracts `q` and NOTHING ELSE. D-21's own prose reads as
+  // `megaEligible - megaBans - players × bansPerPlayer`, and taking that literally against
+  // this variable double-subtracts: `megaEligibleLegalCount` is computed at `:400-408` from
+  // entries that are both unbanned AND still Mega-eligible, so the host species bans and the
+  // Mega-forme bans are already out of it — its doc block at `:159-163` says so in as many
+  // words. Do not "restore" D-21's literal wording here; it would block satisfiable
+  // configurations, which is the failure RULE-07 exists to avoid in the other direction.
+  if (megasPerTeam !== null && players * megasPerTeam > megaEligibleLegalCount - q) {
     problems.push(
       blocking(
         'notEnoughMegas',
@@ -687,9 +763,9 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
           megaEligibleLegalCount,
           banCount,
           megaFormeBanCount,
-          // The arm selector. `null` is "no pending player bans", which is `hostBanlist`
-          // and every caller whose bans are already in `bannedIds`.
-          banMode === 'hostBanlist' ? null : players * (input.bansPerPlayer ?? 0),
+          // The arm selector as well as `{q}`. `null` is "no pending player bans", which is
+          // `hostBanlist` and every caller whose bans are already in `bannedIds`.
+          banMode === 'hostBanlist' ? null : q,
         ),
       ),
     );
