@@ -250,7 +250,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-04-PLAN.md — the ban stage selectors: the serpentine, whose turn it is, and what the room may see (BAN-03, BAN-04)
+- [x] 04-04-PLAN.md — the ban stage selectors: the serpentine, whose turn it is, and what the room may see (BAN-03, BAN-04)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -308,7 +308,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
-| 4. Blind and Snake Bans | 3/11 | In Progress|  |
+| 4. Blind and Snake Bans | 4/11 | In Progress|  |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
 ## Requirement Coverage
