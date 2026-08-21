@@ -31,6 +31,13 @@
  *
  * `swap/passed` is the ninth, and it is the one type here that records somebody doing
  * NOTHING. See {@link SwapPassedPayload} for why that is an action rather than an absence.
+ *
+ * `bans/placed`, `bans/submitted` and `bans/revealed` are the tenth, eleventh and twelfth,
+ * and they attach TOGETHER for the reason the two swap types did: they are one vocabulary
+ * with two dialects. `bans/placed` is the snake stage speaking in the open, one ban at a
+ * time; `bans/submitted` and `bans/revealed` are the blind stage speaking in private and
+ * then all at once. Splitting them across two changes would have meant editing all six
+ * landing sites twice.
  */
 
 export const POOL_BUILT = 'pool/built';
@@ -42,6 +49,9 @@ export const CARDS_PLAYED = 'cards/played';
 export const ORDER_RESOLVED = 'order/resolved';
 export const SWAP_MADE = 'swap/made';
 export const SWAP_PASSED = 'swap/passed';
+export const BANS_PLACED = 'bans/placed';
+export const BANS_SUBMITTED = 'bans/submitted';
+export const BANS_REVEALED = 'bans/revealed';
 
 /**
  * What `dispatch` adds to every intent.
@@ -304,6 +314,74 @@ export interface SwapPassedPayload {
   swapRound: number;
 }
 
+/**
+ * One snake ban, placed in the open — BAN-03, D-12, D-20.
+ *
+ * `pass` is 1-based and stamped at the edge from the serpentine selector, for the reason
+ * {@link PickMadePayload}'s `round` is: the pass must not be re-derived from log position
+ * after an undo has removed something ahead of it. A ban board that renumbered its columns
+ * when an earlier ban was walked back would move every ban after it into the wrong pass.
+ *
+ * There is deliberately no duplicate-policy field here, and none on either sibling below.
+ * What happens when two players ban the same species is `config.duplicateBanPolicy` (D-10)
+ * — decided before the first action and never changed afterwards, which is exactly what
+ * `model.ts` says config is for. A copy on the payload would be a second answer to the
+ * same question, free to disagree with the first halfway through a stage.
+ */
+export interface BansPlacedPayload {
+  type: typeof BANS_PLACED;
+  playerId: string;
+  monId: string;
+  /** 1-based, matching the ban board's `Pass {n}` column headers. */
+  pass: number;
+}
+
+/**
+ * One player's whole blind allotment, sealed — BAN-04, D-05, D-06.
+ *
+ * ## The WHOLE allotment, and why that is the opposite of `cards/played`
+ *
+ * {@link CardsPlayedPayload} carries one card because a round is many separate acts and
+ * each one should be able to land as it happens. A blind submission is the reverse: the
+ * lock-in is ONE act, and D-05 forbids re-displaying a submission once it is removed. So
+ * an undo has to remove exactly one player's entry and nothing finer. Per-ban actions
+ * would make `Undo last move` remove one invisible ban out of two invisible bans, and the
+ * sentence announcing it could not name what came back without leaking what was banned.
+ *
+ * ## Plaintext, deliberately
+ *
+ * D-06: the defence is the screen shield, not the file. A commit-then-reveal hash scheme
+ * was considered and rejected — `crypto.subtle` is async, would have to live in an adapter,
+ * and would leave this pure reducer unable to verify its own log. The host typed every ban
+ * off Discord and already knows them.
+ */
+export interface BansSubmittedPayload {
+  type: typeof BANS_SUBMITTED;
+  playerId: string;
+  monIds: string[];
+}
+
+/**
+ * The reveal, attributed — BAN-04, D-08, D-13.
+ *
+ * ## Why this is materialized, when the submissions already say it
+ *
+ * It IS derivable from `bans/submitted`, and that is the same objection
+ * {@link ScheduleCompiledPayload} answers above. The answer is the same: the reveal is a
+ * HOST ACT at a point in the log, not a computation over one. A build that re-derived it
+ * would be free to disagree about which submissions were in the reveal the room actually
+ * watched — after an undo removed one, most obviously — and ARCHITECTURE Pattern 5 exists
+ * for exactly that class.
+ *
+ * Attribution rather than a flat set, per D-13. A flat set would render the banlist and
+ * lose who banned what, which is the entire content of the reveal screen and the only way
+ * a collision can be shown as a collision.
+ */
+export interface BansRevealedPayload {
+  type: typeof BANS_REVEALED;
+  bans: { playerId: string; monIds: string[] }[];
+}
+
 export type Intent =
   | PoolBuiltPayload
   | ScheduleCompiledPayload
@@ -313,7 +391,10 @@ export type Intent =
   | CardsPlayedPayload
   | OrderResolvedPayload
   | SwapMadePayload
-  | SwapPassedPayload;
+  | SwapPassedPayload
+  | BansPlacedPayload
+  | BansSubmittedPayload
+  | BansRevealedPayload;
 
 export type PoolBuiltAction = PoolBuiltPayload & ActionEnvelope;
 export type ScheduleCompiledAction = ScheduleCompiledPayload & ActionEnvelope;
@@ -324,6 +405,9 @@ export type CardsPlayedAction = CardsPlayedPayload & ActionEnvelope;
 export type OrderResolvedAction = OrderResolvedPayload & ActionEnvelope;
 export type SwapMadeAction = SwapMadePayload & ActionEnvelope;
 export type SwapPassedAction = SwapPassedPayload & ActionEnvelope;
+export type BansPlacedAction = BansPlacedPayload & ActionEnvelope;
+export type BansSubmittedAction = BansSubmittedPayload & ActionEnvelope;
+export type BansRevealedAction = BansRevealedPayload & ActionEnvelope;
 
 /** A stamped action this build understands. */
 export type Action = Intent & ActionEnvelope;
@@ -457,6 +541,52 @@ export function swapMade(swap: {
  */
 export function swapPassed(pass: { playerId: string; swapRound: number }): SwapPassedPayload {
   return { type: SWAP_PASSED, playerId: pass.playerId, swapRound: pass.swapRound };
+}
+
+/**
+ * `pass` is an argument rather than something this function works out.
+ *
+ * The serpentine position is a fact about the STATE, and the whole purity split is that
+ * the state is resolved at the edge and handed in already decided — the same reason
+ * {@link poolBuilt}'s `seed` and {@link cardsPlayed}'s `round` are arguments.
+ */
+export function bansPlaced(playerId: string, monId: string, pass: number): BansPlacedPayload {
+  return { type: BANS_PLACED, playerId, monId, pass };
+}
+
+/**
+ * A fresh array, never the caller's — the same rule {@link scheduleCompiled} states.
+ *
+ * The blind entry surface holds its in-progress selection in component state and
+ * re-renders it on every keystroke. A payload that aliased that array would let a later
+ * render mutate a log entry that has already been written, which for a sealed submission
+ * means the reveal showing a ban nobody submitted.
+ */
+export function bansSubmitted(playerId: string, monIds: readonly string[]): BansSubmittedPayload {
+  return { type: BANS_SUBMITTED, playerId, monIds: [...monIds] };
+}
+
+/**
+ * BOTH levels copied: the outer records and every inner `monIds`.
+ *
+ * One level is the mistake this is written out to prevent. `bans.map((entry) => entry)`
+ * and a bare outer copy both type-check, and both leave every record's `monIds` shared
+ * with whatever built it — which here is a selector over the submissions, one render away
+ * from being rebuilt. Each record is a FRESH object with each field named, on
+ * {@link swapMade}'s rule: a spread would carry whatever else the caller's record happened
+ * to hold into a log entry. Each `monIds` is copied element by element, which is
+ * `copyConfig`'s idiom for the same hazard one layer down.
+ */
+export function bansRevealed(
+  bans: readonly { playerId: string; monIds: readonly string[] }[],
+): BansRevealedPayload {
+  return {
+    type: BANS_REVEALED,
+    bans: bans.map((entry) => ({
+      playerId: entry.playerId,
+      monIds: entry.monIds.map((id) => id),
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -595,4 +725,59 @@ export function isSwapMadeAction(action: AnyAction): action is SwapMadeAction {
 export function isSwapPassedAction(action: AnyAction): action is SwapPassedAction {
   if (action.type !== SWAP_PASSED || !isRecord(action)) return false;
   return typeof action['playerId'] === 'string' && isSafeInteger(action['swapRound']);
+}
+
+/**
+ * Types only, exactly as {@link isCardsPlayedAction}'s doc block sets out.
+ *
+ * Whether `monId` names a species on the roster and whether `pass` is inside
+ * `1..config.bansPerPlayer` are the two questions this deliberately does not ask. The
+ * first has no answer available to ANY function in this file — no roster is in reach of
+ * either a guard or `canApply`, which is the `swap/made` lesson at the top of the file —
+ * and the second is a fact about the config, which `canApply` sees and this does not.
+ */
+export function isBansPlacedAction(action: AnyAction): action is BansPlacedAction {
+  if (action.type !== BANS_PLACED || !isRecord(action)) return false;
+  return (
+    typeof action['playerId'] === 'string' &&
+    typeof action['monId'] === 'string' &&
+    isSafeInteger(action['pass'])
+  );
+}
+
+/**
+ * Types only, and the LENGTH is the omission that matters.
+ *
+ * `monIds.length === config.bansPerPlayer` is `canApply`'s `wrongBanCount` and duplicates
+ * inside `monIds` are its `duplicateBanIds`. Both are questions about the state, and a
+ * guard that reached for the config would be a second authority on the same rules, free to
+ * disagree with the first. `tests/core/import-guard.test.ts` pins the wrong-length case as
+ * ACCEPTED here, because that is the assertion a later reader is most likely to "fix".
+ */
+export function isBansSubmittedAction(action: AnyAction): action is BansSubmittedAction {
+  if (action.type !== BANS_SUBMITTED || !isRecord(action)) return false;
+  return typeof action['playerId'] === 'string' && isStringArray(action['monIds']);
+}
+
+/**
+ * A nested array of records, typed record by record.
+ *
+ * The shape {@link isScheduleCompiledAction} takes, minus the positional pin: a reveal's
+ * records carry no index, so there is no carried-versus-position disagreement to catch.
+ * What there IS to catch is a record whose `monIds` is not an array of strings, which
+ * would otherwise fold into a reveal the screen renders as `undefined`.
+ *
+ * Whether these player ids are the document's configured players is referential integrity,
+ * and no structural guard in this file does any — every entry is typed in isolation.
+ */
+export function isBansRevealedAction(action: AnyAction): action is BansRevealedAction {
+  if (action.type !== BANS_REVEALED || !isRecord(action)) return false;
+
+  const bans = action['bans'];
+  if (!Array.isArray(bans)) return false;
+
+  return bans.every((ban) => {
+    if (!isRecord(ban)) return false;
+    return typeof ban['playerId'] === 'string' && isStringArray(ban['monIds']);
+  });
 }
