@@ -174,6 +174,8 @@ function configOf(swapBudget: number): TournamentConfig {
     megaFormeBans: [],
     swapBudget,
     swapRounds: 0,
+    bansPerPlayer: 0,
+    duplicateBanPolicy: 'bothApply',
   };
 }
 

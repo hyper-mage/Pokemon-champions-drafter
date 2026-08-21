@@ -114,6 +114,8 @@ const CONFIG: TournamentConfig = {
   megaFormeBans: [],
   swapBudget: 0,
   swapRounds: 0,
+  bansPerPlayer: 0,
+  duplicateBanPolicy: 'bothApply',
 };
 
 /** A schema-2 document's schedule: none at all, which `selectSchedule` folds to all-open. */

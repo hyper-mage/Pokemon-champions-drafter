@@ -186,6 +186,8 @@ function configOf(options: { swapRounds: number; swapBudget?: number }): Tournam
     megaFormeBans: [],
     swapBudget: options.swapBudget ?? 2,
     swapRounds: options.swapRounds,
+    bansPerPlayer: 0,
+    duplicateBanPolicy: 'bothApply',
   };
 }
 

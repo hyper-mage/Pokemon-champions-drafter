@@ -118,6 +118,8 @@ const CONFIG: TournamentConfig = {
   megaFormeBans: [],
   swapBudget: 0,
   swapRounds: 0,
+  bansPerPlayer: 0,
+  duplicateBanPolicy: 'bothApply',
 };
 
 function stamp(intent: Intent, seq: number): Action {
