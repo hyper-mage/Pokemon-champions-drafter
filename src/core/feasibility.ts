@@ -43,6 +43,26 @@
  * with `canApply` in `reduce.ts` — that returns the first failure, because a rejected action
  * needs one reason. This gate renders the first plus a count of the rest, so it needs them all.
  *
+ * ## RULE-08 — the post-reveal re-check is THIS function, and there is no second one
+ *
+ * After a blind or snake reveal the bans have to be re-checked against the pool. That check
+ * is a call to `checkFeasibility`. It is NOT a second gate function beside it, and no such
+ * function may be added — a grep for one is an acceptance criterion of the plan that wrote
+ * this section and of the plan that consumes it:
+ *
+ *   - `bannedIds` is the UNION of the host banlist and every revealed player ban, deduped.
+ *   - `bansPerPlayer` is `0` and `banMode` is `'hostBanlist'`, because those two fields mean
+ *     "player bans this configuration has NOT YET put in `bannedIds`". By the reveal there
+ *     are none: counting the ritual again would double-count every ban, and validating a
+ *     field the host can no longer edit would state a problem with no next action.
+ *
+ * A second arithmetic is a second thing that can disagree with the first about whether the
+ * night can proceed, and this module's first sentence is that there is one place that knows
+ * what is satisfiable. Reuse also gets the pool-size and player-count branches for free — a
+ * Mega-only re-check would miss exactly the crash D-21 does not name. The caller renders
+ * blocking problems only: `poolExactlyMinimum` and `swapRoundsOnExactPool` are config-time
+ * warnings, and the reveal is a screen where D-22 has removed every exit but abandonment.
+ *
  * ## Two Mega counts, and why both are returned
  *
  * `megaCapableLegalCount` counts the `megaCapable` FLAG. `megaEligibleLegalCount` counts the
@@ -75,9 +95,9 @@
  * below are computation-local and are never returned or stored (CLAUDE.md §Serializability).
  */
 
-import { MAX_SWAP_BUDGET, MAX_SWAP_ROUNDS } from './import-guard';
+import { MAX_BANS_PER_PLAYER, MAX_SWAP_BUDGET, MAX_SWAP_ROUNDS } from './import-guard';
 import { choiceFor, isMegaEligible } from './mega';
-import type { DualMegaChoice } from './model';
+import type { BanMode, DualMegaChoice } from './model';
 import type { RosterEntry } from './roster/types';
 
 /**
@@ -113,6 +133,12 @@ export type FeasibilityCode =
   | 'swapRoundsNotAnInteger'
   /** The swap-rounds field holds a usable number past the bound the import guard enforces. */
   | 'swapRoundsTooLarge'
+  /** The bans-per-player field is empty, fractional, unsafe, or negative — blind and snake only. */
+  | 'bansPerPlayerNotAnInteger'
+  /** The bans-per-player field is a usable 0, which is a ritual with nothing in it. */
+  | 'bansPerPlayerNotPositive'
+  /** The bans-per-player field holds a usable number past the bound the import guard enforces. */
+  | 'bansPerPlayerTooLarge'
   /** Satisfiable but degenerate: the last picker of the last round has one option. */
   | 'poolExactlyMinimum'
   /** Satisfiable but degenerate: swap rounds open on a pool the last pick emptied — D-32. */
@@ -141,6 +167,29 @@ export interface FeasibilityInput {
   swapBudget: number | null;
   /** `null` when the numeric field is empty or unparseable. */
   swapRounds: number | null;
+  /**
+   * Which ritual the host chose — BAN-01. `'hostBanlist'` contributes no player bans.
+   *
+   * Read by this gate for exactly two things, and both are the same question: does this
+   * configuration carry player bans that are NOT YET in `bannedIds`? At `'hostBanlist'` the
+   * answer is no, so the `Bans per player` field is void and `q` is zero — which is what
+   * keeps every predicate below byte-for-byte the rule Phase 3 shipped.
+   *
+   * **A caller whose player bans are already materialised into `bannedIds` passes
+   * `'hostBanlist'`**, whatever the document's stored mode says, for the same reason it
+   * passes `bansPerPlayer: 0`: the bans are in the banlist, so counting the ritual again
+   * would count them twice, and validating a field the host can no longer edit would report
+   * a problem with no next action. See the module header's post-reveal contract.
+   */
+  banMode: BanMode;
+  /**
+   * Player bans NOT YET reflected in `bannedIds` — D-21. `null` when the field is empty.
+   *
+   * The config screen passes the config field. The post-reveal re-check passes `0`, because
+   * by then the bans are materialised into `bannedIds` and a non-zero value would count them
+   * twice.
+   */
+  bansPerPlayer: number | null;
   entries: readonly RosterEntry[];
 }
 
@@ -182,6 +231,15 @@ const PRECEDENCE: readonly FeasibilityCode[] = [
   'duplicatePlayerName',
   'poolSizeNotAnInteger',
   'megasRequiredNotAnInteger',
+  // All three bans-per-player reasons sit HERE, beside `swapBudgetNotAnInteger` rather than
+  // split across the malformed and the bound groups the way the two swap fields are. Two
+  // reasons: `Bans` is group 4 on the config screen and `Swaps` is group 5, so this is the
+  // field order the host reads; and unlike `swapBudgetTooLarge`, none of these three is
+  // arithmetic about the roster — all three are the same field being unusable, and a host
+  // fixing it should not have to fix it twice at two different points in the list.
+  'bansPerPlayerNotAnInteger',
+  'bansPerPlayerNotPositive',
+  'bansPerPlayerTooLarge',
   'swapBudgetNotAnInteger',
   'swapRoundsNotAnInteger',
   'megasExceedRounds',
@@ -237,6 +295,19 @@ const SWAP_BUDGET_NOT_AN_INTEGER = 'Swap budget needs a whole number. Enter 0 fo
 const SWAP_ROUNDS_NOT_AN_INTEGER =
   'Swap rounds needs a whole number. Enter 0 to end the draft with the last pick.';
 
+/**
+ * The two `Bans per player` sentences, verbatim from 04-UI-SPEC §2.
+ *
+ * Both name a SECOND remedy the other numeric fields do not have — switching ban mode —
+ * because this field is the only one in the gate that exists because of a mode choice. A
+ * host who does not want to think about a ban count has a way out of the field entirely,
+ * and CLAUDE.md §Copy asks the sentence to name the action that resolves the problem.
+ */
+const BANS_PER_PLAYER_NOT_AN_INTEGER =
+  'Bans per player needs a whole number. Enter 1 or more, or switch to host banlist.';
+const BANS_PER_PLAYER_NOT_POSITIVE =
+  'Blind and snake need at least 1 ban per player. Enter a number, or switch to host banlist.';
+
 function blankPlayerNameMessage(position: number): string {
   return `Every player needs a name. Player ${position} is blank.`;
 }
@@ -290,16 +361,45 @@ function poolTooSmallMessage(
  * One code rather than two: `:29-34`'s test for splitting is that each condition names its
  * own next action, and both conditions here resolve to "lower the requirement or unban
  * something". Naming both lists in one sentence is cheaper than a second precedence row.
+ *
+ * ## ONE composer, TWO arms — and it must stay one
+ *
+ * 04-UI-SPEC §2 gives the blind/snake mode a sentence with one extra clause and one extra
+ * remedy. The shared prefix, the `{x}` need, the `{y}` availability and the two ban counts
+ * are computed HERE, once, for both arms. Two composers would be two strings that can be
+ * reworded independently, and the `hostBanlist` arm is a contract Phase 3 already shipped
+ * and a test pins byte for byte.
+ *
+ * `playerBans` is the arm selector as well as an interpolation: `null` means "this
+ * configuration has no pending player bans", which is `hostBanlist` and also every caller
+ * whose bans are already materialised into the banlist.
  */
 function notEnoughMegasMessage(
   players: number,
   megaRounds: number,
   needed: number,
-  available: number,
+  megaEligible: number,
   speciesBans: number,
   formeBans: number,
+  playerBans: number | null,
 ): string {
-  return `Not enough Pokémon can Mega. ${players} players × ${megaRounds} Mega rounds needs ${needed}; ${available} can still Mega after ${speciesBans} species bans and ${formeBans} Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.`;
+  const q = playerBans ?? 0;
+
+  // `{y}` is what can still Mega AFTER the pessimistic player-ban term, or the sentence is
+  // not true as written. Clamped at 0 because `q` is `players × bansPerPlayer` and can
+  // exceed the eligible count outright at high player counts — a negative number in a
+  // sentence read off a shared screen reads as a broken tool rather than as a hard limit.
+  // At `q === 0` the two arms compute the identical `{y}`, which is what makes the
+  // `hostBanlist` arm agree with Phase 3 by construction rather than by coincidence.
+  const available = Math.max(0, megaEligible - q);
+
+  const prefix = `Not enough Pokémon can Mega. ${players} players × ${megaRounds} Mega rounds needs ${needed}; ${available} can still Mega after ${speciesBans} species bans`;
+
+  if (playerBans === null) {
+    return `${prefix} and ${formeBans} Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.`;
+  }
+
+  return `${prefix}, ${formeBans} Mega-forme bans and ${q} player bans. Lower the Mega requirement, lower bans per player, or unban a Mega forme.`;
 }
 
 /**
@@ -313,6 +413,15 @@ function swapBudgetTooLargeMessage(maximum: number): string {
 
 function swapRoundsTooLargeMessage(maximum: number): string {
   return `Too many swap rounds. A draft can be followed by at most ${maximum} swap rounds. Lower the swap rounds.`;
+}
+
+/**
+ * The third bound sentence, in `swapBudgetTooLarge`'s shape for `swapBudgetTooLarge`'s
+ * reason: "needs a whole number" is false about a value that is one, so the count and the
+ * bound are two questions with two different next actions.
+ */
+function bansPerPlayerTooLargeMessage(maximum: number): string {
+  return `Bans per player is too high. A player can be given at most ${maximum} bans. Lower the bans per player.`;
 }
 
 function poolExactlyMinimumMessage(poolSize: number, rounds: number): string {
@@ -385,7 +494,7 @@ function warning(code: FeasibilityCode, message: string): FeasibilityProblem {
 // ---------------------------------------------------------------------------
 
 export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
-  const { playerNames, rounds, bannedIds, entries } = input;
+  const { playerNames, rounds, bannedIds, banMode, entries } = input;
 
   // Set membership, never the raw length of the banlist. Two surfaces write one banlist so
   // a duplicate is reachable, and an imported file can carry ids this regulation dropped.
@@ -457,6 +566,53 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
     ? null
     : asSafeInteger(input.swapRounds, 0, MAX_SWAP_ROUNDS);
 
+  // — the bans-per-player field —
+  //
+  // The same two questions the swap fields are asked, plus a third between them, because
+  // this field has THREE answers rather than two: unreadable, readable but empty of any
+  // ritual, and readable but past the bound. Order matters for the same reason it does one
+  // field along — an emptied field is `null` and every relational comparison with `NaN` is
+  // false, so the malformed question has to be asked first or the other two answer about a
+  // value that is not there.
+  //
+  // `MAX_BANS_PER_PLAYER` is IMPORTED, never restated as 24: `:60-67`'s invariant applies
+  // here word for word. `handleStart` writes whatever this gate accepted, `persistence.load`
+  // runs the result back through `isValidTournament`, and a count this gate allowed but that
+  // guard refuses is a tournament the host cannot resume (T-04-09).
+  const bansPerPlayerMalformed =
+    asSafeInteger(input.bansPerPlayer, 0, Number.MAX_SAFE_INTEGER) === null;
+  const bansPerPlayerPositive = bansPerPlayerMalformed
+    ? null
+    : asSafeInteger(input.bansPerPlayer, 1, Number.MAX_SAFE_INTEGER);
+  const bansPerPlayer =
+    bansPerPlayerPositive === null
+      ? null
+      : asSafeInteger(input.bansPerPlayer, 1, MAX_BANS_PER_PLAYER);
+
+  /**
+   * D-21's pessimistic player-ban term: every player spends every ban, and every ban lands
+   * on a species this configuration needed.
+   *
+   * Zero at `hostBanlist` because that mode has no player bans at all — a non-zero term
+   * there would block configurations Phase 2 verified, and the whole of D-01's
+   * zero-regression posture rests on this line.
+   *
+   * A malformed field contributes `NaN` rather than a number, deliberately. Every relational
+   * comparison with `NaN` is false, which SUPPRESSES the three arithmetic sentences below
+   * while the field is unreadable — the same posture `poolSizeNotAnInteger` takes one field
+   * along, and for the same reason: a sentence computed from a number the host is still
+   * typing tells them about a field they are not editing. `bansPerPlayerNotAnInteger` has
+   * already blocked, so nothing reaches the draw either way.
+   *
+   * A collision between two players WASTES a ban rather than removing an extra species, so
+   * the post-reveal pool is always at least as large as this worst case (D-21). That is what
+   * makes the post-reveal re-check belt-and-braces rather than a live trap.
+   */
+  const q =
+    banMode === 'hostBanlist'
+      ? 0
+      : players * (bansPerPlayerMalformed ? Number.NaN : (input.bansPerPlayer ?? 0));
+
   // Checks are grouped by the field the host would change, then sorted by PRECEDENCE. The
   // grouping is for the reader; the order the host sees is the declared one.
   const problems: FeasibilityProblem[] = [];
@@ -481,18 +637,43 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
     problems.push(blocking('poolSizeNotAnInteger', POOL_SIZE_NOT_AN_INTEGER));
   }
 
-  const tooManyPlayers = needed > legalCount;
+  // Both sentences quote the PESSIMISTIC figures — `legalCount - q` draftable after
+  // `banCount + q` bans — rather than today's. The string is Phase 2's, unchanged to the
+  // byte; only the interpolations move, exactly as `{y}` moves in the Mega sentence, and
+  // for the identical reason: at `q > 0` the un-adjusted figures make the sentence read as
+  // no problem at all ("only 235 draftable; the pool is set to 235"). At `q === 0` both
+  // reduce to the numbers Phase 2 verified.
+  const pessimisticLegal = legalCount - q;
+  const pessimisticBans = banCount + q;
+
+  const tooManyPlayers = needed > pessimisticLegal;
   if (tooManyPlayers) {
     problems.push(
       blocking(
         'tooManyPlayersForRoster',
-        tooManyPlayersForRosterMessage(players, rounds, needed, legalCount, banCount),
+        tooManyPlayersForRosterMessage(
+          players,
+          rounds,
+          needed,
+          pessimisticLegal,
+          pessimisticBans,
+        ),
       ),
     );
   }
 
-  if (poolSize !== null && !tooManyPlayers && poolSize > legalCount) {
-    problems.push(blocking('poolTooLarge', poolTooLargeMessage(legalCount, banCount, poolSize)));
+  // The correction D-21 does not name, and the more important of the two: this fired only
+  // ABOVE `legalCount`, the pool-size field is deliberately unclamped (Phase 2 D-06), and
+  // `drawPool` deliberately does not clamp either — `draw.ts:108-112` states that a `count`
+  // larger than `pool.length` reaches `nextInt` with an empty range and the `RangeError`
+  // surfaces, because clamping would hand back a pool quietly smaller than the one the host
+  // configured. That throw is upstream POLICY BEING HONOURED, not a bug to fix in `draw.ts`.
+  // Without `q` here the ordinary config flow reaches it on a shared screen mid-ritual
+  // (Pitfall 2, T-04-06); with it, the pool the gate accepts still fits after the reveal.
+  if (poolSize !== null && !tooManyPlayers && poolSize > pessimisticLegal) {
+    problems.push(
+      blocking('poolTooLarge', poolTooLargeMessage(pessimisticLegal, pessimisticBans, poolSize)),
+    );
   }
 
   if (poolSize !== null && poolSize < needed) {
@@ -528,6 +709,23 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
     );
   }
 
+  // — the bans-per-player field, in the two modes that have one —
+  //
+  // Gated on the MODE, not merely on the value. At `hostBanlist` the field is wholly void:
+  // 04-UI-SPEC §1 does not render it, `0` is the value the document stores, and a code that
+  // fired here would block a configuration that is correct and that Phase 2 verified.
+  if (banMode !== 'hostBanlist') {
+    if (bansPerPlayerMalformed) {
+      problems.push(blocking('bansPerPlayerNotAnInteger', BANS_PER_PLAYER_NOT_AN_INTEGER));
+    } else if (bansPerPlayerPositive === null) {
+      problems.push(blocking('bansPerPlayerNotPositive', BANS_PER_PLAYER_NOT_POSITIVE));
+    } else if (bansPerPlayer === null) {
+      problems.push(
+        blocking('bansPerPlayerTooLarge', bansPerPlayerTooLargeMessage(MAX_BANS_PER_PLAYER)),
+      );
+    }
+  }
+
   // — the Megas-per-team field —
   if (megasRequiredMalformed) {
     problems.push(
@@ -547,7 +745,14 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
   // rather than a shortcut: `ConfigScreen` guards the draw on `blocked`, so the draw is `null`
   // whenever this gate has anything to say. `drawPool`'s stage 2 carries the count into the
   // pool by construction, which is what makes D-11's wording reachable from here.
-  if (megasPerTeam !== null && players * megasPerTeam > megaEligibleLegalCount) {
+  // D-21 subtracts `q` and NOTHING ELSE. D-21's own prose reads as
+  // `megaEligible - megaBans - players × bansPerPlayer`, and taking that literally against
+  // this variable double-subtracts: `megaEligibleLegalCount` is computed at `:400-408` from
+  // entries that are both unbanned AND still Mega-eligible, so the host species bans and the
+  // Mega-forme bans are already out of it — its doc block at `:159-163` says so in as many
+  // words. Do not "restore" D-21's literal wording here; it would block satisfiable
+  // configurations, which is the failure RULE-07 exists to avoid in the other direction.
+  if (megasPerTeam !== null && players * megasPerTeam > megaEligibleLegalCount - q) {
     problems.push(
       blocking(
         'notEnoughMegas',
@@ -558,6 +763,9 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
           megaEligibleLegalCount,
           banCount,
           megaFormeBanCount,
+          // The arm selector as well as `{q}`. `null` is "no pending player bans", which is
+          // `hostBanlist` and every caller whose bans are already in `bannedIds`.
+          banMode === 'hostBanlist' ? null : q,
         ),
       ),
     );

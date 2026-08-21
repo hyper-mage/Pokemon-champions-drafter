@@ -29,7 +29,11 @@ import {
   type FeasibilityInput,
   type FeasibilityResult,
 } from '../../src/core/feasibility';
-import { MAX_SWAP_BUDGET, MAX_SWAP_ROUNDS } from '../../src/core/import-guard';
+import {
+  MAX_BANS_PER_PLAYER,
+  MAX_SWAP_BUDGET,
+  MAX_SWAP_ROUNDS,
+} from '../../src/core/import-guard';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 
 const snapshot = committedSnapshot as unknown as RosterSnapshot;
@@ -70,6 +74,11 @@ function base(overrides: Partial<FeasibilityInput> = {}): FeasibilityInput {
     dualMegaChoices: [],
     swapBudget: 0,
     swapRounds: 0,
+    // The two Phase 4 fields at their `hostBanlist` values, so every case written before
+    // this phase reads exactly the tournament it always described: one ritual, no player
+    // bans, `q === 0` and all three pessimistic predicates back at Phase 3's rule.
+    banMode: 'hostBanlist',
+    bansPerPlayer: 0,
     entries: ENTRIES,
     ...overrides,
   };
@@ -635,6 +644,438 @@ describe('swapRoundsNotAnInteger', () => {
     expect(codes(checkFeasibility(base({ swapRounds: MAX_SWAP_ROUNDS + 1 })))).toContain(
       'swapRoundsTooLarge',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bans per player - the field that exists in exactly two of the three modes
+// ---------------------------------------------------------------------------
+
+describe('bansPerPlayerNotAnInteger', () => {
+  it('blocks an empty field rather than reading it as no bans', () => {
+    const result = checkFeasibility(base({ banMode: 'blind', bansPerPlayer: null }));
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('bansPerPlayerNotAnInteger');
+  });
+
+  it('blocks NaN, a fraction, Infinity and a negative on the same terms', () => {
+    for (const value of [Number.NaN, 2.5, Number.POSITIVE_INFINITY, -1]) {
+      expect(codes(checkFeasibility(base({ banMode: 'blind', bansPerPlayer: value })))).toContain(
+        'bansPerPlayerNotAnInteger',
+      );
+    }
+  });
+
+  it('suppresses all three pessimistic predicates while the field is malformed', () => {
+    // The posture `poolSizeNotAnInteger` takes one field along: an arithmetic sentence
+    // computed from an unreadable number tells the host about a field they are not editing.
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: ROSTER_SIZE,
+        banMode: 'blind',
+        bansPerPlayer: null,
+      }),
+    );
+
+    expect(codes(result)).toEqual(['bansPerPlayerNotAnInteger']);
+  });
+
+  it('says nothing about a usable count', () => {
+    expect(codes(checkFeasibility(base({ banMode: 'blind', bansPerPlayer: 1 })))).not.toContain(
+      'bansPerPlayerNotAnInteger',
+    );
+  });
+});
+
+describe('bansPerPlayerNotPositive', () => {
+  it('blocks zero bans in snake, which is a ritual with nothing in it', () => {
+    const result = checkFeasibility(base({ banMode: 'snake', bansPerPlayer: 0 }));
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('bansPerPlayerNotPositive');
+    // Zero is a safe non-negative integer, so the malformed question must answer no.
+    expect(codes(result)).not.toContain('bansPerPlayerNotAnInteger');
+  });
+
+  it('blocks zero bans in blind on the same terms', () => {
+    const result = checkFeasibility(base({ banMode: 'blind', bansPerPlayer: 0 }));
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('bansPerPlayerNotPositive');
+  });
+
+  it('says nothing at one ban, which is the field default', () => {
+    expect(codes(checkFeasibility(base({ banMode: 'blind', bansPerPlayer: 1 })))).not.toContain(
+      'bansPerPlayerNotPositive',
+    );
+  });
+});
+
+describe('bansPerPlayerTooLarge', () => {
+  it('refuses a count past the bound the import guard enforces (T-04-09)', () => {
+    const result = checkFeasibility(
+      base({ banMode: 'blind', bansPerPlayer: MAX_BANS_PER_PLAYER + 1 }),
+    );
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('bansPerPlayerTooLarge');
+    expect(codes(result)).not.toContain('bansPerPlayerNotAnInteger');
+  });
+
+  it('accepts the bound itself, so the gate and the guard agree at the edge', () => {
+    expect(
+      codes(checkFeasibility(base({ banMode: 'blind', bansPerPlayer: MAX_BANS_PER_PLAYER }))),
+    ).not.toContain('bansPerPlayerTooLarge');
+  });
+});
+
+describe('the void field at hostBanlist', () => {
+  it('says nothing about zero bans per player, which is that mode stored value', () => {
+    const result = checkFeasibility(base({ banMode: 'hostBanlist', bansPerPlayer: 0 }));
+
+    expect(codes(result)).not.toContain('bansPerPlayerNotAnInteger');
+    expect(codes(result)).not.toContain('bansPerPlayerNotPositive');
+    expect(codes(result)).not.toContain('bansPerPlayerTooLarge');
+  });
+
+  it('says nothing about an empty field either - no player bans, no opinion', () => {
+    const result = checkFeasibility(base({ banMode: 'hostBanlist', bansPerPlayer: null }));
+
+    expect(codes(result)).not.toContain('bansPerPlayerNotAnInteger');
+    expect(codes(result)).not.toContain('bansPerPlayerNotPositive');
+    expect(codes(result)).not.toContain('bansPerPlayerTooLarge');
+  });
+
+  it('says nothing about a count past the bound either', () => {
+    const result = checkFeasibility(
+      base({ banMode: 'hostBanlist', bansPerPlayer: MAX_BANS_PER_PLAYER + 1 }),
+    );
+
+    expect(codes(result)).not.toContain('bansPerPlayerTooLarge');
+  });
+});
+
+describe('bans-per-player copy', () => {
+  it('renders the three new blocking sentences exactly as the contract gives them', () => {
+    expect(
+      messageFor(
+        checkFeasibility(base({ banMode: 'blind', bansPerPlayer: null })),
+        'bansPerPlayerNotAnInteger',
+      ),
+    ).toBe('Bans per player needs a whole number. Enter 1 or more, or switch to host banlist.');
+
+    expect(
+      messageFor(
+        checkFeasibility(base({ banMode: 'snake', bansPerPlayer: 0 })),
+        'bansPerPlayerNotPositive',
+      ),
+    ).toBe(
+      'Blind and snake need at least 1 ban per player. Enter a number, or switch to host banlist.',
+    );
+
+    expect(
+      messageFor(
+        checkFeasibility(base({ banMode: 'blind', bansPerPlayer: MAX_BANS_PER_PLAYER + 1 })),
+        'bansPerPlayerTooLarge',
+      ),
+    ).toBe(
+      `Bans per player is too high. A player can be given at most ${MAX_BANS_PER_PLAYER} bans. Lower the bans per player.`,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One composer, two arms (Pitfall 9)
+// ---------------------------------------------------------------------------
+
+describe('the two-arm Mega sentence (Pitfall 9)', () => {
+  it('pins the hostBanlist arm byte-identical to the string Phase 3 shipped', () => {
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 6,
+        bannedIds: megaBans(27),
+      }),
+    );
+
+    // A LITERAL, deliberately, rather than a template over MEGA_ELIGIBLE_TOTAL. The whole
+    // point of this assertion is that a future edit to the composer cannot silently reword
+    // the arm this phase is not changing.
+    expect(messageFor(result, 'notEnoughMegas')).toBe(
+      'Not enough Pokémon can Mega. 8 players × 6 Mega rounds needs 48; 47 can still Mega after 27 species bans and 0 Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.',
+    );
+
+    // And the literal above IS the eligible count at zero player bans, which is what makes
+    // `{y} = Math.max(0, megaEligible - q)` agree with Phase 3 by construction rather than
+    // by coincidence.
+    expect(MEGA_ELIGIBLE_TOTAL - 27).toBe(47);
+  });
+
+  it('adds one clause and one remedy in blind, and nothing else', () => {
+    // Deliberately the SAME configuration as the pin above plus a ban mode and a count, so
+    // the only thing that can move the string is the arm selector. The predicate is Phase
+    // 3's here — the `q` term the predicate gains is the next task's, and a copy test that
+    // needed it would be testing two things at once.
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 6,
+        bannedIds: megaBans(27),
+        banMode: 'blind',
+        bansPerPlayer: 4,
+      }),
+    );
+
+    expect(messageFor(result, 'notEnoughMegas')).toBe(
+      'Not enough Pokémon can Mega. 8 players × 6 Mega rounds needs 48; 15 can still Mega after 27 species bans, 0 Mega-forme bans and 32 player bans. Lower the Mega requirement, lower bans per player, or unban a Mega forme.',
+    );
+  });
+
+  it('speaks the same arm in snake as in blind', () => {
+    const blind = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 6,
+        bannedIds: megaBans(27),
+        banMode: 'blind',
+        bansPerPlayer: 4,
+      }),
+    );
+    const snake = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 6,
+        bannedIds: megaBans(27),
+        banMode: 'snake',
+        bansPerPlayer: 4,
+      }),
+    );
+
+    expect(messageFor(snake, 'notEnoughMegas')).toBe(messageFor(blind, 'notEnoughMegas'));
+  });
+
+  it('never reports a negative count of species that can still Mega', () => {
+    // 8 x 24 = 192 pessimistic player bans against the 4 eligible species 70 host bans
+    // leave. A negative number in a sentence read off a shared screen reads as a broken
+    // tool rather than as a hard limit, so the term is clamped at zero.
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 1,
+        bannedIds: megaBans(70),
+        banMode: 'blind',
+        bansPerPlayer: MAX_BANS_PER_PLAYER,
+      }),
+    );
+
+    expect(messageFor(result, 'notEnoughMegas')).toBe(
+      'Not enough Pokémon can Mega. 8 players × 1 Mega rounds needs 8; 0 can still Mega after 70 species bans, 0 Mega-forme bans and 192 player bans. Lower the Mega requirement, lower bans per player, or unban a Mega forme.',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-21 - the pessimistic player-ban term, on all three predicates that need it
+// ---------------------------------------------------------------------------
+
+describe('the q term (D-21)', () => {
+  it('blocks the Pitfall 2 reproduction instead of letting drawPool throw', () => {
+    // THE test this task exists for. Five steps, no import and no hand-edit:
+    // `poolTooLarge` fired only ABOVE `legalCount`, the pool-size field is deliberately
+    // unclamped (Phase 2 D-06), `drawPool` deliberately does not clamp either
+    // (`draw.ts:108-112`), so 8 players banning 2 each on a pool sized to the whole legal
+    // roster reached `Start draft` and threw a RangeError on a shared screen mid-ritual.
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: ROSTER_SIZE,
+        banMode: 'blind',
+        bansPerPlayer: 2,
+      }),
+    );
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('poolTooLarge');
+  });
+
+  it('is the ban mode that makes the difference, not the pool size', () => {
+    // The same configuration one field apart. `hostBanlist` has no player bans, so it is
+    // satisfiable and must stay so - this is the half of the Pitfall 2 case that proves
+    // the block comes from `q` rather than from a tightened comparison.
+    const result = checkFeasibility(
+      base({ playerNames: manyPlayers(8), poolSize: ROSTER_SIZE, bansPerPlayer: 2 }),
+    );
+
+    expect(result.blocked).toBe(false);
+    expect(result.problems).toEqual([]);
+  });
+
+  it('quotes the pessimistic figures in the pool sentence, so it is true as written', () => {
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: ROSTER_SIZE,
+        banMode: 'blind',
+        bansPerPlayer: 2,
+      }),
+    );
+
+    expect(messageFor(result, 'poolTooLarge')).toBe(
+      `Pool is too large. Only ${ROSTER_SIZE - 16} Pokémon are draftable after 16 bans; the pool is set to ${ROSTER_SIZE}.`,
+    );
+  });
+
+  it('blames the player count when the party plus its bans outruns the roster', () => {
+    // 39 x 6 = 234 seats on a 235-entry roster: the largest party the roster can hold, and
+    // an existing test pins that it passes. One ban each is 39 more species gone.
+    const seated = checkFeasibility(base({ playerNames: manyPlayers(39), poolSize: 234 }));
+    expect(codes(seated)).not.toContain('tooManyPlayersForRoster');
+
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(39),
+        poolSize: 234,
+        banMode: 'snake',
+        bansPerPlayer: 1,
+      }),
+    );
+
+    expect(result.blocked).toBe(true);
+    expect(codes(result)).toContain('tooManyPlayersForRoster');
+    expect(messageFor(result, 'tooManyPlayersForRoster')).toBe(
+      `Too many players for the roster. 39 players × 6 rounds needs 234 Pokémon; only ${ROSTER_SIZE - 39} are draftable after 39 bans.`,
+    );
+  });
+
+  it('subtracts the player bans from megaEligibleLegalCount ONCE, not on top of the ban terms', () => {
+    // The double-subtraction trap. D-21's prose reads as
+    // `megaEligible - megaBans - players x bansPerPlayer`, but `megaEligibleLegalCount`
+    // already has the species bans AND the forme bans taken out of it (its own doc block
+    // says so). Subtracting them again would report 30 here rather than 40, and would
+    // block configurations that are satisfiable.
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 6,
+        bannedIds: megaBans(10),
+        banMode: 'blind',
+        bansPerPlayer: 3,
+      }),
+    );
+
+    expect(result.megaEligibleLegalCount).toBe(MEGA_ELIGIBLE_TOTAL - 10);
+    expect(result.blocked).toBe(true);
+    expect(messageFor(result, 'notEnoughMegas')).toBe(
+      'Not enough Pokémon can Mega. 8 players × 6 Mega rounds needs 48; 40 can still Mega after 10 species bans, 0 Mega-forme bans and 24 player bans. Lower the Mega requirement, lower bans per player, or unban a Mega forme.',
+    );
+  });
+
+  it('passes at the exact boundary the pessimistic arithmetic allows', () => {
+    // One ban each fewer: 8 x 2 = 16 player bans leaves 48, which is exactly the 48 the
+    // Mega rounds need. `>` and not `>=`, the same comparison Phase 3 shipped.
+    const result = checkFeasibility(
+      base({
+        playerNames: manyPlayers(8),
+        poolSize: 48,
+        megasRequiredPerTeam: 6,
+        bannedIds: megaBans(10),
+        banMode: 'blind',
+        bansPerPlayer: 2,
+      }),
+    );
+
+    expect(codes(result)).not.toContain('notEnoughMegas');
+  });
+
+  it('leaves every hostBanlist verdict exactly where Phase 3 put it', () => {
+    // `bansPerPlayer` is void at `hostBanlist`, so a non-zero value must move NOTHING -
+    // not the codes, not the severities and not one byte of the interpolated sentences.
+    const inputs: Partial<FeasibilityInput>[] = [
+      { playerNames: manyPlayers(8), poolSize: ROSTER_SIZE },
+      { playerNames: manyPlayers(39), poolSize: 234 },
+      { playerNames: manyPlayers(40), poolSize: 240 },
+      { playerNames: manyPlayers(8), poolSize: ROSTER_SIZE + 1 },
+      { playerNames: manyPlayers(8), poolSize: 12 },
+      { playerNames: manyPlayers(8), poolSize: 48, megasRequiredPerTeam: 6, bannedIds: megaBans(27) },
+      { poolSize: 18, swapBudget: 3, swapRounds: 2 },
+    ];
+
+    for (const overrides of inputs) {
+      const before = checkFeasibility(base(overrides));
+      const after = checkFeasibility(base({ ...overrides, bansPerPlayer: 5 }));
+
+      expect(after.problems).toEqual(before.problems);
+      expect(after.blocked).toBe(before.blocked);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RULE-08 - the post-reveal re-check is this same function
+// ---------------------------------------------------------------------------
+
+describe('the post-reveal re-check (RULE-08)', () => {
+  /** 8 players, blind, 2 bans each, on a pool the config-time gate accepts. */
+  const CONFIGURED: Partial<FeasibilityInput> = {
+    playerNames: manyPlayers(8),
+    poolSize: 48,
+    banMode: 'blind',
+    bansPerPlayer: 2,
+  };
+
+  it('accepts the configuration at config time, with room for every pessimistic ban', () => {
+    const result = checkFeasibility(base(CONFIGURED));
+
+    expect(result.blocked).toBe(false);
+
+    // The invariant that makes the reveal safe: what the gate accepted still holds after
+    // `q` further species leave the roster.
+    const q = 8 * 2;
+    expect(result.legalCount - q).toBeGreaterThanOrEqual(48);
+  });
+
+  it('returns the same verdict once the bans are materialised into the banlist', () => {
+    // The exact call 04-11 makes: `checkFeasibility` ITSELF, with the union banlist and
+    // NO pending player bans. Not a second arithmetic - a second arithmetic is a second
+    // thing that can disagree about whether the night can proceed.
+    const revealed = ENTRIES.slice(0, 16).map((entry) => entry.id);
+
+    const afterReveal = checkFeasibility(
+      base({
+        ...CONFIGURED,
+        bannedIds: revealed,
+        banMode: 'hostBanlist',
+        bansPerPlayer: 0,
+      }),
+    );
+
+    expect(afterReveal.legalCount).toBe(ROSTER_SIZE - 16);
+    expect(afterReveal.blocked).toBe(false);
+    expect(codes(afterReveal)).not.toContain('poolTooLarge');
+  });
+
+  it('does not ask a materialised document about a field it can no longer edit', () => {
+    // `bansPerPlayer: 0` at a mode that requires at least 1 would be a problem statement
+    // with no next action, which is why a caller whose bans are already in `bannedIds`
+    // passes `'hostBanlist'` as well as `0`.
+    const afterReveal = checkFeasibility(
+      base({
+        ...CONFIGURED,
+        bannedIds: ENTRIES.slice(0, 16).map((entry) => entry.id),
+        banMode: 'hostBanlist',
+        bansPerPlayer: 0,
+      }),
+    );
+
+    expect(codes(afterReveal)).not.toContain('bansPerPlayerNotPositive');
   });
 });
 

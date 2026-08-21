@@ -1022,6 +1022,14 @@ export function App() {
       dualMegaChoices: state.config.dualMegaChoices,
       swapBudget: state.config.swapBudget,
       swapRounds: state.config.swapRounds,
+      // `'hostBanlist'` and `0` REGARDLESS of `state.config.banMode`, and both for the same
+      // reason: these two fields mean "player bans this configuration has not made yet"
+      // (see `FeasibilityInput.banMode`). An adopted document has already run whatever
+      // ritual it ran, so there are none pending — passing the stored mode here would tell
+      // the host of an adopted blind tournament to "enter 1 or more" into a field that no
+      // longer exists, which is a problem statement with no next action.
+      banMode: 'hostBanlist',
+      bansPerPlayer: 0,
       entries,
     });
 

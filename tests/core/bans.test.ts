@@ -94,6 +94,10 @@ describe('bannedEntries', () => {
       dualMegaChoices: [],
       swapBudget: 0,
       swapRounds: 0,
+      // `banCount` counts host bans that hit the roster, and nothing about it moves with the
+      // ban mode. The `hostBanlist` values keep this equality the one thing it asserts.
+      banMode: 'hostBanlist',
+      bansPerPlayer: 0,
       entries: ENTRIES,
     });
 
@@ -114,6 +118,10 @@ describe('bannedEntries', () => {
       dualMegaChoices: [],
       swapBudget: 0,
       swapRounds: 0,
+      // `banCount` counts host bans that hit the roster, and nothing about it moves with the
+      // ban mode. The `hostBanlist` values keep this equality the one thing it asserts.
+      banMode: 'hostBanlist',
+      bansPerPlayer: 0,
       entries: ENTRIES,
     });
 

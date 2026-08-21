@@ -851,6 +851,14 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
         // `Swaps` group's own comment makes about not attaching a reason to the field.
         swapBudget,
         swapRounds,
+        // The host's actual mode, and a placeholder count. `blind` and `snake` are still
+        // rendered disabled here, so `banMode` is `'hostBanlist'` in every reachable state
+        // and the gate's three bans-per-player codes cannot fire — which is what keeps this
+        // screen byte-identical to what Phase 2 verified. 04-05 owns the `Bans per player`
+        // control; the moment it enables the other two modes, `bansPerPlayerNotPositive`
+        // blocks Start until a real value is wired here, which is the right failure.
+        banMode,
+        bansPerPlayer: 0,
         entries,
       }),
     [
@@ -862,6 +870,7 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       dualMegaChoices,
       swapBudget,
       swapRounds,
+      banMode,
       entries,
     ],
   );
