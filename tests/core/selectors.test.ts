@@ -38,7 +38,9 @@ import {
 import { fold } from '../../src/core/reduce';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import {
+  selectAllBanIds,
   selectAvailablePool,
+  selectBanCollisions,
   selectBanOrder,
   selectBanStageState,
   selectBanTurn,
@@ -52,12 +54,14 @@ import {
   selectPhase,
   selectPickCount,
   selectPlayerName,
+  selectPublicBanIds,
   selectResolvedOrder,
   selectRoundEligibleIds,
   selectRoundKind,
   selectSchedule,
   selectSlotKind,
   selectSlotStone,
+  selectSubmittedPlayerIds,
   selectTeams,
 } from '../../src/core/selectors';
 
@@ -1307,5 +1311,239 @@ describe('selectBanStageState — the one place the ban surface is decided', () 
     for (const [index, state] of fixtures.entries()) {
       expect(selectBanStageState(state), `fixture ${String(index)}`).not.toBe('blindEntry');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4 — what the room may see, and who collided
+// ---------------------------------------------------------------------------
+
+/**
+ * Six blind submissions, three of which name `starmie` — the collision case.
+ *
+ * `starmie` is chosen for the leak assertions because it appears in nobody's host banlist
+ * in this file, so its presence in an output can only have come from a submission.
+ */
+const BLIND_SUBMISSIONS: Intent[] = [
+  bansSubmitted('p3', ['starmie', 'skarmory']),
+  bansSubmitted('p1', ['starmie', 'venusaur']),
+  bansSubmitted('p2', ['starmie', 'charizard']),
+];
+
+/** The reveal of {@link BLIND_SUBMISSIONS}, in the log order they were submitted. */
+const BLIND_REVEAL = bansRevealed([
+  { playerId: 'p3', monIds: ['starmie', 'skarmory'] },
+  { playerId: 'p1', monIds: ['starmie', 'venusaur'] },
+  { playerId: 'p2', monIds: ['starmie', 'charizard'] },
+]);
+
+/** A blind tournament whose host banned two species up front. */
+const BLIND_HOST_BANNED: TournamentConfig = {
+  ...BLIND_CONFIG,
+  bans: ['dragonite', 'meganium'],
+};
+
+describe('selectPublicBanIds — Amendment 1, what the room may see right now', () => {
+  it('is the host banlist under hostBanlist, at every point in the log', () => {
+    const hostBanned: TournamentConfig = { ...CONFIG, bans: ['dragonite', 'meganium'] };
+
+    expect(selectPublicBanIds(initialState(hostBanned))).toEqual(['dragonite', 'meganium']);
+    expect(selectPublicBanIds(initialState(CONFIG))).toEqual([]);
+  });
+
+  it('is the host banlist plus every placed ban in snake, as they land', () => {
+    const hostBanned: TournamentConfig = { ...SNAKE_CONFIG, bans: ['dragonite'] };
+
+    expect(selectPublicBanIds(banState(hostBanned, SNAKE_ORDER))).toEqual(['dragonite']);
+    expect(selectPublicBanIds(banState(hostBanned, SNAKE_ORDER, snakePlacements(3)))).toEqual([
+      'dragonite',
+      'venusaur',
+      'charizard',
+      'blastoise',
+    ]);
+  });
+
+  it('is the host banlist ONLY in blind, before the reveal', () => {
+    // T-04-16, and the reason it asserts on CONTENT rather than on a length: a length
+    // assertion passes against a fixture nobody has submitted into. `TopBar.tsx:209-217`
+    // renders every name it is given behind a native `<summary>` anyone in the room can
+    // open with one click, so a submitted id reaching this output is one click from read.
+    const state = banState(BLIND_HOST_BANNED, BLIND_ORDER, BLIND_SUBMISSIONS);
+    const publicIds = selectPublicBanIds(state);
+
+    expect(selectSubmittedPlayerIds(state)).toHaveLength(3);
+    expect(publicIds).not.toContain('starmie');
+    expect(publicIds).not.toContain('skarmory');
+    expect(publicIds).not.toContain('charizard');
+    expect(publicIds).toEqual(['dragonite', 'meganium']);
+    expect(publicIds).toHaveLength(BLIND_HOST_BANNED.bans.length);
+  });
+
+  it('is the host banlist plus every revealed ban in blind, after the reveal', () => {
+    const state = banState(BLIND_HOST_BANNED, BLIND_ORDER, [
+      ...BLIND_SUBMISSIONS,
+      BLIND_REVEAL,
+    ]);
+    const publicIds = selectPublicBanIds(state);
+
+    expect(publicIds).toContain('starmie');
+    expect(publicIds).toContain('skarmory');
+    expect(publicIds).toContain('venusaur');
+    expect(publicIds).toContain('charizard');
+    expect(publicIds).toContain('dragonite');
+  });
+
+  it('counts a collided species once — the length is a set cardinality', () => {
+    // Three players banned `starmie`. `revealed.flatMap(r => r.monIds).length` is 6 here
+    // and the honest answer is 5: a collision is two submissions and ONE banned species.
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, [...BLIND_SUBMISSIONS, BLIND_REVEAL]);
+
+    expect(selectPublicBanIds(state)).toEqual([
+      'starmie',
+      'skarmory',
+      'venusaur',
+      'charizard',
+    ]);
+  });
+
+  it('cannot be mutated back into the fold', () => {
+    const state = banState(BLIND_HOST_BANNED, BLIND_ORDER, BLIND_SUBMISSIONS);
+
+    selectPublicBanIds(state).push('starmie');
+
+    expect(selectPublicBanIds(state)).toEqual(['dragonite', 'meganium']);
+    expect(state.config.bans).toEqual(['dragonite', 'meganium']);
+  });
+});
+
+describe('selectAllBanIds — the re-check input, never a display source', () => {
+  it('unions the host banlist with every revealed ban, deduped', () => {
+    const state = banState(BLIND_HOST_BANNED, BLIND_ORDER, [
+      ...BLIND_SUBMISSIONS,
+      BLIND_REVEAL,
+    ]);
+
+    expect(selectAllBanIds(state)).toEqual([
+      'dragonite',
+      'meganium',
+      'starmie',
+      'skarmory',
+      'venusaur',
+      'charizard',
+    ]);
+  });
+
+  it('unions the host banlist with every placed ban in snake', () => {
+    const hostBanned: TournamentConfig = { ...SNAKE_CONFIG, bans: ['dragonite'] };
+
+    expect(selectAllBanIds(banState(hostBanned, SNAKE_ORDER, snakePlacements(3)))).toEqual([
+      'dragonite',
+      'venusaur',
+      'charizard',
+      'blastoise',
+    ]);
+  });
+
+  it('answers before the reveal too — it is not stage-dependent', () => {
+    // Unlike `selectPublicBanIds` this is NOT a secrecy control, which is exactly why it
+    // must never be rendered. It is the `bannedIds` argument the post-reveal feasibility
+    // re-check takes.
+    const state = banState(BLIND_HOST_BANNED, BLIND_ORDER, BLIND_SUBMISSIONS);
+
+    expect(selectAllBanIds(state)).toEqual(['dragonite', 'meganium']);
+  });
+
+  it('cannot be mutated back into the fold', () => {
+    const state = banState(BLIND_HOST_BANNED, BLIND_ORDER, [...BLIND_SUBMISSIONS, BLIND_REVEAL]);
+    const before = selectAllBanIds(state);
+
+    selectAllBanIds(state).push('gardevoir');
+
+    expect(selectAllBanIds(state)).toEqual(before);
+  });
+});
+
+describe('selectSubmittedPlayerIds', () => {
+  it('is empty before anybody has submitted', () => {
+    expect(selectSubmittedPlayerIds(banState(BLIND_CONFIG, BLIND_ORDER))).toEqual([]);
+  });
+
+  it('lists the players who have submitted, in log order', () => {
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, BLIND_SUBMISSIONS);
+
+    expect(selectSubmittedPlayerIds(state)).toEqual(['p3', 'p1', 'p2']);
+  });
+
+  it('cannot be mutated back into the fold', () => {
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, BLIND_SUBMISSIONS);
+
+    selectSubmittedPlayerIds(state).push('p6');
+
+    expect(selectSubmittedPlayerIds(state)).toEqual(['p3', 'p1', 'p2']);
+  });
+});
+
+describe('selectBanCollisions', () => {
+  it('is empty before the reveal', () => {
+    expect(selectBanCollisions(banState(BLIND_CONFIG, BLIND_ORDER, BLIND_SUBMISSIONS))).toEqual(
+      [],
+    );
+  });
+
+  it('reports one record per collided species, with playerIds in starting order', () => {
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, [...BLIND_SUBMISSIONS, BLIND_REVEAL]);
+    const collisions = selectBanCollisions(state);
+
+    expect(collisions).toHaveLength(1);
+    expect(collisions[0]?.monId).toBe('starmie');
+    // Submitted p3, p1, p2 — reported in the order everything else on the screen uses.
+    expect(collisions[0]?.playerIds).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  it('reports nothing for a species only one player banned', () => {
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, [
+      bansSubmitted('p1', ['venusaur', 'charizard']),
+      bansSubmitted('p2', ['blastoise', 'garchomp']),
+      bansRevealed([
+        { playerId: 'p1', monIds: ['venusaur', 'charizard'] },
+        { playerId: 'p2', monIds: ['blastoise', 'garchomp'] },
+      ]),
+    ]);
+
+    expect(selectBanCollisions(state)).toEqual([]);
+  });
+
+  it('does not treat a host ban a player also chose as a collision', () => {
+    // Collisions are between PLAYERS. A player who banned something the host had already
+    // banned has wasted a ban, which is a different sentence on a different screen.
+    const hostBanned: TournamentConfig = { ...BLIND_CONFIG, bans: ['venusaur'] };
+    const state = banState(hostBanned, BLIND_ORDER, [
+      bansSubmitted('p1', ['venusaur', 'charizard']),
+      bansRevealed([{ playerId: 'p1', monIds: ['venusaur', 'charizard'] }]),
+    ]);
+
+    expect(selectBanCollisions(state)).toEqual([]);
+  });
+
+  it('is empty in snake even when the fixture places the same species twice', () => {
+    // D-20. Previous bans are visible in snake, so the surface renders an already-banned
+    // species inert and a collision is impossible by CONSTRUCTION rather than by check.
+    // `canApply` refuses the second placement; `fold` runs no `canApply`, so this document
+    // is one only a hand edit could produce — and the answer is still `[]`.
+    const state = banState(SNAKE_CONFIG, SNAKE_ORDER, [
+      bansPlaced('p1', 'starmie', 1),
+      bansPlaced('p2', 'starmie', 1),
+    ]);
+
+    expect(state.banPlacements).toHaveLength(2);
+    expect(selectBanCollisions(state)).toEqual([]);
+  });
+
+  it('cannot be mutated back into the fold', () => {
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, [...BLIND_SUBMISSIONS, BLIND_REVEAL]);
+
+    selectBanCollisions(state)[0]?.playerIds.push('p6');
+
+    expect(selectBanCollisions(state)[0]?.playerIds).toEqual(['p1', 'p2', 'p3']);
   });
 });
