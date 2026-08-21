@@ -49,6 +49,7 @@ import {
 import { initialState, type DraftState, type TournamentDoc } from './model';
 import {
   selectAvailablePool,
+  selectBanTurn,
   selectCardsPlayedThisRound,
   selectCardTurn,
   selectCurrentRound,
@@ -182,48 +183,6 @@ const OK: CanApplyResult = { ok: true };
 
 function reject(reason: RejectionReason): CanApplyResult {
   return { ok: false, reason };
-}
-
-/**
- * Whose snake ban it is, and which pass they are on — D-12. `null` when nobody is.
- *
- * ## Why this lives HERE, which is not where it belongs
- *
- * The turn derivation belongs in `selectors.ts`, beside `selectStartingOrder`, and
- * `canApply(CARDS_PLAYED)` above shows why: it asks `selectCardTurn` rather than working
- * the rotation out locally, and the comment there records what happened when it did not —
- * the card panel had to choose between importing from the reducer and deriving the
- * rotation a second time, and a second copy of "who is on the clock" is a second thing
- * that can disagree with the log.
- *
- * 04-04 builds `selectBanOrder` and `selectBanTurn` in `selectors.ts`. It runs one wave
- * AFTER this plan, and this arm cannot import something that does not exist yet, so the
- * derivation is written once here in the meantime. **When `selectBanTurn` lands, delete
- * this function and import it** — and note that the serpentine cases pinned in
- * `tests/core/reduce.test.ts` run through this arm, so a replacement that disagrees will
- * fail them rather than diverge quietly.
- *
- * ## The serpentine itself
- *
- * `1→2→3→4` then `4→3→2→1`, repeating. A straight rotation compounds a first-mover
- * advantage over every pass; reversing on alternate passes is what corrects it. The pass
- * is 1-based to match the ban board's `Pass {n}` column headers.
- */
-function banTurn(state: DraftState): { playerId: string; pass: number } | null {
-  const players = state.order.length;
-  const allotment = state.config.bansPerPlayer;
-  if (players === 0 || allotment <= 0) return null;
-
-  const placed = state.banPlacements.length;
-  if (placed >= players * allotment) return null;
-
-  const pass = Math.floor(placed / players) + 1;
-  const withinPass = placed % players;
-  // Odd passes run forwards, even passes backwards. That IS the serpentine.
-  const position = pass % 2 === 1 ? withinPass : players - 1 - withinPass;
-
-  const playerId = state.order[position];
-  return playerId === undefined ? null : { playerId, pass };
 }
 
 // ---------------------------------------------------------------------------
@@ -775,7 +734,13 @@ export function canApply(state: DraftState, action: AnyAction): CanApplyResult {
 
       // `null` when every allotment is spent, which still fails the comparison below: the
       // empty clock is refused as out of turn, exactly as the card clock is.
-      const turn = banTurn(state);
+      //
+      // The serpentine is `selectBanTurn`'s and this arm only ASKS, for the reason
+      // `canApply(CARDS_PLAYED)` asks `selectCardTurn`: a second copy of "who is on the
+      // clock" is a second thing that can disagree with the log. 04-03 wrote the derivation
+      // here as a private helper because `selectBanTurn` landed a wave later; 04-04 deleted
+      // it and this import replaced it, so there is exactly one serpentine in the codebase.
+      const turn = selectBanTurn(state);
       if (turn === null || action.playerId !== turn.playerId) return reject('notYourBanTurn');
 
       // `pass` is stamped at the edge from the serpentine, so a mismatch can only arrive
