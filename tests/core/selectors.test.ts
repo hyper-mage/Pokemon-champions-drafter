@@ -14,6 +14,9 @@ import { describe, expect, it } from 'vitest';
 
 import committedSnapshot from '../../public/data/roster.mb.json';
 import {
+  bansPlaced,
+  bansRevealed,
+  bansSubmitted,
   cardsPlayed,
   draftStarted,
   orderResolved,
@@ -36,6 +39,9 @@ import { fold } from '../../src/core/reduce';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import {
   selectAvailablePool,
+  selectBanOrder,
+  selectBanStageState,
+  selectBanTurn,
   selectCardPlayOrder,
   selectCardsPlayedThisRound,
   selectCurrentRound,
@@ -991,6 +997,315 @@ describe('DRFT-04 — the draft runs every compiled round', () => {
 
     for (const player of CONFIG.players) {
       expect(selectHand(state, player.id), player.id).toEqual([]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4 — the ban stage: the serpentine, whose turn it is, and which surface is on
+// ---------------------------------------------------------------------------
+
+/**
+ * FOUR players, snake bans, two each — eight placements over two passes.
+ *
+ * Four rather than two on purpose, the reason `tests/core/reduce.test.ts` gives: a
+ * two-player serpentine is `p1,p2` then `p2,p1`, which a straight rotation with an
+ * off-by-one also produces. Four is the smallest count at which the serpentine and every
+ * near-miss disagree.
+ */
+const SNAKE_CONFIG: TournamentConfig = {
+  ...CONFIG,
+  players: [
+    { id: 'p1', name: 'Player 1' },
+    { id: 'p2', name: 'Player 2' },
+    { id: 'p3', name: 'Player 3' },
+    { id: 'p4', name: 'Player 4' },
+  ],
+  banMode: 'snake',
+  bansPerPlayer: 2,
+};
+
+const SNAKE_ORDER = ['p1', 'p2', 'p3', 'p4'];
+
+/**
+ * The serpentine written out by hand, NOT built by calling the selector under test.
+ *
+ * A fixture that derived this from `selectBanOrder` would agree with it by sharing one
+ * implementation of the very thing being asserted.
+ */
+const SNAKE_SEQUENCE = ['p1', 'p2', 'p3', 'p4', 'p4', 'p3', 'p2', 'p1'];
+
+/** SIX players, blind bans, two each — the count Amendment 1's leak case is written at. */
+const BLIND_CONFIG: TournamentConfig = {
+  ...CONFIG,
+  players: [
+    { id: 'p1', name: 'Player 1' },
+    { id: 'p2', name: 'Player 2' },
+    { id: 'p3', name: 'Player 3' },
+    { id: 'p4', name: 'Player 4' },
+    { id: 'p5', name: 'Player 5' },
+    { id: 'p6', name: 'Player 6' },
+  ],
+  banMode: 'blind',
+  bansPerPlayer: 2,
+};
+
+const BLIND_ORDER = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+
+/**
+ * A ban-stage document: schedule, then order, then ban entries — and NO pool.
+ *
+ * That opening is D-11's whole point. `draft/started` comes before `pool/built` in blind
+ * and snake so the ban stage can read the starting order, and the pool is drawn after the
+ * stage because the bans decide what it may contain (D-23).
+ */
+function banDoc(
+  config: TournamentConfig,
+  order: readonly string[],
+  entries: readonly Intent[] = [],
+): TournamentDoc {
+  const log: Action[] = [];
+  const push = (intent: Intent): void => {
+    log.push(stamp(intent, log.length));
+  };
+
+  push(scheduleCompiled(OPEN_SCHEDULE));
+  if (order.length > 0) push(draftStarted(order, 9));
+  for (const entry of entries) push(entry);
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'ban-fixture',
+    createdAt: CREATED_AT,
+    config,
+    rng: { seed: 1, cursor: 0 },
+    log,
+  };
+}
+
+function banState(
+  config: TournamentConfig,
+  order: readonly string[],
+  entries: readonly Intent[] = [],
+): DraftState {
+  return fold(banDoc(config, order, entries));
+}
+
+/** `count` snake bans placed along the serpentine, each on a distinct species. */
+function snakePlacements(count: number): Intent[] {
+  return SNAKE_SEQUENCE.slice(0, count).map((playerId, index) =>
+    bansPlaced(playerId, POOL[index] as string, Math.floor(index / SNAKE_ORDER.length) + 1),
+  );
+}
+
+describe('selectBanOrder — the serpentine (D-12)', () => {
+  it('walks 1,2,3,4 then 4,3,2,1 at four players and two bans each', () => {
+    expect(selectBanOrder(SNAKE_ORDER, 2)).toEqual([
+      'p1',
+      'p2',
+      'p3',
+      'p4',
+      'p4',
+      'p3',
+      'p2',
+      'p1',
+    ]);
+  });
+
+  it('does not reverse on a single pass', () => {
+    expect(selectBanOrder(SNAKE_ORDER, 1)).toEqual(['p1', 'p2', 'p3', 'p4']);
+  });
+
+  it('returns to forward order on the third pass', () => {
+    expect(selectBanOrder(SNAKE_ORDER, 3)).toEqual([
+      'p1',
+      'p2',
+      'p3',
+      'p4',
+      'p4',
+      'p3',
+      'p2',
+      'p1',
+      'p1',
+      'p2',
+      'p3',
+      'p4',
+    ]);
+  });
+
+  it('alternates at two players over three passes', () => {
+    expect(selectBanOrder(['a', 'b'], 3)).toEqual(['a', 'b', 'b', 'a', 'a', 'b']);
+  });
+
+  it('is always order.length × bansPerPlayer long', () => {
+    for (const players of [2, 3, 4, 5, 8]) {
+      const order = Array.from({ length: players }, (_, index) => `p${String(index + 1)}`);
+
+      for (const allotment of [1, 2, 3, 4]) {
+        expect(
+          selectBanOrder(order, allotment),
+          `${String(players)}x${String(allotment)}`,
+        ).toHaveLength(players * allotment);
+      }
+    }
+  });
+
+  it('gives every player exactly bansPerPlayer turns', () => {
+    const sequence = selectBanOrder(SNAKE_ORDER, 3);
+
+    for (const playerId of SNAKE_ORDER) {
+      expect(sequence.filter((id) => id === playerId), playerId).toHaveLength(3);
+    }
+  });
+
+  it('returns [] for a zero or negative allotment rather than throwing', () => {
+    expect(() => selectBanOrder(SNAKE_ORDER, 0)).not.toThrow();
+    expect(selectBanOrder(SNAKE_ORDER, 0)).toEqual([]);
+    expect(() => selectBanOrder(SNAKE_ORDER, -1)).not.toThrow();
+    expect(selectBanOrder(SNAKE_ORDER, -1)).toEqual([]);
+  });
+
+  it('returns [] for an empty order', () => {
+    expect(selectBanOrder([], 2)).toEqual([]);
+  });
+
+  it('does not mutate the order it was handed', () => {
+    // The `reverse()` trap. `selectSwapRoundOrder:575-578` records it and this is the
+    // second consumer of the lesson — an in-place reverse here would shuffle the caller's
+    // starting order under the board.
+    const order = ['p1', 'p2', 'p3', 'p4'];
+    const before = [...order];
+
+    selectBanOrder(order, 3);
+
+    expect(order).toEqual(before);
+  });
+});
+
+describe('selectBanTurn', () => {
+  it('puts the first player on the clock at pass 1, index 0', () => {
+    expect(selectBanTurn(banState(SNAKE_CONFIG, SNAKE_ORDER))).toEqual({
+      playerId: 'p1',
+      pass: 1,
+      index: 0,
+    });
+  });
+
+  it('reads pass 2 for the fifth ban at four players', () => {
+    const turn = selectBanTurn(banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(4)));
+
+    expect(turn?.pass).toBe(2);
+    expect(turn?.index).toBe(4);
+    expect(turn?.playerId).toBe('p4');
+  });
+
+  it('agrees with the serpentine at every step', () => {
+    SNAKE_SEQUENCE.forEach((playerId, index) => {
+      const state = banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(index));
+
+      expect(selectBanTurn(state), `index ${String(index)}`).toEqual({
+        playerId,
+        pass: Math.floor(index / SNAKE_ORDER.length) + 1,
+        index,
+      });
+    });
+  });
+
+  it('is null once every allotment is spent', () => {
+    expect(selectBanTurn(banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(8)))).toBeNull();
+  });
+
+  it('is null before the order lands', () => {
+    expect(selectBanTurn(initialState(SNAKE_CONFIG))).toBeNull();
+  });
+
+  it('is null when the tournament allots no bans', () => {
+    expect(selectBanTurn(banState(CONFIG, ORDER))).toBeNull();
+  });
+});
+
+describe('selectBanStageState — the one place the ban surface is decided', () => {
+  it('is notRunning under hostBanlist, at every point in the log', () => {
+    expect(selectBanStageState(initialState(CONFIG))).toBe('notRunning');
+    expect(selectBanStageState(stateAfter(0))).toBe('notRunning');
+    expect(selectBanStageState(stateAfter(3))).toBe('notRunning');
+  });
+
+  it('is notRunning in either ban mode once the pool has been drawn', () => {
+    const drawnSnake = banState(SNAKE_CONFIG, SNAKE_ORDER, [
+      ...snakePlacements(8),
+      poolBuilt(POOL, SNAKE_CONFIG.rosterVersion, SNAKE_CONFIG.rosterChecksum, 7, 0),
+    ]);
+    const drawnBlind = banState(BLIND_CONFIG, BLIND_ORDER, [
+      bansRevealed([{ playerId: 'p1', monIds: ['venusaur', 'charizard'] }]),
+      poolBuilt(POOL, BLIND_CONFIG.rosterVersion, BLIND_CONFIG.rosterChecksum, 7, 0),
+    ]);
+
+    expect(selectBanStageState(drawnSnake)).toBe('notRunning');
+    expect(selectBanStageState(drawnBlind)).toBe('notRunning');
+  });
+
+  it('is snake while a ban is on the clock', () => {
+    for (const placed of [0, 1, 4, 7]) {
+      const state = banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(placed));
+
+      expect(selectBanTurn(state), `after ${String(placed)}`).not.toBeNull();
+      expect(selectBanStageState(state), `after ${String(placed)}`).toBe('snake');
+    }
+  });
+
+  it('is reveal in snake once every ban has been placed', () => {
+    expect(selectBanStageState(banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(8)))).toBe(
+      'reveal',
+    );
+  });
+
+  it('is blindLocked before the reveal, however many players have submitted', () => {
+    expect(selectBanStageState(banState(BLIND_CONFIG, BLIND_ORDER))).toBe('blindLocked');
+    expect(
+      selectBanStageState(
+        banState(BLIND_CONFIG, BLIND_ORDER, [
+          bansSubmitted('p1', ['venusaur', 'charizard']),
+          bansSubmitted('p2', ['blastoise', 'garchomp']),
+        ]),
+      ),
+    ).toBe('blindLocked');
+  });
+
+  it('is reveal in blind once bans/revealed has landed', () => {
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, [
+      bansSubmitted('p1', ['venusaur', 'charizard']),
+      bansRevealed([{ playerId: 'p1', monIds: ['venusaur', 'charizard'] }]),
+    ]);
+
+    expect(selectBanStageState(state)).toBe('reveal');
+  });
+
+  it('never returns blindEntry, for any fixture in this file', () => {
+    // Entry is a TRANSIENT state a component enters on a deliberate tap and leaves on four
+    // different exits, none of which is fold-visible. D-18 requires the in-progress
+    // selection to die with the component, so nothing stored can imply it. The member
+    // exists so `BanStageScreen`'s branch is total; the component supplies it.
+    const fixtures: DraftState[] = [
+      initialState(CONFIG),
+      initialState(SNAKE_CONFIG),
+      initialState(BLIND_CONFIG),
+      stateAfter(0),
+      stateAfter(3),
+      v3State({ fullRounds: 6 }),
+      banState(SNAKE_CONFIG, SNAKE_ORDER),
+      banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(4)),
+      banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(8)),
+      banState(BLIND_CONFIG, BLIND_ORDER),
+      banState(BLIND_CONFIG, BLIND_ORDER, [bansSubmitted('p1', ['venusaur', 'charizard'])]),
+      banState(BLIND_CONFIG, BLIND_ORDER, [
+        bansSubmitted('p1', ['venusaur', 'charizard']),
+        bansRevealed([{ playerId: 'p1', monIds: ['venusaur', 'charizard'] }]),
+      ]),
+    ];
+
+    for (const [index, state] of fixtures.entries()) {
+      expect(selectBanStageState(state), `fixture ${String(index)}`).not.toBe('blindEntry');
     }
   });
 });
