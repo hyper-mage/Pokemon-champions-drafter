@@ -39,6 +39,8 @@ function docAtVersion(schemaVersion: number): TournamentDoc {
       megaFormeBans: [],
       swapBudget: 0,
       swapRounds: 0,
+      bansPerPlayer: 0,
+      duplicateBanPolicy: 'bothApply',
     },
     rng: { seed: 1, cursor: 0 },
     log: [],
@@ -106,6 +108,50 @@ function v2Doc(megasRequiredPerTeam: number, log: readonly unknown[]): Tournamen
 }
 
 /**
+ * A version 3 document, with the fifteen config fields it had and not one more.
+ *
+ * The same cast and the same reason as {@link v2Doc}: a v3 config is not a
+ * `TournamentConfig` any more once version 4 adds two required fields, and saying it is
+ * would hide the exact gap `migrateV3ToV4` exists to close.
+ *
+ * The log fixtures are shared with the version 2 block deliberately — schema 3 added
+ * nothing to the log, so a Phase 2 entry and a Phase 3 entry are the same shape, and a
+ * second identical fixture would only be a second thing to keep in step.
+ *
+ * Every field carries a non-default value so that "kept every field it already had" is a
+ * real assertion rather than one that would pass against an empty object.
+ */
+function v3Doc(log: readonly unknown[]): TournamentDoc {
+  return {
+    schemaVersion: 3,
+    id: 'a1b2c3d4-0000-4000-8000-000000000000',
+    createdAt: 1_770_000_000_000,
+    config: {
+      formatLabel: 'Champions MB',
+      players: [
+        { id: 'p1', name: 'Player 1' },
+        { id: 'p2', name: 'Player 2' },
+      ],
+      rounds: 6,
+      rosterVersion: 'mb',
+      rosterChecksum: 'sha256-abc',
+      poolSize: 48,
+      bans: ['charizard'],
+      banMode: 'hostBanlist',
+      megasRequiredPerTeam: 2,
+      dualMegaChoices: [{ speciesId: 'raichu', forme: 'x' }],
+      depth: 'draftAndBrackets',
+      rules: [{ kind: 'mega', count: 2 }],
+      megaFormeBans: ['charizardmegax'],
+      swapBudget: 3,
+      swapRounds: 1,
+    },
+    rng: { seed: 1, cursor: 0 },
+    log: [...log],
+  } as unknown as TournamentDoc;
+}
+
+/**
  * A `pool/built` exactly as Phase 1 wrote one: no `seed`, no `megaCapableCount`, because
  * neither field existed when it was written.
  */
@@ -162,7 +208,7 @@ describe('SUPPORTED_SCHEMA_VERSIONS', () => {
     // A list rather than a floor. Versions 1 and 2 stay on it after each bump because
     // this build upgrades those documents rather than refusing them, and a `>= MIN` check
     // could not express a future build that reads 1 but not 2.
-    expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([1, 2, 3]);
+    expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([1, 2, 3, 4]);
   });
 
   it('includes the version this build writes', () => {
@@ -234,12 +280,12 @@ function migrated(doc: TournamentDoc): TournamentDoc {
 }
 
 describe('migrateV1ToV2', () => {
-  it('reaches the current version, which is now two arms away', () => {
-    // The v1 arm hands off to the v2 arm inside one `migrate` call. Asserting the CURRENT
-    // version rather than `2` is the point: a chain that stopped after the first arm would
-    // return a document this build refuses to fold.
+  it('reaches the current version, which is now three arms away', () => {
+    // The v1 arm hands off to the v2 arm and that one to the v3 arm, inside a single
+    // `migrate` call. Asserting the CURRENT version rather than `2` is the point: a chain
+    // that stopped after the first arm would return a document this build refuses to fold.
     expect(migrated(v1Doc([v1PoolBuilt(4)])).schemaVersion).toBe(SCHEMA_VERSION);
-    expect(migrated(v1Doc([v1PoolBuilt(4)])).schemaVersion).toBe(3);
+    expect(migrated(v1Doc([v1PoolBuilt(4)])).schemaVersion).toBe(4);
   });
 
   it('leaves the input byte-identical — T-02-08', () => {
@@ -323,8 +369,12 @@ describe('migrateV1ToV2', () => {
 // ---------------------------------------------------------------------------
 
 describe('migrateV2ToV3', () => {
-  it('returns a document at version 3', () => {
-    expect(migrated(v2Doc(2, [v2PoolBuilt(48)])).schemaVersion).toBe(3);
+  it('reaches the current version, one arm further along than when it was written', () => {
+    // This asserted `3` while 3 was current. `migrated` runs the whole chain, so a version
+    // 2 document now arrives at 4 — and asserting the literal beside the constant is what
+    // makes the next bump a deliberate edit rather than a silent pass.
+    expect(migrated(v2Doc(2, [v2PoolBuilt(48)])).schemaVersion).toBe(SCHEMA_VERSION);
+    expect(migrated(v2Doc(2, [v2PoolBuilt(48)])).schemaVersion).toBe(4);
   });
 
   it('leaves the input byte-identical', () => {
@@ -390,12 +440,110 @@ describe('migrateV2ToV3', () => {
     expect(state.schedule).toEqual([]);
   });
 
-  it('leaves a document that is already at version 3 alone, by identity', () => {
-    const doc = docAtVersion(3);
+  it('lands the version 4 fields on a version 2 document too, through the chain', () => {
+    // The v2 arm hands off to the v3 arm. A chain that stopped at 3 would return a config
+    // missing two fields every reader after this phase treats as required.
+    const { config } = migrated(v2Doc(2, []));
+
+    expect(config.bansPerPlayer).toBe(0);
+    expect(config.duplicateBanPolicy).toBe('bothApply');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Version 3 to 4 — BAN-03/BAN-04 (`bansPerPlayer`) and BAN-07
+// (`duplicateBanPolicy`). Config only; the log is not touched.
+// ---------------------------------------------------------------------------
+
+describe('migrateV3ToV4', () => {
+  it('returns a document at version 4', () => {
+    expect(migrated(v3Doc([v2PoolBuilt(48)])).schemaVersion).toBe(SCHEMA_VERSION);
+    expect(migrated(v3Doc([v2PoolBuilt(48)])).schemaVersion).toBe(4);
+  });
+
+  it('leaves the input byte-identical', () => {
+    // Fresh literals, never a mutation in place — the persistence path is holding the
+    // parsed `localStorage` record itself and re-reads it afterwards.
+    const doc = v3Doc([v2PoolBuilt(48), V2_DRAFT_STARTED]);
+    const before = JSON.stringify(doc);
+
+    migrate(doc);
+
+    expect(JSON.stringify(doc)).toBe(before);
+  });
+
+  it('lands both new fields on the version 3 defaults', () => {
+    // Lossless rather than guessed. A schema 3 document was necessarily `hostBanlist`,
+    // because `blind` and `snake` shipped disabled, so zero player bans is the true
+    // answer — and it is deliberately NOT the config screen's default of 1.
+    const { config } = migrated(v3Doc([]));
+
+    expect(config.bansPerPlayer).toBe(0);
+    expect(config.duplicateBanPolicy).toBe('bothApply');
+  });
+
+  it('keeps every field the version 3 config already had', () => {
+    const { config } = migrated(v3Doc([]));
+
+    expect(config.formatLabel).toBe('Champions MB');
+    expect(config.rounds).toBe(6);
+    expect(config.rosterVersion).toBe('mb');
+    expect(config.rosterChecksum).toBe('sha256-abc');
+    expect(config.poolSize).toBe(48);
+    expect(config.bans).toEqual(['charizard']);
+    expect(config.banMode).toBe('hostBanlist');
+    expect(config.megasRequiredPerTeam).toBe(2);
+    expect(config.rules).toEqual([{ kind: 'mega', count: 2 }]);
+    expect(config.megaFormeBans).toEqual(['charizardmegax']);
+    expect(config.swapBudget).toBe(3);
+    expect(config.swapRounds).toBe(1);
+    expect(config.dualMegaChoices).toEqual([{ speciesId: 'raichu', forme: 'x' }]);
+    expect(config.depth).toBe('draftAndBrackets');
+    expect(config.players.map((player) => player.id)).toEqual(['p1', 'p2']);
+  });
+
+  it('copies the arrays rather than aliasing the source document', () => {
+    // The caller in the persistence path re-reads the record after `migrate` returns, so
+    // a shared array would let a later fold write back into the parsed record.
+    const doc = v3Doc([]);
+    const source = (doc as unknown as { config: Record<string, unknown> }).config;
+    const { config } = migrated(doc);
+
+    expect(config.bans).not.toBe(source['bans']);
+    expect(config.players).not.toBe(source['players']);
+    expect(config.rules).not.toBe(source['rules']);
+    expect(config.megaFormeBans).not.toBe(source['megaFormeBans']);
+    expect(config.dualMegaChoices).not.toBe(source['dualMegaChoices']);
+  });
+
+  it('does not rewrite the log — no entry gains, loses or changes a field', () => {
+    // Nothing in schema 4 makes an existing entry unfoldable, so there is no surgery to
+    // do. Splicing a synthetic ban action in would need a fresh `seq` and would be stamped
+    // after actions it logically precedes.
+    const doc = v3Doc([v2PoolBuilt(48), V2_DRAFT_STARTED]);
+
+    expect(migrated(doc).log).toEqual(doc.log);
+  });
+
+  it('folds to a populated pool, exactly as it did before the upgrade', () => {
+    const state = fold(migrated(v3Doc([v2PoolBuilt(48), V2_DRAFT_STARTED])));
+
+    expect(state.poolIds).toHaveLength(48);
+    expect(state.order).toEqual(['p1', 'p2']);
+  });
+
+  it('leaves a document that is already at version 4 alone, by identity', () => {
+    const doc = docAtVersion(4);
     expect(migrated(doc)).toBe(doc);
   });
 
-  it('refuses version 4 rather than reading it optimistically', () => {
-    expect(migrate(docAtVersion(4))).toEqual({ ok: false, reason: 'newerSchema' });
+  it('refuses version 5 rather than reading it optimistically', () => {
+    expect(migrate(docAtVersion(5))).toEqual({ ok: false, reason: 'newerSchema' });
+  });
+
+  it('still refuses an unlisted lower version as unknown rather than as newer', () => {
+    // The two refusals are different sentences to the host, and the boundary between them
+    // is `SCHEMA_VERSION` rather than the list's last entry.
+    expect(migrate(docAtVersion(0))).toEqual({ ok: false, reason: 'unknownSchema' });
   });
 });

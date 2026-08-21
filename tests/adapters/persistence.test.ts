@@ -88,6 +88,8 @@ const CONFIG: TournamentConfig = {
   megaFormeBans: [],
   swapBudget: 0,
   swapRounds: 0,
+  bansPerPlayer: 0,
+  duplicateBanPolicy: 'bothApply',
 };
 
 function stamp(intent: Intent, seq: number): Action {
@@ -406,7 +408,7 @@ describe('a draft saved by Phase 1', () => {
     storage.backing.set(STORAGE_KEY, v1Record());
 
     expect(load()?.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(load()?.schemaVersion).toBe(3);
+    expect(load()?.schemaVersion).toBe(4);
   });
 
   it('lands with the pool size its log actually recorded', () => {
@@ -434,21 +436,21 @@ describe('a draft saved by Phase 1', () => {
     const imported = parseTournamentFile(text, text.length);
     expect(imported.ok).toBe(true);
     if (!imported.ok) return;
-    expect(imported.doc.schemaVersion).toBe(3);
+    expect(imported.doc.schemaVersion).toBe(4);
 
     storage.backing.set(STORAGE_KEY, v1Record());
     const restored = load();
-    expect(restored?.schemaVersion).toBe(3);
+    expect(restored?.schemaVersion).toBe(4);
 
     expect(adoptTournament(imported.doc)).toBe(true);
-    expect(getDoc()?.schemaVersion).toBe(3);
+    expect(getDoc()?.schemaVersion).toBe(4);
   });
 
   it('adopts an un-migrated v1 document rather than refusing it', () => {
     // `adoptTournament` is reachable with a raw v1 document, so it migrates rather than
     // comparing — and the state it publishes is the fold of the MIGRATED document.
     expect(adoptTournament(v1Doc() as TournamentDoc)).toBe(true);
-    expect(getDoc()?.schemaVersion).toBe(3);
+    expect(getDoc()?.schemaVersion).toBe(4);
     expect(getState()?.poolIds).toHaveLength(4);
   });
 
@@ -534,7 +536,7 @@ describe('a draft saved by Phase 2', () => {
     storage.backing.set(STORAGE_KEY, v2Record());
 
     expect(load()?.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(load()?.schemaVersion).toBe(3);
+    expect(load()?.schemaVersion).toBe(4);
   });
 
   it('comes back with a rule list derived from the Megas it required', () => {
@@ -567,7 +569,142 @@ describe('a draft saved by Phase 2', () => {
   it('does not offer a wrapper at a version this build has never supported', () => {
     storage.backing.set(
       STORAGE_KEY,
-      JSON.stringify({ schemaVersion: 4, generation: 1, savedAt: 0, doc: v2Doc() }),
+      JSON.stringify({ schemaVersion: 5, generation: 1, savedAt: 0, doc: v2Doc() }),
+    );
+
+    expect(load()).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Resuming a Phase 3 save — the same compare site, one more bump later
+// ---------------------------------------------------------------------------
+
+/**
+ * A version 3 document, exactly as the deployed Phase 3 build wrote one.
+ *
+ * Fifteen config fields and not one more. `banMode` is `hostBanlist` because it could not
+ * have been anything else: Phase 3 shipped `blind` and `snake` disabled on the config
+ * screen, which is the whole reason `bansPerPlayer: 0` is a lossless default rather than
+ * a guess.
+ *
+ * The log is a Phase 2-shaped one on purpose — schema 3 added nothing to the log, so a
+ * Phase 3 save's entries are the same shape, and a `schedule/compiled` is not required for
+ * a document to be resumable.
+ */
+function v3Doc(): unknown {
+  return {
+    schemaVersion: 3,
+    id: 'phase-three-tournament',
+    createdAt: 1_700_000_000_000,
+    config: {
+      formatLabel: 'Champions MB',
+      players: [
+        { id: 'p1', name: 'Player 1' },
+        { id: 'p2', name: 'Player 2' },
+      ],
+      rounds: 6,
+      rosterVersion: 'mb',
+      rosterChecksum: 'abc123',
+      poolSize: 4,
+      bans: ['mewtwo'],
+      banMode: 'hostBanlist',
+      megasRequiredPerTeam: 2,
+      dualMegaChoices: [],
+      depth: 'draftOnly',
+      rules: [{ kind: 'mega', count: 2 }],
+      megaFormeBans: ['charizardmegax'],
+      swapBudget: 2,
+      swapRounds: 1,
+    },
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log: [
+      {
+        type: 'pool/built',
+        ids: ['venusaur', 'charizard', 'blastoise', 'garchomp'],
+        rosterVersion: 'mb',
+        checksum: 'abc123',
+        seed: 11,
+        megaCapableCount: 2,
+        seq: 0,
+        at: 1_700_000_000_001,
+        actorId: 'host',
+      },
+      {
+        type: 'draft/started',
+        order: ['p1', 'p2'],
+        seed: 12,
+        seq: 1,
+        at: 1_700_000_000_002,
+        actorId: 'host',
+      },
+    ],
+  };
+}
+
+/** The wrapper record Phase 3 wrote — `schemaVersion: 3` on the WRAPPER. */
+function v3Record(): string {
+  return JSON.stringify({ schemaVersion: 3, generation: 3, savedAt: 0, doc: v3Doc() });
+}
+
+describe('a draft saved by Phase 3', () => {
+  it('is still offered as a resumable draft after the schema 4 bump', () => {
+    // THIS is the test that catches the invisible failure, and the only kind that can. The
+    // WRAPPER version is compared a step before `isValidTournament`, so a version list that
+    // did not move with the bump drops the record right here — and `Resume saved draft`
+    // silently never appears for the host who closed the tab yesterday. No import-only test
+    // reaches this branch, because a file arriving through the import button never passes
+    // through it.
+    storage.backing.set(STORAGE_KEY, v3Record());
+
+    expect(load()).not.toBeNull();
+  });
+
+  it('resumes at the current version, not at the version it was stored as', () => {
+    storage.backing.set(STORAGE_KEY, v3Record());
+
+    expect(load()?.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(load()?.schemaVersion).toBe(4);
+  });
+
+  it('comes back with the ban fields at their lossless defaults', () => {
+    // `0` is the true answer rather than the config screen's default of `1`: a schema 3
+    // document was necessarily `hostBanlist`, so nobody banned anything per player.
+    storage.backing.set(STORAGE_KEY, v3Record());
+
+    const restored = load();
+    expect(restored?.config.bansPerPlayer).toBe(0);
+    expect(restored?.config.duplicateBanPolicy).toBe('bothApply');
+  });
+
+  it('keeps every version 3 field the host had already set', () => {
+    // The migration must not blank a field on the way past it. `swapBudget` and
+    // `megaFormeBans` are non-default here precisely so this can fail.
+    storage.backing.set(STORAGE_KEY, v3Record());
+
+    const restored = load();
+    expect(restored?.config.swapBudget).toBe(2);
+    expect(restored?.config.swapRounds).toBe(1);
+    expect(restored?.config.megaFormeBans).toEqual(['charizardmegax']);
+    expect(restored?.config.rules).toEqual([{ kind: 'mega', count: 2 }]);
+    expect(restored?.config.megasRequiredPerTeam).toBe(2);
+    expect(restored?.config.bans).toEqual(['mewtwo']);
+  });
+
+  it('folds to the pool its log recorded', () => {
+    storage.backing.set(STORAGE_KEY, v3Record());
+    const restored = load();
+    expect(restored).not.toBeNull();
+    if (restored === null) return;
+
+    expect(adoptTournament(restored)).toBe(true);
+    expect(getState()?.poolIds).toHaveLength(4);
+  });
+
+  it('does not offer a wrapper at a version this build has never supported', () => {
+    storage.backing.set(
+      STORAGE_KEY,
+      JSON.stringify({ schemaVersion: 5, generation: 1, savedAt: 0, doc: v3Doc() }),
     );
 
     expect(load()).toBeNull();

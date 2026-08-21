@@ -1,5 +1,5 @@
 /**
- * model.test.ts — the version 3 config shape, and the one hazard the compiler cannot see.
+ * model.test.ts — the version 4 config shape, and the one hazard the compiler cannot see.
  *
  * `copyConfig` is checked by TypeScript for a MISSING field: its return is an explicit
  * object literal typed `TournamentConfig`, so `strict` errors the moment a new field is
@@ -22,13 +22,15 @@ import { describe, expect, it } from 'vitest';
 import { initialState, SCHEMA_VERSION, type TournamentConfig } from '../../src/core/model';
 
 /**
- * A config carrying every field versions 2 and 3 added, with none left at its default.
+ * A config carrying every field versions 2, 3 and 4 added, with none left at its default.
  *
  * Defaults are the wrong fixture for a copy test: `bans: []` and `dualMegaChoices: []`
  * would deep-equal each other whether the copy was deep, shallow or absent. The version 3
- * fields follow the same rule — `rules` and `megaFormeBans` are both non-empty here.
+ * fields follow the same rule — `rules` and `megaFormeBans` are both non-empty here — and
+ * so do the version 4 ones: `bansPerPlayer` is not `0` and `duplicateBanPolicy` is not
+ * `'bothApply'`, so a `copyConfig` that dropped either to its default would be visible.
  */
-function v3Config(): TournamentConfig {
+function v4Config(): TournamentConfig {
   return {
     formatLabel: 'Champions MB',
     players: [
@@ -51,12 +53,14 @@ function v3Config(): TournamentConfig {
     megaFormeBans: ['charizardmegax', 'gengarmega'],
     swapBudget: 3,
     swapRounds: 1,
+    bansPerPlayer: 4,
+    duplicateBanPolicy: 'reBan',
   };
 }
 
 describe('SCHEMA_VERSION', () => {
-  it('is 3', () => {
-    expect(SCHEMA_VERSION).toBe(3);
+  it('is 4', () => {
+    expect(SCHEMA_VERSION).toBe(4);
   });
 });
 
@@ -97,12 +101,12 @@ function assertJsonSafe(value: unknown, path: string): void {
 
 describe('TournamentConfig serializability', () => {
   it('survives a JSON round trip unchanged with every added field set', () => {
-    const config = v3Config();
+    const config = v4Config();
     expect(JSON.parse(JSON.stringify(config)) as TournamentConfig).toEqual(config);
   });
 
   it('leaks no Set, Map, Date or class instance into the document', () => {
-    assertJsonSafe(v3Config(), 'config');
+    assertJsonSafe(v4Config(), 'config');
   });
 });
 
@@ -112,7 +116,7 @@ describe('TournamentConfig serializability', () => {
 
 describe('initialState', () => {
   it('copies bans rather than aliasing the caller array', () => {
-    const config = v3Config();
+    const config = v4Config();
     const state = initialState(config);
 
     expect(state.config.bans).not.toBe(config.bans);
@@ -120,7 +124,7 @@ describe('initialState', () => {
   });
 
   it('does not observe a mutation of the caller bans array made afterwards', () => {
-    const config = v3Config();
+    const config = v4Config();
     const state = initialState(config);
 
     config.bans.push('mewtwo');
@@ -129,7 +133,7 @@ describe('initialState', () => {
   });
 
   it('copies each dualMegaChoices element, not merely the array holding them', () => {
-    const config = v3Config();
+    const config = v4Config();
     const state = initialState(config);
 
     expect(state.config.dualMegaChoices).not.toBe(config.dualMegaChoices);
@@ -142,7 +146,7 @@ describe('initialState', () => {
   });
 
   it('copies each player, as it already did before version 2', () => {
-    const config = v3Config();
+    const config = v4Config();
     const state = initialState(config);
 
     expect(state.config.players).not.toBe(config.players);
@@ -155,7 +159,7 @@ describe('initialState', () => {
   it('carries every version 2 and version 3 field through to the folded config', () => {
     // The compiler catches a field `copyConfig` forgot. This catches one it dropped on
     // the way to a value — a field copied as `undefined` still type-checks under a cast.
-    const config = v3Config();
+    const config = v4Config();
     expect(initialState(config).config).toEqual(config);
   });
 
@@ -164,7 +168,7 @@ describe('initialState', () => {
   // -------------------------------------------------------------------------
 
   it('copies megaFormeBans rather than aliasing the caller array', () => {
-    const config = v3Config();
+    const config = v4Config();
     const state = initialState(config);
 
     expect(state.config.megaFormeBans).not.toBe(config.megaFormeBans);
@@ -174,7 +178,7 @@ describe('initialState', () => {
   it('does not observe a mutation of the caller megaFormeBans array made afterwards', () => {
     // `fold` runs `initialState` on every undo, so a shared array would surface as
     // undoing a pick changing the Mega-forme banlist.
-    const config = v3Config();
+    const config = v4Config();
     const state = initialState(config);
 
     config.megaFormeBans.push('gyaradosmega');
@@ -183,7 +187,7 @@ describe('initialState', () => {
   });
 
   it('copies each rules element, not merely the array holding them', () => {
-    const config = v3Config();
+    const config = v4Config();
     const state = initialState(config);
 
     expect(state.config.rules).not.toBe(config.rules);
@@ -195,7 +199,7 @@ describe('initialState', () => {
   });
 
   it('does not observe a mutation of the caller rules array made afterwards', () => {
-    const config = v3Config();
+    const config = v4Config();
     const state = initialState(config);
 
     config.rules.push({ kind: 'mega', count: 5 });
@@ -204,6 +208,21 @@ describe('initialState', () => {
   });
 
   it('starts the schedule empty — nothing is compiled until schedule/compiled lands', () => {
-    expect(initialState(v3Config()).schedule).toEqual([]);
+    expect(initialState(v4Config()).schedule).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Version 4 — BAN-03/BAN-04 and BAN-07. Two scalars, so the array hazard above
+  // does not apply; what does apply is being dropped to a default on the way.
+  // -------------------------------------------------------------------------
+
+  it('carries both version 4 fields through at the values the caller set', () => {
+    // `copyConfig` names every field explicitly rather than spreading, and the failure a
+    // scalar can still have is arriving as its default: `bansPerPlayer: 0` would look
+    // entirely reasonable in the folded state and would be the wrong tournament.
+    const state = initialState(v4Config());
+
+    expect(state.config.bansPerPlayer).toBe(4);
+    expect(state.config.duplicateBanPolicy).toBe('reBan');
   });
 });
