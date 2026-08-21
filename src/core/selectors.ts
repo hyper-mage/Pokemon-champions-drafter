@@ -54,6 +54,12 @@ export interface BanTurn {
 /** Which ban surface is on screen. See `selectBanStageState`. */
 export type BanStageState = 'snake' | 'blindLocked' | 'blindEntry' | 'reveal' | 'notRunning';
 
+/** One species more than one PLAYER banned, and who banned it. See `selectBanCollisions`. */
+export interface BanCollision {
+  monId: string;
+  playerIds: string[];
+}
+
 /** How many picks have been recorded so far. Also the index of the next one. */
 export function selectPickCount(state: DraftState): number {
   return state.picks.length;
@@ -961,4 +967,159 @@ export function selectBanStageState(state: DraftState): BanStageState {
   if (selectBanOrder(state.order, state.config.bansPerPlayer).length === 0) return 'snake';
 
   return selectBanTurn(state) === null ? 'reveal' : 'snake';
+}
+
+/**
+ * Species ids in first-seen order, each appearing once. Computation-local, never returned.
+ *
+ * `bannedEntries` dedupes too, so this changes nothing a surface renders. It exists so the
+ * ban selectors' own promise — "a union, deduped" — is true of the array they hand back,
+ * rather than only of what somebody else does with it afterwards.
+ */
+function uniqueIds(ids: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unique.push(id);
+  }
+
+  return unique;
+}
+
+/**
+ * What the room MAY SEE right now — `04-UI-SPEC` Amendment 1's four rows, and nothing else.
+ *
+ * ## This is a secrecy control, not a convenience
+ *
+ * `TopBar.tsx:209-217` renders every name it is given inside a native `<details>` that
+ * anyone in the room can open with one click. Whatever this function returns is therefore
+ * one click from readable by everyone present, including the players who have not submitted
+ * yet. The blind-before-reveal row is what stops a sealed ban being visible that way, and it
+ * is the least obvious leak channel in the ban stage.
+ *
+ * ## The four rows
+ *
+ *   `hostBanlist`, any time      `config.bans` — unchanged from before the ban stage existed
+ *   `snake`, during and after    `config.bans` ∪ every ban placed; snake bans are public the
+ *                                instant they land (BAN-03, D-20)
+ *   `blind`, BEFORE the reveal   `config.bans` only
+ *   `blind`, after the reveal    `config.bans` ∪ every revealed ban
+ *
+ * It branches on `config.banMode` and on whether `bansRevealed` is `null`, and NEVER on a
+ * count. A count cannot tell "blind, nobody has submitted" from "blind, everybody has", and
+ * those two must produce the same output for the control to be worth anything.
+ *
+ * The DISPLAYED count is `bannedEntries(entries, selectPublicBanIds(state)).length` and is
+ * never this array's length: `bannedEntries` resolves the ids against the roster and drops
+ * the strangers, which is the figure `checkFeasibility` reports as `banCount`.
+ */
+export function selectPublicBanIds(state: DraftState): string[] {
+  const host = state.config.bans;
+
+  if (state.config.banMode === 'snake') {
+    return uniqueIds([...host, ...state.banPlacements.map((ban) => ban.monId)]);
+  }
+
+  if (state.config.banMode === 'blind') {
+    const revealed = state.bansRevealed;
+    if (revealed === null) return uniqueIds(host);
+    return uniqueIds([...host, ...revealed.flatMap((entry) => entry.monIds)]);
+  }
+
+  return uniqueIds(host);
+}
+
+/**
+ * Every ban in force — host ∪ placed ∪ revealed, deduped, whatever stage the log is at.
+ *
+ * This is the `bannedIds` argument the post-reveal feasibility re-check takes (RULE-08), and
+ * it is NOT a display source. It answers before the reveal as readily as after, which is
+ * precisely why nothing may render it: {@link selectPublicBanIds} is the stage-aware answer
+ * and the only one a surface may ask for.
+ *
+ * **Do not take a count from this.** `bans.length` is never the displayed number
+ * (`bans.ts:59-64`), and `revealed.flatMap((entry) => entry.monIds).length` is not either —
+ * a collision is two submissions and ONE banned species, so that length overreports by
+ * exactly the number of collisions. `bannedEntries` remains the one correct source, and it
+ * is the one place the roster is consulted about which ids are species at all.
+ */
+export function selectAllBanIds(state: DraftState): string[] {
+  return uniqueIds([
+    ...state.config.bans,
+    ...state.banPlacements.map((ban) => ban.monId),
+    ...(state.bansRevealed ?? []).flatMap((entry) => entry.monIds),
+  ]);
+}
+
+/**
+ * Which players have sealed a blind allotment, in log order — BAN-04, D-05.
+ *
+ * Ids only. The locked screen turns them into a `{n} of {m} entered` readout and a per-player
+ * tick; it is given no species, because a surface cannot leak what it was never handed.
+ *
+ * Freshly built, in {@link selectCardsPlayedThisRound}'s shape: a caller cannot reach
+ * `state.banSubmissions` through the return value.
+ */
+export function selectSubmittedPlayerIds(state: DraftState): string[] {
+  return state.banSubmissions.map((submission) => submission.playerId);
+}
+
+/**
+ * Which species more than one PLAYER banned, and who — BAN-07, D-19.
+ *
+ * One record per collided species, `playerIds` in starting order so the reveal's sentence
+ * reads in the same order as every other list on the screen. A species one player banned
+ * yields no record, and a species the HOST banned that a player also chose is not a
+ * collision either: collisions are between players, and a wasted ban is a different sentence
+ * on a different part of the screen.
+ *
+ * `[]` in snake, and by CONSTRUCTION rather than by check (D-20): previous bans are visible
+ * as they land, so the snake surface renders an already-banned species inert and nobody can
+ * pick one. `canApply`'s `banAlreadyPlaced` is the backstop behind that offer.
+ *
+ * `[]` before the reveal. The submissions are sealed and this function is not the crack.
+ *
+ * Grouped through a computation-local `Map` that never leaves the function. CLAUDE.md
+ * §Serializability: no `Set`, `Map`, `Date` or class instance is ever persisted, and every
+ * return here is a plain array of plain records.
+ *
+ * Compared on `monId` and only on `monId` — never on a display name, and never by splitting
+ * one of those on its hyphens. `Tauros-Paldea-Aqua` and `Mr. Rime` both punish the second.
+ */
+export function selectBanCollisions(state: DraftState): BanCollision[] {
+  if (state.config.banMode === 'snake') return [];
+
+  const revealed = state.bansRevealed;
+  if (revealed === null) return [];
+
+  const byMonId = new Map<string, string[]>();
+  for (const entry of revealed) {
+    for (const monId of entry.monIds) {
+      const players = byMonId.get(monId);
+      if (players === undefined) {
+        byMonId.set(monId, [entry.playerId]);
+      } else if (!players.includes(entry.playerId)) {
+        // One player naming the same species twice is `duplicateBanIds`, not a collision.
+        players.push(entry.playerId);
+      }
+    }
+  }
+
+  // A player the rotation does not hold sorts last rather than to the front, which is where
+  // `indexOf`'s `-1` would put them.
+  const rank = (playerId: string): number => {
+    const position = state.order.indexOf(playerId);
+    return position === -1 ? state.order.length : position;
+  };
+
+  const collisions: BanCollision[] = [];
+  for (const [monId, playerIds] of byMonId) {
+    if (playerIds.length < 2) continue;
+    collisions.push({ monId, playerIds: [...playerIds].sort((a, b) => rank(a) - rank(b)) });
+  }
+
+  return collisions;
 }
