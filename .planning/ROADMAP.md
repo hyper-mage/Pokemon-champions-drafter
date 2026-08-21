@@ -245,8 +245,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-02-PLAN.md — the pessimistic feasibility gate, and the `drawPool` RangeError it closes (RULE-08)
-- [ ] 04-03-PLAN.md — the ban action family, the fold, the eight guards, and D-11's `draft/started` reorder (BAN-03, BAN-04)
+- [x] 04-02-PLAN.md — the pessimistic feasibility gate, and the `drawPool` RangeError it closes (RULE-08)
+- [x] 04-03-PLAN.md — the ban action family, the fold, the eight guards, and D-11's `draft/started` reorder (BAN-03, BAN-04)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -308,7 +308,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
-| 4. Blind and Snake Bans | 1/11 | In Progress|  |
+| 4. Blind and Snake Bans | 3/11 | In Progress|  |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
 ## Requirement Coverage
