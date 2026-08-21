@@ -39,6 +39,21 @@ export interface CardTurn {
 /** Which mode the screen is in. See `selectPhase`. */
 export type DraftPhase = 'cards' | 'picking' | 'swapRounds' | 'complete';
 
+/**
+ * The player whose snake BAN is on the clock — D-12.
+ *
+ * `pass` is 1-based and is a COLUMN, not a round (`04-UI-SPEC` §6). `index` is 0-based and
+ * is how far into the serpentine the stage has walked. See `selectBanTurn`.
+ */
+export interface BanTurn {
+  playerId: string;
+  pass: number;
+  index: number;
+}
+
+/** Which ban surface is on screen. See `selectBanStageState`. */
+export type BanStageState = 'snake' | 'blindLocked' | 'blindEntry' | 'reveal' | 'notRunning';
+
 /** How many picks have been recorded so far. Also the index of the next one. */
 export function selectPickCount(state: DraftState): number {
   return state.picks.length;
@@ -824,4 +839,126 @@ export function selectStartingOrder(seed: number, playerIds: readonly string[]):
   }
 
   return order;
+}
+
+/**
+ * The serpentine ban order — D-12. `1→2→3→4`, then `4→3→2→1`, repeating.
+ *
+ * A free function over the resolved order and a count, matching {@link selectStartingOrder}
+ * rather than the state-shaped selectors, because it depends on nothing else in the fold.
+ * The state-shaped {@link selectBanTurn} composes it rather than re-deriving it, so the
+ * board's columns and the turn banner cannot come to different conclusions about whose turn
+ * it is.
+ *
+ * A straight rotation compounds a first-mover advantage over every pass — the same player
+ * gets first choice every time. Reversing on alternate passes is what corrects it, and it
+ * is the whole of what D-12 asks for.
+ *
+ * Length is exactly `order.length × bansPerPlayer`, and every player appears exactly
+ * `bansPerPlayer` times. A zero or negative count yields `[]` rather than throwing, for the
+ * reason `selectRoundKind` answers out of range: this runs while rendering.
+ *
+ * The order it is handed is NEVER mutated. `reverse()` mutates in place, so each backward
+ * leg is built from a copy — the trap {@link selectSwapRoundOrder} records, and this is the
+ * second consumer of that lesson.
+ */
+export function selectBanOrder(order: readonly string[], bansPerPlayer: number): string[] {
+  if (order.length === 0 || bansPerPlayer <= 0) return [];
+
+  const sequence: string[] = [];
+  for (let pass = 0; pass < bansPerPlayer; pass++) {
+    const leg = pass % 2 === 0 ? order : [...order].reverse();
+    for (const playerId of leg) sequence.push(playerId);
+  }
+
+  return sequence;
+}
+
+/**
+ * Whose snake ban is on the clock, which pass they are on, and how far in — BAN-03, D-12.
+ *
+ * It COMPOSES {@link selectBanOrder} rather than re-deriving the sequence, for the reason
+ * {@link selectCardTurn}'s doc block gives about the card clock: a second copy of "who is on
+ * the clock" is a second thing that can disagree with the log about whose turn it is. Here
+ * the ban board's columns, the turn banner and `canApply`'s `notYourBanTurn` all read this
+ * one answer.
+ *
+ * `pass` is a COLUMN, not a round. `04-UI-SPEC` §6 fixes the vocabulary and gives the
+ * reason: `Round` is already taken by the draft's own rounds and by the board's `R{n}`
+ * header, and two meanings for one word on a shared screen is how a room ends up arguing
+ * about which round it is. In a true serpentine each player bans exactly once per pass, so
+ * `pass` is `Math.floor(index / order.length) + 1`.
+ *
+ * `index` is the number of bans already placed, which is also the position in the
+ * serpentine. It is what the board renders the cursor at.
+ *
+ * `null` when nobody is on the clock: before the order lands, when the tournament allots no
+ * bans, and when every allotment is spent. The last is not a defensive branch — an imported
+ * document can sit there, because `fold` runs no `canApply`.
+ */
+export function selectBanTurn(state: DraftState): BanTurn | null {
+  const sequence = selectBanOrder(state.order, state.config.bansPerPlayer);
+  if (sequence.length === 0) return null;
+
+  const index = state.banPlacements.length;
+  const playerId = sequence[index];
+  if (playerId === undefined) return null;
+
+  return { playerId, pass: Math.floor(index / state.order.length) + 1, index };
+}
+
+/**
+ * Which ban surface is on screen — and the ONE place that is decided (BAN-03, BAN-04).
+ *
+ * `app.tsx` and `BanStageScreen` BRANCH on this; no component works it out. That is what
+ * makes "the entry surface is showing while the reveal has landed" unrepresentable as a
+ * screen state, and it is the same posture {@link selectPhase} takes for the draft.
+ *
+ *   `'notRunning'`   this tournament has no player ban stage, or its stage is behind it
+ *   `'snake'`        a snake ban is on the clock
+ *   `'blindLocked'`  a blind stage is running and the reveal has not landed
+ *   `'blindEntry'`   a player is choosing — see below, this is NEVER returned
+ *   `'reveal'`       the bans are all in the open and the pool has not been drawn
+ *
+ * ## Why `'blindEntry'` is in the union and never returned
+ *
+ * Entry is a TRANSIENT state a component enters on a deliberate tap and leaves by four
+ * different exits — sealing, cancelling, a `visibilitychange` to hidden, and a bfcache
+ * restore — none of which is visible in the fold. D-18 requires the in-progress selection to
+ * die with the component rather than be derivable from anything stored, so nothing this
+ * function can read implies it. The member exists so `BanStageScreen`'s branch is total, and
+ * the component supplies the value.
+ *
+ * ## Why `selectPhase` is not shielded instead
+ *
+ * After D-11's reorder `order` and `schedule` are both non-empty during the ban stage and
+ * round 1 is unresolved, so {@link selectPhase} answers `'cards'` there. That is not fixed
+ * here and must not be: the remedy is the fourth `Screen` member the ban stage renders
+ * under, which means the draft screen's `selectPhase` branch is never evaluated while a ban
+ * stage is running. Shielding `selectPhase` would put the ban stage into five places that
+ * can each be got wrong instead of one union member.
+ *
+ * The pool is what ends the stage in both modes: it is drawn on a separate `Start draft`
+ * tap AFTER the bans (D-23), so a non-empty `poolIds` means the stage is over whatever else
+ * the log says.
+ */
+export function selectBanStageState(state: DraftState): BanStageState {
+  if (state.config.banMode === 'hostBanlist') return 'notRunning';
+  if (state.poolIds.length > 0) return 'notRunning';
+
+  if (state.config.banMode === 'blind') {
+    return state.bansRevealed === null ? 'blindLocked' : 'reveal';
+  }
+
+  // Snake. A reveal is not part of this mode's ritual, but an imported document can carry
+  // one, and `canApply` refuses every further ban once it has landed — so the stage is over.
+  if (state.bansRevealed !== null) return 'reveal';
+
+  // A stage with no sequence to walk has not FINISHED, it has not begun: an order that has
+  // not landed yet, or a tournament that allots no bans. `'reveal'` is the terminal answer
+  // and is where `Start draft` lives, so the non-terminal one is the safe reading — and it
+  // is the same reading blind takes of the same situation.
+  if (selectBanOrder(state.order, state.config.bansPerPlayer).length === 0) return 'snake';
+
+  return selectBanTurn(state) === null ? 'reveal' : 'snake';
 }
