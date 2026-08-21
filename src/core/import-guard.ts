@@ -59,12 +59,13 @@
  */
 
 import type { Action, RoundKind, RoundSpec } from './actions';
-import { migrate, V1_CONFIG_DEFAULTS, V2_CONFIG_DEFAULTS } from './migrate';
+import { migrate, V1_CONFIG_DEFAULTS, V2_CONFIG_DEFAULTS, V3_CONFIG_DEFAULTS } from './migrate';
 import type {
   BanMode,
   CompositionRule,
   DualMegaChoice,
   DualMegaForme,
+  DuplicateBanPolicy,
   PlayerConfig,
   TournamentConfig,
   TournamentDepth,
@@ -139,6 +140,28 @@ export const MAX_POOL_IDS = 5000;
  * questions and would drift the moment either changed for its own reasons.
  */
 export const MAX_SWAP_BUDGET = 24;
+
+/**
+ * The bans-per-player cap — 24.
+ *
+ * CHOSEN to match {@link MAX_SWAP_BUDGET} rather than derived from it, and the two are
+ * separate constants for the independence reason stated above: they answer different
+ * questions and would drift the moment either changed for its own reasons.
+ * `04-UI-SPEC` §1 independently specifies the same number as the `Bans per player`
+ * field's `max`, which is agreement rather than derivation.
+ *
+ * The number exists to bound an ALLOCATION, not to express a design opinion about how
+ * many bans a sensible host wants. `bansPerPlayer` is multiplied by the player count and
+ * the product reaches `drawPool`, where `draw.ts:108-112` documents a deliberate uncaught
+ * `RangeError` on an oversized count — so `"bansPerPlayer": 4000000000` is twenty bytes
+ * that pass the size gate and then ask for a four-billion-element array.
+ *
+ * `feasibility.ts` imports THIS constant rather than restating 24. The gate's bound and
+ * the guard's bound must be one number: `handleStart` writes whatever the gate accepted,
+ * `persistence.load` runs the result back through `isValidTournament`, and a value the
+ * gate allowed but this guard refuses is a tournament the host cannot resume.
+ */
+export const MAX_BANS_PER_PLAYER = 24;
 
 /**
  * The swap-round cap — 24.
@@ -277,6 +300,12 @@ function copyStringArray(value: unknown, limit: number): string[] | null {
  * compiler errors if one drifts from the union it mirrors.
  */
 const BAN_MODES: readonly BanMode[] = ['hostBanlist', 'blind', 'snake'];
+/**
+ * Exported, unlike its neighbours, because 04-05's `Duplicate bans` segmented control has
+ * to render one option per member and a second hand-written list would be a second thing
+ * that can drift from the union.
+ */
+export const DUPLICATE_BAN_POLICIES: readonly DuplicateBanPolicy[] = ['bothApply', 'reBan'];
 const DEPTHS: readonly TournamentDepth[] = ['draftOnly', 'draftAndBrackets', 'draftBracketsAndLog'];
 const DUAL_MEGA_FORMES: readonly DualMegaForme[] = ['x', 'y', 'either'];
 const COMPOSITION_RULE_KINDS: readonly CompositionRule['kind'][] = ['mega'];
@@ -444,19 +473,23 @@ function buildRoundSpecs(value: unknown): RoundSpec[] | null {
  *
  * ## Absent versus malformed — the distinction this function turns on
  *
- * The six keys schema version 2 added and the four version 3 added are all OPTIONAL here,
- * and that is forced by ordering rather than chosen for leniency: this function runs
- * inside `buildDoc`, and `buildDoc` runs BEFORE `migrate`. Requiring them would therefore
- * refuse every older document at the shape check, one step before the migration that
- * exists to upgrade it could run — and the host would be shown a sentence about their file
- * not being a Champions Drafter tournament, which would be false.
+ * The six keys schema version 2 added, the four version 3 added and the two version 4
+ * added are all OPTIONAL here, and that is forced by ordering rather than chosen for
+ * leniency: this function runs inside `buildDoc`, and `buildDoc` runs BEFORE `migrate`.
+ * Requiring them would therefore refuse every older document at the shape check, one step
+ * before the migration that exists to upgrade it could run — and the host would be shown a
+ * sentence about their file not being a Champions Drafter tournament, which would be
+ * false.
  *
  * A key that is PRESENT and wrong is still refused, and refused for the whole config. That
  * keeps this file's posture intact: repairing untrusted input is worse than refusing it.
  * Supplying a value for a key that is not there is not repair, it is migration, and the
- * values come from ONE place — `V1_CONFIG_DEFAULTS` and `V2_CONFIG_DEFAULTS` in
- * `migrate.ts` — so the guard and the migration cannot disagree about what an older
- * tournament was.
+ * values come from ONE place — `V1_CONFIG_DEFAULTS`, `V2_CONFIG_DEFAULTS` and
+ * `V3_CONFIG_DEFAULTS` in `migrate.ts` — so the guard and the migration cannot disagree
+ * about what an older tournament was.
+ *
+ * `duplicateBanPolicy` is the ONE field here that coerces instead of refusing, and the
+ * reason is at its own branch below rather than here: it is the only field nothing reads.
  *
  * `rules` is the version 3 field with the same shape of exception `poolSize` has: absent,
  * it is DERIVED from `megasRequiredPerTeam` rather than defaulted, because the document is
@@ -587,6 +620,29 @@ function buildConfig(value: unknown): TournamentConfig | null {
     swapRounds = value_;
   }
 
+  // The range starts at 0, not 1. `0` is the legitimate `hostBanlist` value and the value
+  // every migrated schema 3 document carries; the `>= 1` requirement at `blind` and
+  // `snake` is the FEASIBILITY GATE's question, not this one. The split is argued at
+  // `feasibility.ts:29-34` and holds here: the guard bounds an allocation, the gate decides
+  // what is satisfiable, and only the gate is looking at the ban mode at the same time.
+  let bansPerPlayer: number = V3_CONFIG_DEFAULTS.bansPerPlayer;
+  if (raw['bansPerPlayer'] !== undefined) {
+    const value_ = raw['bansPerPlayer'];
+    if (!isNonNegativeInteger(value_) || value_ > MAX_BANS_PER_PLAYER) return null;
+    bansPerPlayer = value_;
+  }
+
+  // COERCED rather than refused, and this is the one field in the function that is, so the
+  // departure is worth stating. Every other value here can produce a wrong tournament, so
+  // refusing the file is the honest answer. Nothing reads `duplicateBanPolicy` in Phase 4
+  // (D-19), so an unrecognised value can produce only a wrong stored string — and losing a
+  // real tournament over a typo in a field with no reader would be the worse trade. The
+  // bound exists anyway, because the value goes live the moment a later milestone reads it.
+  let duplicateBanPolicy: DuplicateBanPolicy = V3_CONFIG_DEFAULTS.duplicateBanPolicy;
+  if (isOneOf(raw['duplicateBanPolicy'], DUPLICATE_BAN_POLICIES)) {
+    duplicateBanPolicy = raw['duplicateBanPolicy'];
+  }
+
   return {
     formatLabel,
     players,
@@ -603,6 +659,8 @@ function buildConfig(value: unknown): TournamentConfig | null {
     megaFormeBans,
     swapBudget,
     swapRounds,
+    bansPerPlayer,
+    duplicateBanPolicy,
   };
 }
 
