@@ -815,18 +815,23 @@ describe('the two-arm Mega sentence (Pitfall 9)', () => {
   });
 
   it('adds one clause and one remedy in blind, and nothing else', () => {
+    // Deliberately the SAME configuration as the pin above plus a ban mode and a count, so
+    // the only thing that can move the string is the arm selector. The predicate is Phase
+    // 3's here — the `q` term the predicate gains is the next task's, and a copy test that
+    // needed it would be testing two things at once.
     const result = checkFeasibility(
       base({
         playerNames: manyPlayers(8),
         poolSize: 48,
         megasRequiredPerTeam: 6,
+        bannedIds: megaBans(27),
         banMode: 'blind',
         bansPerPlayer: 4,
       }),
     );
 
     expect(messageFor(result, 'notEnoughMegas')).toBe(
-      'Not enough Pokémon can Mega. 8 players × 6 Mega rounds needs 48; 42 can still Mega after 0 species bans, 0 Mega-forme bans and 32 player bans. Lower the Mega requirement, lower bans per player, or unban a Mega forme.',
+      'Not enough Pokémon can Mega. 8 players × 6 Mega rounds needs 48; 15 can still Mega after 27 species bans, 0 Mega-forme bans and 32 player bans. Lower the Mega requirement, lower bans per player, or unban a Mega forme.',
     );
   });
 
@@ -836,6 +841,7 @@ describe('the two-arm Mega sentence (Pitfall 9)', () => {
         playerNames: manyPlayers(8),
         poolSize: 48,
         megasRequiredPerTeam: 6,
+        bannedIds: megaBans(27),
         banMode: 'blind',
         bansPerPlayer: 4,
       }),
@@ -845,6 +851,7 @@ describe('the two-arm Mega sentence (Pitfall 9)', () => {
         playerNames: manyPlayers(8),
         poolSize: 48,
         megasRequiredPerTeam: 6,
+        bannedIds: megaBans(27),
         banMode: 'snake',
         bansPerPlayer: 4,
       }),
@@ -854,20 +861,22 @@ describe('the two-arm Mega sentence (Pitfall 9)', () => {
   });
 
   it('never reports a negative count of species that can still Mega', () => {
-    // 8 x 24 = 192 pessimistic player bans against 74 eligible species. A negative number
-    // in a shared-screen sentence reads as a broken tool, so the term is clamped at zero.
+    // 8 x 24 = 192 pessimistic player bans against the 4 eligible species 70 host bans
+    // leave. A negative number in a sentence read off a shared screen reads as a broken
+    // tool rather than as a hard limit, so the term is clamped at zero.
     const result = checkFeasibility(
       base({
         playerNames: manyPlayers(8),
         poolSize: 48,
         megasRequiredPerTeam: 1,
+        bannedIds: megaBans(70),
         banMode: 'blind',
         bansPerPlayer: MAX_BANS_PER_PLAYER,
       }),
     );
 
     expect(messageFor(result, 'notEnoughMegas')).toBe(
-      'Not enough Pokémon can Mega. 8 players × 1 Mega rounds needs 8; 0 can still Mega after 0 species bans, 0 Mega-forme bans and 192 player bans. Lower the Mega requirement, lower bans per player, or unban a Mega forme.',
+      'Not enough Pokémon can Mega. 8 players × 1 Mega rounds needs 8; 0 can still Mega after 70 species bans, 0 Mega-forme bans and 192 player bans. Lower the Mega requirement, lower bans per player, or unban a Mega forme.',
     );
   });
 });
