@@ -16,6 +16,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BANS_PLACED,
+  BANS_REVEALED,
+  BANS_SUBMITTED,
   CARDS_PLAYED,
   DRAFT_PICK_MADE,
   DRAFT_PICK_UNDONE,
@@ -24,6 +27,9 @@ import {
   SCHEDULE_COMPILED,
   SWAP_MADE,
   SWAP_PASSED,
+  bansPlaced,
+  bansRevealed,
+  bansSubmitted,
   cardsPlayed,
   draftStarted,
   orderResolved,
@@ -45,6 +51,8 @@ import {
 import { fold } from '../../src/core/reduce';
 import {
   selectAvailablePool,
+  selectBanStageState,
+  selectBanTurn,
   selectCardsPlayedThisRound,
   selectCardTurn,
   selectCurrentTurn,
@@ -918,5 +926,294 @@ describe('undoing a pass', () => {
     const doc = makeSwappyDoc(log);
     expect(selectIsTournamentComplete(fold(doc))).toBe(true);
     expect(selectIsTournamentComplete(fold(undoLast(doc)))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The ban stage on the same single stack — D-03, D-05, D-23, and 04-RESEARCH Pitfall 8.
+//
+// D-03 makes undo MANDATORY here rather than convenient: the host is typing other people's
+// bans off a Discord message and will pick the wrong Pokémon. The failure this block exists
+// to catch is silent — a ban action on neither of `isUndoable`'s two lists makes
+// `Undo last move` step PAST it to `draft/started`, which is correctly refused, so the
+// button does nothing at all and nothing anywhere reports why.
+//
+// Every document below carries NO `pool/built`, because D-11 puts the draw last in blind
+// and snake. That is not fixture convenience; it is the state the stage actually runs in.
+// ---------------------------------------------------------------------------
+
+const BAN_ORDER = ['p1', 'p2', 'p3'];
+
+/** The serpentine `selectBanOrder` walks for three players at two bans each. */
+const BAN_SEQUENCE = ['p1', 'p2', 'p3', 'p3', 'p2', 'p1'];
+
+const BLIND_ALLOTMENTS: Record<string, string[]> = {
+  p1: ['venusaur', 'charizard'],
+  p2: ['blastoise', 'garchomp'],
+  p3: ['rotomwash', 'skarmory'],
+};
+
+function banConfig(banMode: 'blind' | 'snake', bansPerPlayer: number): TournamentConfig {
+  return {
+    ...CONFIG,
+    players: [
+      { id: 'p1', name: 'Player 1' },
+      { id: 'p2', name: 'Player 2' },
+      { id: 'p3', name: 'Player 3' },
+    ],
+    banMode,
+    bansPerPlayer,
+  };
+}
+
+function makeBanDoc(config: TournamentConfig, log: readonly Action[]): TournamentDoc {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'ban-stage-fixture',
+    createdAt: CREATED_AT,
+    config,
+    rng: { seed: SEED, cursor: 0 },
+    log: [...log],
+  };
+}
+
+/** D-11's opening: schedule then start, and NO pool. `createBanStage` writes exactly this. */
+function banOpeningLog(): Action[] {
+  return [stamp(scheduleCompiled(OPEN_SCHEDULE), 0), stamp(draftStarted(BAN_ORDER, 9), 1)];
+}
+
+function snakeDoc(placements: number): TournamentDoc {
+  let log = banOpeningLog();
+  for (let index = 0; index < placements; index++) {
+    log = append(
+      log,
+      bansPlaced(
+        BAN_SEQUENCE[index] as string,
+        POOL[index] as string,
+        Math.floor(index / BAN_ORDER.length) + 1,
+      ),
+    );
+  }
+  return makeBanDoc(banConfig('snake', 2), log);
+}
+
+function blindDoc(submissions: number, revealed = false): TournamentDoc {
+  let log = banOpeningLog();
+  const entered = BAN_ORDER.slice(0, submissions);
+
+  for (const playerId of entered) {
+    log = append(log, bansSubmitted(playerId, BLIND_ALLOTMENTS[playerId] as string[]));
+  }
+
+  if (revealed) {
+    log = append(
+      log,
+      bansRevealed(
+        entered.map((playerId) => ({
+          playerId,
+          monIds: BLIND_ALLOTMENTS[playerId] as string[],
+        })),
+      ),
+    );
+  }
+
+  return makeBanDoc(banConfig('blind', 2), log);
+}
+
+describe('the ban stage is on the one undo stack — D-03', () => {
+  it('reaches a snake ban', () => {
+    const doc = snakeDoc(2);
+    expect(canUndo(doc)).toBe(true);
+    expect(lastUndoableAction(doc)?.type).toBe(BANS_PLACED);
+  });
+
+  it('reaches a blind submission', () => {
+    const doc = blindDoc(2);
+    expect(canUndo(doc)).toBe(true);
+    expect(lastUndoableAction(doc)?.type).toBe(BANS_SUBMITTED);
+  });
+
+  it('reaches the reveal', () => {
+    const doc = blindDoc(3, true);
+    expect(canUndo(doc)).toBe(true);
+    expect(lastUndoableAction(doc)?.type).toBe(BANS_REVEALED);
+  });
+
+  it('never steps past a ban to draft/started — Pitfall 8', () => {
+    // The failure mode stated as an assertion. With a ban action on neither list,
+    // `lastUndoableAction` walks to `draft/started`, `isUndoable` refuses it, and the
+    // answer is `null` — a dead button on the stage D-03 calls the correction path for
+    // the phase's primary input method.
+    // `not.toBe(DRAFT_STARTED)` alone would pass VACUOUSLY against a build with no ban
+    // arms at all, because the answer there is `null` — which is the defect. The
+    // non-null assertion is what makes this test fail for the right reason.
+    for (const doc of [snakeDoc(1), blindDoc(1), blindDoc(3, true)]) {
+      expect(lastUndoableAction(doc)).not.toBeNull();
+      expect(lastUndoableAction(doc)?.type).not.toBe(DRAFT_STARTED);
+      expect(undoLast(doc).log.some((action) => action.type === DRAFT_STARTED)).toBe(true);
+    }
+  });
+
+  it('removes nothing when only schedule/compiled and draft/started remain', () => {
+    // The boot state of a ban stage, and the state every undo walks back down to. The
+    // deny-list is what stops the next press un-starting the tournament.
+    const doc = makeBanDoc(banConfig('snake', 2), banOpeningLog());
+    expect(canUndo(doc)).toBe(false);
+    expect(undoRemoval(doc)).toBeNull();
+    expect(undoLast(doc).log).toHaveLength(2);
+  });
+
+  it('refuses to un-draw the pool even though D-11 writes it LAST', () => {
+    // The `NEVER_UNDONE` invariant doing more work than it was written for. In blind and
+    // snake `pool/built` is the most recent entry at exactly the moment a host is most
+    // likely to press `Undo last move`.
+    const revealed = blindDoc(3, true);
+    const drawn = makeBanDoc(
+      revealed.config,
+      append(revealed.log, poolBuilt(POOL, CONFIG.rosterVersion, CONFIG.rosterChecksum, 7, 0)),
+    );
+
+    expect(lastUndoableAction(drawn)?.type).toBe(BANS_REVEALED);
+    expect(undoLast(drawn).log.some((action) => action.type === POOL_BUILT)).toBe(true);
+  });
+
+  it('walks the whole stage back and then stops', () => {
+    let doc = snakeDoc(3);
+    for (let step = 0; step < 3; step++) doc = undoLast(doc);
+
+    expect(canUndo(doc)).toBe(false);
+    expect(doc.log).toHaveLength(2);
+  });
+});
+
+describe('undoRemoval over a ban', () => {
+  it('describes a snake ban without carrying the species id', () => {
+    // `monId` is "the species returning to the POOL" and no pool exists here. Leaving it
+    // null is defence in depth behind the exhaustive announcement: even a weakened guard
+    // has no name to interpolate.
+    const removal = undoRemoval(snakeDoc(2));
+
+    expect(removal?.kind).toBe('banPlaced');
+    expect(removal?.playerId).toBe('p2');
+    expect(removal?.monId).toBeNull();
+    expect(removal?.outMonId).toBeNull();
+    expect(removal?.cardValue).toBeNull();
+    expect(removal?.swapRound).toBeNull();
+    expect(removal?.round).toBe(1);
+    expect(removal?.removedCount).toBe(1);
+  });
+
+  it('describes a blind submission without carrying any of the species ids', () => {
+    const removal = undoRemoval(blindDoc(2));
+
+    expect(removal?.kind).toBe('banSubmission');
+    expect(removal?.playerId).toBe('p2');
+    expect(removal?.monId).toBeNull();
+    expect(removal?.outMonId).toBeNull();
+    expect(removal?.round).toBe(1);
+    expect(removal?.removedCount).toBe(1);
+  });
+
+  it('describes the reveal, which belongs to no player', () => {
+    const removal = undoRemoval(blindDoc(3, true));
+
+    expect(removal?.kind).toBe('banReveal');
+    expect(removal?.monId).toBeNull();
+    expect(removal?.outMonId).toBeNull();
+    expect(removal?.round).toBe(1);
+    expect(removal?.removedCount).toBe(1);
+  });
+
+  it('reports round 1 for every ban kind, on the pass precedent', () => {
+    // A ban belongs to no PICK round. `'pass'` reports `config.rounds` so a caller
+    // comparing against the current round hears "no round was crossed"; a ban reports 1
+    // for the same reason, and the confirm is forced explicitly rather than by that
+    // comparison.
+    for (const doc of [snakeDoc(1), blindDoc(1), blindDoc(3, true)]) {
+      expect(undoRemoval(doc)?.round).toBe(1);
+    }
+  });
+});
+
+describe('which ban undos ask first', () => {
+  it('confirms a blind submission, because it removes what the host cannot see', () => {
+    const doc = blindDoc(2);
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.kind).toBe('banSubmission');
+    expect(crossing?.crosses).toBe(true);
+  });
+
+  it('confirms the reveal, because un-revealing cannot un-read', () => {
+    const doc = blindDoc(3, true);
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.kind).toBe('banReveal');
+    expect(crossing?.crosses).toBe(true);
+  });
+
+  it('never confirms a snake ban, because reversing it is visible', () => {
+    // Same category as a pick: the ban is on the board and the undo shows itself. D-08's
+    // no-confirm posture holds.
+    const doc = snakeDoc(2);
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.kind).toBe('banPlaced');
+    expect(crossing?.crosses).toBe(false);
+  });
+
+  it('sets the two blind kinds explicitly rather than by a round comparison', () => {
+    // A ban reports round 1 and `selectCurrentRound` answers 1 during the stage, so
+    // `removed.round < currentRound` is FALSE for every ban. A comparison-driven
+    // implementation would silently skip the confirm the whole design depends on.
+    const doc = blindDoc(2);
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.removedRound).toBe(1);
+    expect(crossing?.currentRound).toBe(1);
+    expect(crossing?.crosses).toBe(true);
+  });
+});
+
+describe('what a ban undo actually removes', () => {
+  it('takes one player’s whole allotment and no other player’s', () => {
+    // D-05 makes the lock-in ONE act, so undo walks back one act. Per-ban removal would
+    // take one invisible ban out of two invisible bans.
+    const before = fold(blindDoc(3));
+    expect(before.banSubmissions).toHaveLength(3);
+
+    const after = fold(undoLast(blindDoc(3)));
+    expect(after.banSubmissions).toHaveLength(2);
+    expect(after.banSubmissions.map((entry) => entry.playerId)).toEqual(['p1', 'p2']);
+  });
+
+  it('leaves every submission standing when the reveal comes off — D-23', () => {
+    // The load-bearing one. Undoing the reveal removes the `bans/revealed` entry ONLY;
+    // the stage returns to the designed destination `{m} of {m} entered — Reveal bans`.
+    const doc = blindDoc(3, true);
+    const after = fold(undoLast(doc));
+
+    expect(after.banSubmissions).toHaveLength(3);
+    expect(after.bansRevealed).toBeNull();
+    expect(selectBanStageState(after)).toBe('blindLocked');
+  });
+
+  it('returns the snake clock to the player whose ban came off', () => {
+    const doc = snakeDoc(2);
+    expect(selectBanTurn(fold(doc))?.playerId).toBe('p3');
+
+    const after = fold(undoLast(doc));
+    expect(after.banPlacements).toHaveLength(1);
+    expect(selectBanTurn(after)?.playerId).toBe('p2');
+  });
+
+  it('re-folds rather than reversing, at every cut point of a snake stage', () => {
+    // The property the whole file rests on, restated for the stage: undo is a log-prefix
+    // re-fold, never an inverse patch.
+    for (let placed = 1; placed <= 6; placed++) {
+      expect(fold(undoLast(snakeDoc(placed))), `${placed} placed`).toEqual(
+        fold(snakeDoc(placed - 1)),
+      );
+    }
   });
 });
