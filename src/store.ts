@@ -275,6 +275,106 @@ export function createTournament(input: CreateTournamentInput): TournamentDoc | 
 }
 
 /**
+ * Everything `createBanStage` needs, and — deliberately — nothing about a pool.
+ *
+ * The posture is `CreateTournamentInput`'s, one field short: each of these is a RESULT the
+ * config screen already computed and already showed the host — the resolved starting order,
+ * the seed behind it, and the schedule it approved after any RULE-06 reorder. Passing the
+ * results rather than the instructions is what makes "the tournament that starts is the one
+ * on screen" structural; a store that recompiled the schedule here would discard the reorder
+ * silently, and would do so while producing a perfectly valid one.
+ *
+ * ## The absent fields are the point
+ *
+ * No `poolIds`, no `poolSeed`, no `megaCapableCount`. In blind and snake the pool does not
+ * exist yet and MUST not: D-23 makes the reveal what decides what the draw may contain, so a
+ * pool drawn here would be a pool drawn before the bans that constrain it. `pool/built`
+ * arrives last instead, and that is already legal — `canApply(POOL_BUILT)` asks about the
+ * pool and asserts nothing about the draft having started.
+ */
+export interface CreateBanStageInput {
+  /** Host-authored. Player ids are generated at the edge before this is called. */
+  config: TournamentConfig;
+  /** `selectStartingOrder` output. */
+  order: readonly string[];
+  /** The seed that produced `order`. */
+  orderSeed: number;
+  /** The schedule the host approved, after any RULE-06 reorder. Never recompiled here. */
+  schedule: readonly RoundSpec[];
+}
+
+/**
+ * Start a blind or snake tournament, which begins at a ban stage rather than at a draft.
+ *
+ * ## A SIBLING of `createTournament`, never a flag on it
+ *
+ * D-01 buys two seams deliberately, and the value is entirely in what does NOT change:
+ * `hostBanlist` keeps the atomic three-dispatch path Phase 2 verified, byte for byte, at
+ * zero regression risk, and only the two modes that are new route anywhere new. Reshaping
+ * `createTournament` into one parameterised function would spend exactly that. Do not merge
+ * them later "for tidiness" — the duplication here is two dispatches and a rollback, and the
+ * thing it buys is that the mode nine tenths of the tests cover cannot be broken from here.
+ *
+ * Two actions, and the order is not stylistic:
+ *
+ *   schedule/compiled  the round schedule the host approved. FIRST, because
+ *                      `canApply(DRAFT_STARTED)` rejects `scheduleNotCompiled` and that
+ *                      check has nothing to do with the pool — it is the same requirement
+ *                      `createTournament` satisfies, arrived at with one fewer action.
+ *   draft/started      the resolved starting order, and the seed it was rolled from. The
+ *                      serpentine reads `state.order`, so the ban stage cannot begin until
+ *                      this has landed (D-11).
+ *
+ * Both arrays are copied element by element, exactly as `createTournament` copies its own,
+ * so the document never shares an array with the config screen's state.
+ *
+ * ## The rollback is `createTournament`'s, for the same reason
+ *
+ * Both signals are assigned BEFORE either dispatch, because `dispatch` returns
+ * `{ ok: false, reason: 'draftNotStarted' }` while either is null — so "leaves the store as
+ * it found it" means rolling back rather than never writing.
+ */
+export function createBanStage(input: CreateBanStageInput): TournamentDoc | null {
+  const previousDoc = docSignal.peek();
+  const previousState = stateSignal.peek();
+
+  docSignal.value = {
+    schemaVersion: SCHEMA_VERSION,
+    id: newId(),
+    createdAt: now(),
+    config: input.config,
+    rng: { seed: newSeed(), cursor: 0 },
+    log: [],
+  };
+  stateSignal.value = initialState(input.config);
+
+  const compiled = dispatch(
+    scheduleCompiled(input.schedule.map((spec) => ({ index: spec.index, kind: spec.kind }))),
+  );
+
+  const started = compiled.ok
+    ? dispatch(draftStarted([...input.order], input.orderSeed))
+    : compiled;
+
+  if (!started.ok) {
+    // `started` carries the FIRST refusal of the two, because the second dispatch is skipped
+    // once the first has failed. That is what makes this one branch cover both outcomes
+    // rather than needing an arm each — the same construction `createTournament` uses over
+    // three.
+    //
+    // A half-built ban stage is worse than none: a schedule with no order renders a stage
+    // that names nobody's turn and accepts no ban, on a shared screen, with no way back. The
+    // caller gets null and the store gets its old life back, including the object identity
+    // every component is holding.
+    docSignal.value = previousDoc;
+    stateSignal.value = previousState;
+    return null;
+  }
+
+  return docSignal.peek();
+}
+
+/**
  * Adopt a document that already exists — a restored autosave, or an imported file.
  *
  * The version question goes to `migrate` rather than being answered here with a
