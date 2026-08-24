@@ -48,6 +48,9 @@ import {
   DRAFT_STARTED,
   POOL_BUILT,
   SCHEDULE_COMPILED,
+  isBansPlacedAction,
+  isBansRevealedAction,
+  isBansSubmittedAction,
   isCardsPlayedAction,
   isOrderResolvedAction,
   isPickMadeAction,
@@ -141,6 +144,19 @@ const NEVER_UNDONE: readonly string[] = [POOL_BUILT, SCHEDULE_COMPILED, DRAFT_ST
  * Until they landed, `Undo last move` stepped PAST a swap to the last pick and the swap
  * survived: nothing corrupted, but the one move a host is most likely to regret was the one
  * move they could not take back.
+ *
+ * THE THREE BAN ACTIONS join in 04-07, and they are the growth the deny-list paragraph
+ * above predicted rather than an exception to it. `pool/built`, `schedule/compiled` and
+ * `draft/started` are still the boundary and their list is unchanged; all three ban types
+ * sit inside it. D-03 is unconditional — "full undo throughout the ban stage, on the same
+ * single stack" — and the host is transcribing other people's bans off a Discord message,
+ * which is the input method most likely to need taking back.
+ *
+ * Adding them to NEITHER list is the silent failure (04-RESEARCH Pitfall 8). `isUndoable`
+ * is a deny-list PLUS an allow-list, so an action in neither is simply stepped past — and
+ * the next thing below a ban is `draft/started`, which the deny-list correctly refuses. The
+ * result is `Undo last move` doing nothing at all, on the one stage D-03 calls the
+ * correction path for the phase's primary input.
  */
 function isUndoable(action: Action): boolean {
   if (NEVER_UNDONE.includes(action.type)) return false;
@@ -149,7 +165,10 @@ function isUndoable(action: Action): boolean {
     isCardsPlayedAction(action) ||
     isOrderResolvedAction(action) ||
     isSwapMadeAction(action) ||
-    isSwapPassedAction(action)
+    isSwapPassedAction(action) ||
+    isBansPlacedAction(action) ||
+    isBansSubmittedAction(action) ||
+    isBansRevealedAction(action)
   );
 }
 
@@ -227,8 +246,23 @@ function removalIndices(doc: TournamentDoc): number[] {
 
 /** What an undo would take, and from whom. Every field is a fact, never a sentence. */
 export interface UndoRemoval {
-  /** Which of the undoable actions is at the top of the stack. */
-  kind: 'pick' | 'card' | 'order' | 'swap' | 'pass';
+  /**
+   * Which of the undoable actions is at the top of the stack.
+   *
+   * EVERY MEMBER NEEDS AN ARM IN `undoAnnouncement` (`store.ts`), and since 04-07 the
+   * compiler says so: that function's `default` assigns this field to a `const
+   * exhaustive: never`, so widening this union without widening the announcement is a
+   * type error rather than a species name spoken into a room.
+   */
+  kind:
+    | 'pick'
+    | 'card'
+    | 'order'
+    | 'swap'
+    | 'pass'
+    | 'banPlaced'
+    | 'banSubmission'
+    | 'banReveal';
   /**
    * 1-based round of the action being removed.
    *
@@ -238,6 +272,12 @@ export interface UndoRemoval {
    * `config.rounds` is where the draft is standing while the swap rounds run, so a caller
    * comparing this against the current round gets the honest answer "no round was crossed".
    * {@link UndoRemoval.swapRound} is the field that actually identifies a pass.
+   *
+   * For a BAN, `1`, on the same precedent and for the same reason. The ban stage runs
+   * before any pick round exists and `selectCurrentRound` answers `1` throughout it, so a
+   * caller comparing this against the current round again hears "no round was crossed".
+   * Which ban undos DO need a confirm is stated explicitly in
+   * {@link undoCrossesRoundBoundary} rather than inferred from this number.
    */
   round: number;
   /** Whose move it was. The UI resolves the display name; core never holds one. */
@@ -248,6 +288,13 @@ export interface UndoRemoval {
    * One field, one meaning, across two kinds. Undoing a pick returns what was picked;
    * undoing a swap returns what the swap brought in, because the swap took it out of the
    * pool. `null` for a card play, a resolution and a pass, none of which touch the pool.
+   *
+   * `null` FOR EVERY BAN KIND, and that is a secrecy control rather than an omission.
+   * This field means "the species returning to the POOL", and during the ban stage no pool
+   * exists — D-23 defers the draw until after the reveal. Putting a banned id here would
+   * give a fall-through announcement a name to speak, which is exactly the leak
+   * `undoAnnouncement`'s exhaustive switch closes. Two layers, deliberately: this one has
+   * no name to hand over even if that one is later weakened.
    */
   monId: string | null;
   /**
@@ -349,6 +396,66 @@ export function undoRemoval(doc: TournamentDoc): UndoRemoval | null {
     };
   }
 
+  /*
+    THE THREE BAN ARMS — D-03, and every one of them carries `monId: null`.
+
+    Read `UndoRemoval.monId`'s doc block before changing any of these. The field means "the
+    species returning to the POOL"; the ban stage runs before a pool exists, so there is no
+    honest value to put here. The dishonest one — the id that was just banned — is precisely
+    what an announcement would find and speak, in a room, about a ban the host removed
+    privately. `undoAnnouncement`'s exhaustive switch is the primary guard; this is the
+    second, and it holds even if that one is later weakened.
+
+    `round: 1` on the `'pass'` precedent above. A ban belongs to no pick round, and
+    `selectCurrentRound` answers 1 throughout the stage, so the comparison a caller might
+    make gets the honest "no round was crossed" — which is why the confirm the blind kinds
+    DO need is set explicitly in `undoCrossesRoundBoundary` rather than derived from this.
+  */
+  if (isBansPlacedAction(primary)) {
+    return {
+      kind: 'banPlaced',
+      round: 1,
+      playerId: primary.playerId,
+      monId: null,
+      outMonId: null,
+      cardValue: null,
+      swapRound: null,
+      removedCount: indices.length,
+    };
+  }
+
+  if (isBansSubmittedAction(primary)) {
+    // One player's WHOLE allotment, because D-05 makes the lock-in one act. Undoing half a
+    // submission would remove one invisible ban out of several invisible bans, and no
+    // sentence could describe what came back without naming it.
+    return {
+      kind: 'banSubmission',
+      round: 1,
+      playerId: primary.playerId,
+      monId: null,
+      outMonId: null,
+      cardValue: null,
+      swapRound: null,
+      removedCount: indices.length,
+    };
+  }
+
+  if (isBansRevealedAction(primary)) {
+    // The reveal is a HOST act and `bans/revealed` carries no `playerId` — so this one is
+    // empty, on the resolution arm's precedent below. The copy for this kind names no
+    // player, which is the honest reading: nobody's bans are removed by un-revealing them.
+    return {
+      kind: 'banReveal',
+      round: 1,
+      playerId: '',
+      monId: null,
+      outMonId: null,
+      cardValue: null,
+      swapRound: null,
+      removedCount: indices.length,
+    };
+  }
+
   // A resolution, and the card it dragged with it. The card is what the copy names — "an
   // order was removed" tells the host nothing they can act on, and the value going back
   // into somebody's hand is the part they have to know about.
@@ -412,6 +519,26 @@ export function undoLast(doc: TournamentDoc): TournamentDoc {
  * a pass are not on this list.
  */
 const ROUND_COMPARABLE_KINDS: readonly UndoRemoval['kind'][] = ['pick', 'card'];
+
+/**
+ * The kinds that ALWAYS confirm, whatever any round says — 04-UI-SPEC §8.
+ *
+ * Stated as a list rather than left to the comparison below, because the comparison would
+ * answer `false` for both of them. A ban reports round 1 and the draft stands on round 1
+ * throughout the stage, so `removed.round < currentRound` is false exactly where the
+ * confirm matters — the same trap the resolution arm avoids by being named explicitly.
+ *
+ * `'banSubmission'` confirms because it removes a thing the host CANNOT SEE: D-05 forbids
+ * re-displaying a submission, so this is the only undo in the project whose effect is
+ * invisible, and the dialog is the one place the host can be told what it will cost them.
+ * `'banReveal'` confirms because un-revealing cannot un-read — the room has already read
+ * the bans, and the copy says so rather than implying a secrecy restoration.
+ *
+ * `'banPlaced'` is deliberately NOT here. A snake ban is on the board and reversing it is
+ * visible, which puts it in the same category as a pick, where D-08's no-confirm posture
+ * holds.
+ */
+const ALWAYS_CONFIRM_KINDS: readonly UndoRemoval['kind'][] = ['banSubmission', 'banReveal'];
 
 /** What an undo would reach back into. Every field is a fact, never a sentence. */
 export interface RoundBoundaryCrossing {
@@ -513,8 +640,15 @@ export function undoCrossesRoundBoundary(
     Written as an allow-list of the kinds whose `round` is comparable at all, so the three
     kinds that had this behaviour before 03-11 keep it byte for byte.
   */
+  /*
+    THE TWO BLIND BAN KINDS always confirm too, and `ALWAYS_CONFIRM_KINDS` above carries
+    the argument. Set explicitly, never by the comparison: every ban reports round 1 and
+    the draft stands on round 1 for the whole stage, so a comparison-driven implementation
+    would quietly answer `false` and skip the dialog D-03's correction path depends on.
+  */
   const crosses =
     removed.kind === 'order' ||
+    ALWAYS_CONFIRM_KINDS.includes(removed.kind) ||
     (ROUND_COMPARABLE_KINDS.includes(removed.kind) && removed.round < currentRound);
 
   return {
