@@ -254,7 +254,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04-05-PLAN.md — `createBanStage`, the two config controls, and the fourth Screen (BAN-03, BAN-07, RULE-08)
+- [x] 04-05-PLAN.md — `createBanStage`, the two config controls, and the fourth Screen (BAN-03, BAN-07, RULE-08)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -308,7 +308,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
-| 4. Blind and Snake Bans | 4/11 | In Progress|  |
+| 4. Blind and Snake Bans | 5/11 | In Progress|  |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
 ## Requirement Coverage
