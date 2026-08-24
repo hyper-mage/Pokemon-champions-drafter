@@ -67,7 +67,20 @@
  * It wraps onto its own line at narrow widths because .pool__header is a wrapping flex
  * row, so no width is declared here and nothing needs a media query.
  */
-.pool__restriction {
+/*
+ * --- The struck-through rule line, on the ban stage (BAN-03, 04-UI-SPEC section 6) ---
+ *
+ * Grouped with the round's restriction above rather than given a treatment of its own,
+ * because they are the same KIND of sentence: the rule in force on this grid at this moment,
+ * as opposed to the count line's meta about it. Two selectors sharing one declaration block
+ * is the enforcement — a later change to one is a change to both, so they cannot drift into
+ * two sizes for one job on two screens the same room reads minutes apart.
+ *
+ * Only one of them can ever render at a time in practice: a Mega round belongs to the draft
+ * and the ban rule belongs to the stage before it.
+ */
+.pool__restriction,
+.pool__ban-rule {
   margin: 0;
   font: var(--text-body);
   color: var(--color-text);
