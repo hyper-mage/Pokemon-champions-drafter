@@ -23,11 +23,14 @@
  */
 
 import { render } from 'preact';
+import { act } from 'preact/test-utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import committedSnapshot from '../../public/data/roster.mb.json';
+import type { SpriteMeta } from '../../src/adapters/roster-source';
 import { disposeTabLock } from '../../src/adapters/tab-lock';
 import type { RoundSpec } from '../../src/core/actions';
+import { bansPlaced } from '../../src/core/actions';
 import type { TournamentConfig } from '../../src/core/model';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import { selectBanTurn, selectBanStageState } from '../../src/core/selectors';
@@ -35,10 +38,12 @@ import {
   abandonTournament,
   createBanStage,
   createTournament,
+  dispatch,
   getDoc,
   getState,
 } from '../../src/store';
 import { announce } from '../../src/ui/components/LiveRegion';
+import { BanStageScreen } from '../../src/ui/screens/BanStageScreen';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -295,6 +300,171 @@ describe('createTournament, unchanged by the sibling', () => {
     expect(state).not.toBeNull();
     if (state === null) return;
     expect(selectBanStageState(state)).toBe('notRunning');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 3 — the screen
+// ---------------------------------------------------------------------------
+
+const SPRITE_META: SpriteMeta = {
+  nativeWidth: 96,
+  nativeHeight: 96,
+  byRosterId: {},
+};
+
+/**
+ * The `TopBar` bag, stubbed.
+ *
+ * `BanStageScreen` renders `TopBar` but owns none of its handlers — export, import, undo and
+ * abandon are all app-level concerns that predate this screen. They arrive as one prop so the
+ * screen's own contract stays the four fields the plan declares.
+ */
+const TOP_BAR = {
+  onDownload: () => undefined,
+  onImportFile: () => undefined,
+  importError: null,
+  onRequestUndo: () => undefined,
+  onRequestAbandon: () => undefined,
+  bannedNames: [] as readonly string[],
+};
+
+/** Start a snake stage and return the placement handler's recorded calls. */
+function mountStage(): { calls: { playerId: string; monId: string; pass: number }[] } {
+  const calls: { playerId: string; monId: string; pass: number }[] = [];
+
+  act(() => {
+    render(
+      <BanStageScreen
+        state={getState() as NonNullable<ReturnType<typeof getState>>}
+        entries={ENTRIES}
+        spriteMeta={SPRITE_META}
+        topBar={TOP_BAR}
+        storedPane="split"
+        onPaneChange={() => undefined}
+        onPlaceBan={(playerId, monId, pass) => {
+          calls.push({ playerId, monId, pass });
+        }}
+      />,
+      host,
+    );
+  });
+
+  return { calls };
+}
+
+function startSnakeStage(bansPerPlayer = 2): TournamentConfig {
+  const config = configFor('snake', bansPerPlayer);
+  createBanStage({ config, order: order(config), orderSeed: 11, schedule: schedule() });
+  return config;
+}
+
+function cardNamed(name: string): HTMLButtonElement | undefined {
+  return [...host.querySelectorAll<HTMLButtonElement>('.mon-card')].find(
+    (card) => card.querySelector('.mon-card__name')?.textContent === name,
+  );
+}
+
+describe('BanStageScreen at the snake stage', () => {
+  it('names whose turn it is and which pass, in full', () => {
+    startSnakeStage(2);
+    mountStage();
+
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Ada bans');
+  });
+
+  it('names who is left in the pass', () => {
+    startSnakeStage(2);
+    mountStage();
+
+    expect(host.querySelector('.turn-banner__phase')?.textContent).toBe(
+      'Still to ban this pass: Bo · Cy · Sam',
+    );
+  });
+
+  /**
+   * The stage renders the FULL roster rather than a pool, because the pool does not exist
+   * yet — D-11 and D-23 draw it after the bans. That is what the ban-mode `PoolGrid` already
+   * does, so this asserts the count rather than the component's identity.
+   */
+  it('renders the whole roster, because there is no pool to render', () => {
+    startSnakeStage(1);
+    mountStage();
+
+    expect(host.querySelectorAll('.mon-card')).toHaveLength(ENTRIES.length);
+  });
+
+  it('hands a clicked cell to the caller with the playerId and pass from selectBanTurn', () => {
+    startSnakeStage(2);
+    const { calls } = mountStage();
+
+    const first = ENTRIES[0] as RosterEntry;
+    act(() => {
+      cardNamed(first.name)?.click();
+    });
+
+    expect(calls).toEqual([{ playerId: 'p1', monId: first.id, pass: 1 }]);
+  });
+
+  it('advances the turn once the ban is recorded', () => {
+    startSnakeStage(2);
+    const first = ENTRIES[0] as RosterEntry;
+
+    dispatch(bansPlaced('p1', first.id, 1));
+
+    const state = getState();
+    expect(state).not.toBeNull();
+    if (state === null) return;
+    expect(selectBanTurn(state)?.playerId).toBe('p2');
+
+    mountStage();
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Bo bans');
+  });
+
+  it('drops the phase line for the last player of a pass', () => {
+    startSnakeStage(2);
+    const ids = ENTRIES.slice(0, 3).map((entry) => entry.id);
+    ids.forEach((id, index) => {
+      dispatch(bansPlaced(`p${index + 1}`, id, 1));
+    });
+
+    mountStage();
+
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Sam bans');
+    expect(host.querySelector('.turn-banner__phase')).toBeNull();
+  });
+
+  /**
+   * 04-09 lands the locked state. Until it does the arm renders nothing, and that is asserted
+   * rather than assumed: a `null` arm that outlives its plan is invisible otherwise.
+   */
+  it('renders nothing at a blind stage, which 04-09 owns', () => {
+    const config = configFor('blind', 2);
+    createBanStage({ config, order: order(config), orderSeed: 11, schedule: schedule() });
+
+    const state = getState();
+    expect(state).not.toBeNull();
+    if (state === null) return;
+    expect(selectBanStageState(state)).toBe('blindLocked');
+
+    mountStage();
+    expect(host.querySelector('.turn-banner')).toBeNull();
+    expect(host.querySelectorAll('.mon-card')).toHaveLength(0);
+  });
+
+  it('renders nothing once the stage is over', () => {
+    startSnakeStage(1);
+    ENTRIES.slice(0, 4).forEach((entry, index) => {
+      dispatch(bansPlaced(`p${index + 1}`, entry.id, 1));
+    });
+
+    const state = getState();
+    expect(state).not.toBeNull();
+    if (state === null) return;
+    expect(selectBanStageState(state)).toBe('reveal');
+
+    mountStage();
+    expect(host.querySelector('.turn-banner')).toBeNull();
   });
 });
 
