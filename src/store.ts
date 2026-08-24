@@ -498,10 +498,13 @@ export function undo(resolveSpeciesName?: (monId: string) => string): boolean {
   const playerName = selectPlayerName(stateSignal.peek(), removed.playerId);
 
   const next = undoLast(previous);
+  const nextState = fold(next);
   docSignal.value = next;
-  stateSignal.value = fold(next);
+  stateSignal.value = nextState;
 
-  announce(undoAnnouncement(removed, playerName, resolveSpeciesName));
+  // The progress figures come from the state AFTER the removal, because that is the state
+  // the locked screen now shows and the announcement has to agree with it.
+  announce(undoAnnouncement(removed, playerName, banProgress(nextState), resolveSpeciesName));
 
   return true;
 }
@@ -513,19 +516,75 @@ function selectPlayerName(state: DraftState | null, playerId: string): string {
 }
 
 /**
- * What the live region says an undo just did — 03-UI-SPEC §Live-region announcements.
+ * How far the blind stage has got — two counts and NEVER a species.
  *
- * Verbatim from the copywriting table, one string per kind. The board reverting is the
+ * `04-UI-SPEC` §The Live-Region Contract writes the submission-undo string as
+ * `{playerName}'s bans were removed. {n} of {m} entered.`, so the announcement needs the
+ * count of submissions still standing and the number of players. Both are read off the
+ * folded state rather than carried on {@link UndoRemoval}: core describes what an undo
+ * TAKES, and a progress figure is a fact about what is left.
+ *
+ * The counted form is the alternative the contract names for the case where a broadcast is
+ * genuinely wanted — it tells the room something true and useful and names nobody's bans.
+ */
+interface BanProgress {
+  /** Submissions still recorded, after the removal. */
+  entered: number;
+  /** Players the tournament has. Never a count of anything the room may not see. */
+  players: number;
+}
+
+function banProgress(state: DraftState | null): BanProgress {
+  if (state === null) return { entered: 0, players: 0 };
+  return { entered: state.banSubmissions.length, players: state.config.players.length };
+}
+
+/**
+ * What the live region says an undo just did — 03-UI-SPEC §Live-region announcements,
+ * `04-UI-SPEC` §The Live-Region Contract.
+ *
+ * Verbatim from the copywriting tables, one string per kind. The board reverting is the
  * primary feedback; this is what makes the same event reach somebody not watching the
  * screen, which on a shared draft screen is most of the room.
  *
  * A card undo needs no species name and must not invent one — `resolveSpeciesName` is
  * consulted for a pick and for a swap, which are the two kinds that move a species, and for
- * nothing else. A pass moves nothing at all and names no species.
+ * nothing else. A pass moves nothing at all and names no species, and neither does any of
+ * the three ban kinds.
+ *
+ * ## Why this is a `switch` with a `never` default and not the chain of `if`s it was
+ *
+ * Until 04-07 this function ended in an UNGUARDED `return` that interpolated a species
+ * name, reached by anything that was not `card | order | swap | pass`. A new
+ * `UndoRemoval.kind` with no arm above it landed there — so the live region announced the
+ * species a host had just privately removed, in a room full of people, and the omission
+ * compiled, type-checked and passed every existing test. 04-RESEARCH calls closing it the
+ * single highest-value change in the phase; it costs one refactor of a function that
+ * already branched five ways.
+ *
+ * `'pick'` is an explicit case now for exactly that reason. There is no fall-through left
+ * to land on.
+ *
+ * The `default` arm's `never`-typed assignment is STRICTER than the no-default idiom used
+ * by `matchesMega` (`src/core/search.ts`) and `poolSizeForPreset` (`src/core/feasibility.ts`),
+ * which lean on the declared return type and therefore catch an omitted arm only because
+ * every arm returns. The omission guarded against here is not a missing `return`, it is a
+ * NEW UNION MEMBER — and the `never` assignment is what turns that into a type error at
+ * the point of the omission rather than a plausible sentence at the call site.
+ *
+ * ## The Ctrl+Z listener stays in `TopBar`. Do not hoist it here or to `app.tsx`
+ *
+ * It is registered in a `useEffect` inside `TopBar` with a matching cleanup, and
+ * `04-UI-SPEC` §3 gives the blind entry surface no top bar — so unmounting `TopBar`
+ * removes the listener, and the shielded screen has no keyboard route to undo at all.
+ * Hoisting it to a component that is always mounted would put a species-naming undo one
+ * keystroke away from the shield. This is the sort of tidying a later contributor does
+ * without malice, which is why it is written down beside the thing it would break.
  */
 function undoAnnouncement(
   removed: UndoRemoval,
   playerName: string,
+  progress: BanProgress,
   resolveSpeciesName?: (monId: string) => string,
 ): string {
   const speciesName = (monId: string | null): string => {
@@ -533,25 +592,61 @@ function undoAnnouncement(
     return resolveSpeciesName?.(id) ?? id;
   };
 
-  if (removed.kind === 'card') {
-    return `Undid ${playerName}'s card — ${removed.cardValue} is back in their hand.`;
-  }
+  switch (removed.kind) {
+    case 'pick':
+      return `Undid Round ${removed.round} — ${speciesName(removed.monId)} is back in the pool.`;
 
-  if (removed.kind === 'order') {
-    return `Undid round ${removed.round}'s pick order — ${playerName}'s ${removed.cardValue} is back in their hand.`;
-  }
+    case 'card':
+      return `Undid ${playerName}'s card — ${removed.cardValue} is back in their hand.`;
 
-  if (removed.kind === 'swap') {
-    // Both directions, because a swap moved two species in opposite ones. `monId` is what
-    // goes back to the pool and `outMonId` is what goes back to the slot — `UndoRemoval`
-    // states that pairing, and reading it backwards yields a sentence that is grammatical
-    // and exactly wrong.
-    return `Undid the swap — ${speciesName(removed.monId)} is back in the pool and ${speciesName(removed.outMonId)} returns to ${playerName}'s round ${removed.round} slot.`;
-  }
+    case 'order':
+      return `Undid round ${removed.round}'s pick order — ${playerName}'s ${removed.cardValue} is back in their hand.`;
 
-  if (removed.kind === 'pass') {
-    return `Undid ${playerName}'s pass in swap round ${removed.swapRound}.`;
-  }
+    case 'swap':
+      // Both directions, because a swap moved two species in opposite ones. `monId` is what
+      // goes back to the pool and `outMonId` is what goes back to the slot — `UndoRemoval`
+      // states that pairing, and reading it backwards yields a sentence that is grammatical
+      // and exactly wrong.
+      return `Undid the swap — ${speciesName(removed.monId)} is back in the pool and ${speciesName(removed.outMonId)} returns to ${playerName}'s round ${removed.round} slot.`;
 
-  return `Undid Round ${removed.round} — ${speciesName(removed.monId)} is back in the pool.`;
+    case 'pass':
+      return `Undid ${playerName}'s pass in swap round ${removed.swapRound}.`;
+
+    /*
+      THE THREE BAN ARMS NAME NO SPECIES, and that is a SECRECY CONTROL rather than a copy
+      choice. The live region is audible in the room and it persists in the accessibility
+      tree after the render that wrote it is gone, so it is the one channel the full-screen
+      visual shield does not cover — and D-05 forbids re-displaying a submission once it has
+      been removed. `04-UI-SPEC` §The Live-Region Contract permits five strings during the
+      blind stage and forbids "any string containing a species name, without exception".
+
+      None of them calls `speciesName`, and none of them could usefully: `UndoRemoval.monId`
+      is null for every ban kind, deliberately, so there is no id here to resolve.
+    */
+    case 'banPlaced':
+      // Snake bans are public the instant they land, so this one COULD name a species
+      // without leaking. It does not, for the same reason the other two do not — one rule
+      // across all three is one rule to keep true. What the room needs is the clock, and
+      // undoing the last placement always returns it to the player who made it.
+      return `Undid ${playerName}'s ban. It is ${playerName}'s turn again.`;
+
+    case 'banSubmission':
+      // Verbatim from the contract's permitted list. The counts are the honest broadcast
+      // the contract names as the alternative to a species: they tell the room how far the
+      // stage has got and nothing about what anybody banned.
+      return `${playerName}'s bans were removed. ${progress.entered} of ${progress.players} entered.`;
+
+    case 'banReveal':
+      // Honest about what it cannot do. Un-revealing does not un-read, and D-23 means no
+      // pool has been drawn to un-draw — so what is true afterwards is exactly this: the
+      // bans are still recorded, and they are off the screen again.
+      return 'Undid the reveal. The bans are recorded and not shown.';
+
+    default: {
+      // A new kind with no arm is a COMPILE ERROR rather than a species name spoken into a
+      // room. This assignment is the whole reason the chain of `if`s became a switch.
+      const exhaustive: never = removed.kind;
+      return exhaustive;
+    }
+  }
 }
