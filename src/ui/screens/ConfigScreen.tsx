@@ -10,6 +10,7 @@ import {
   poolSizeForPreset,
   type PoolPreset,
 } from '../../core/feasibility';
+import { MAX_BANS_PER_PLAYER } from '../../core/import-guard';
 import { bannedMegaFormes, choiceFor, isMegaEligible, megaFormeRows } from '../../core/mega';
 import type { RoundSpec } from '../../core/actions';
 import type {
@@ -17,12 +18,13 @@ import type {
   CompositionRule,
   DualMegaChoice,
   DualMegaForme,
+  DuplicateBanPolicy,
   TournamentConfig,
   TournamentDepth,
 } from '../../core/model';
 import type { MegaForme, RosterEntry, RosterSnapshot } from '../../core/roster/types';
 import { selectStartingOrder } from '../../core/selectors';
-import { createTournament } from '../../store';
+import { createBanStage, createTournament } from '../../store';
 import {
   CLEAR_BANLIST_CONFIRM,
   CLEAR_MEGA_FORME_BANLIST_CONFIRM,
@@ -269,13 +271,84 @@ const SWAP_ROUNDS_HELPER =
  * ## Why the values exist in the model today
  *
  * `BanMode` already carries all three (02-02), so Phase 4 enables two options rather than
- * redesigning the control and migrating every saved tournament. Nothing in Phase 2 reads the
- * field beyond storing it — the host banlist is the only mode this phase runs.
+ * redesigning the control and migrating every saved tournament. This is D-12's promised
+ * payoff arriving: `snake` loses its suffix and its `disabled` flag in a one-line change,
+ * and nothing else about the control moves.
+ *
+ * ## `blind` stays disabled in THIS plan, and that is sequencing rather than oversight
+ *
+ * 04-UI-SPEC §1 enables both new modes; 04-05 enables only `snake`, because a mode is only
+ * selectable once the surfaces it lands on exist. Blind's resting `locked` state is 04-09 and
+ * its shield is 04-10, so enabling it here would route a host to a screen with nothing on it
+ * and no way back — T-04-21. 04-09 flips this line in the same one-line move `snake` just
+ * took.
  */
 const BAN_MODE_OPTIONS: readonly SegmentedOption<BanMode>[] = [
   { value: 'hostBanlist', label: 'Host banlist' },
   { value: 'blind', label: 'Blind — Not yet available', disabled: true },
-  { value: 'snake', label: 'Snake — Not yet available', disabled: true },
+  { value: 'snake', label: 'Snake' },
+];
+
+const BANS_PER_PLAYER_LABEL = 'Bans per player';
+const BANS_PER_PLAYER_HELPER =
+  'Each player bans this many Pokémon before the pool is drawn. Every ban applies to everyone.';
+
+/**
+ * The default the field opens on, and it is deliberately NOT `migrate.ts`'s `0`.
+ *
+ * Every other numeric field on this screen defaults to 0, because a feature the host has not
+ * asked for should stay invisible. This field only EXISTS once the host has picked a mode
+ * whose entire purpose is player bans, so 0 is never the intent — and a default of 0 would
+ * greet every blind or snake host with an immediate `bansPerPlayerNotPositive` blocker on a
+ * field they have not touched.
+ *
+ * The migration default is `0` and it is a different number ON PURPOSE: a schema-3 document
+ * was necessarily `hostBanlist` (blind and snake were both disabled), so `0` is its true
+ * answer rather than a placeholder. **Do not unify the two constants.** They answer different
+ * questions and a single constant would make one of the two answers wrong.
+ *
+ * A constant, not a derivation from player count or roster size, so it introduces no second
+ * authority on what is sensible — the precise thing D-10 rejected.
+ */
+const DEFAULT_BANS_PER_PLAYER = '1';
+
+const DUPLICATE_BANS_LEGEND = 'Duplicate bans';
+const DUPLICATE_BANS_HELPER =
+  'Blind mode only. If two players ban the same Pokémon it is banned once, the second ban is spent, and the reveal says who collided.';
+
+/**
+ * D-20's inert reason, and it EXCLUDES the `— ` separator.
+ *
+ * The separator is markup — an `aria-hidden` span beside this string, never `::before`
+ * content — so the copy contract, this constant and the test assertion stay one value. WR-03,
+ * and the rule is stated in full at `SplitPanes`' `POOL_EXPAND_REASON`.
+ */
+const DUPLICATE_BANS_SNAKE_REASON =
+  'Snake shows previous bans, so two players cannot ban the same Pokémon.';
+
+/**
+ * BAN-07's config-time surface, and BAN-07 is only PARTIALLY satisfied — D-19.
+ *
+ * **Only `bothApply` is built.** The re-ban branch is descoped by owner-approved decision, so
+ * the option ships DISABLED rather than absent. That is not a placeholder: it means a later
+ * milestone enables an option, where an absent control would have meant adding a control AND
+ * bumping the schema to carry what it writes. It is the same move Phase 2's D-12 made for
+ * blind and snake themselves, and the line above is that move paying out.
+ *
+ * The suffix below carries a CAPITAL `N`, matching the shipped form at `BAN_MODE_OPTIONS`
+ * above. D-19's own text renders it lowercase while also requiring the established label form
+ * be reused exactly; the two cannot both be met literally, and two casings of one label form
+ * IS the second way of saying it that D-19 exists to prevent. 04-UI-SPEC §A conflict in the
+ * upstream instructions records the resolution. The string is written once, in `label` — a
+ * comment restating it would be the third copy and the first one free to drift.
+ *
+ * `SegmentedControl` applies both `disabled` and `aria-disabled` for a static reason and does
+ * not synthesize copy, so the visible suffix belongs here in `label` — which also puts the
+ * reason inside the option's own accessible name.
+ */
+const DUPLICATE_POLICY_OPTIONS: readonly SegmentedOption<DuplicateBanPolicy>[] = [
+  { value: 'bothApply', label: 'Both apply, one is spent' },
+  { value: 'reBan', label: 'Re-ban — Not yet available', disabled: true },
 ];
 
 /**
@@ -436,8 +509,48 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
    */
   const [bans, setBans] = useState<string[]>([]);
 
-  /** BAN-01. `hostBanlist` is the default and the only mode Phase 2 runs (D-12). */
+  /** BAN-01. `hostBanlist` is the default; 04-05 adds `snake` and 04-09 adds `blind` (D-12). */
   const [banMode, setBanMode] = useState<BanMode>('hostBanlist');
+
+  /**
+   * The RAW text of `Bans per player`, not a number — D-06, and the same rule as every other
+   * numeric field on this screen. `parseNumericField` turns it into `number | null` ONCE,
+   * below, and `null` is what reaches the gate. Reading it arithmetically here instead is the
+   * F-08 defect: `Number('')` is 0 and every relational comparison with `NaN` is false, so a
+   * gate asked the obvious way reports all-clear on a field the host has emptied.
+   */
+  const [bansPerPlayerRaw, setBansPerPlayerRaw] = useState(DEFAULT_BANS_PER_PLAYER);
+
+  /**
+   * BAN-07, partially — see `DUPLICATE_POLICY_OPTIONS`. `reBan` is unreachable through the
+   * control because its option ships disabled, so this only ever holds `bothApply` today. It
+   * is state rather than a constant so that enabling the option is the whole of the change.
+   */
+  const [duplicateBanPolicy, setDuplicateBanPolicy] =
+    useState<DuplicateBanPolicy>('bothApply');
+
+  /**
+   * Whether this mode has player bans at all — the one predicate three surfaces read.
+   *
+   * `hostBanlist` has none, so both new controls are WHOLLY void there and are not rendered
+   * (04-UI-SPEC §1). Absent rather than disabled is the shipped precedent for a wholly void
+   * affordance — `Clear the banlist` at zero bans, `Clear filters` with none active — and it
+   * is also what keeps `hostBanlist` byte-identical to the screen Phase 2 verified, which is
+   * D-01's zero-regression posture.
+   */
+  const hasPlayerBans = banMode !== 'hostBanlist';
+
+  /**
+   * Inert rather than unrendered at `snake`, and the distinction is D-20's.
+   *
+   * Snake shows previous bans, so a duplicate is impossible by construction and the policy has
+   * nothing to decide. It stays on screen because a host flipping between the two modes to
+   * compare them will look for it — which is exactly the case the inert-with-a-reason
+   * mechanism exists for (the Mega filter during a Mega round, the pane expand during card
+   * play). The ARIA is derived rather than stored, so it is SHED the moment the mode changes
+   * (WR-04); a `useState` mirroring it would be a second thing that can disagree.
+   */
+  const duplicatePolicyInert = banMode === 'snake';
 
   /**
    * The Mega-forme banlist — RULE-04, D-09. One flat list of FORME ids, two surfaces over it.
@@ -821,6 +934,20 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
   );
 
   /**
+   * The number the gate judges — parsed ONCE, here, exactly as `poolSize` above.
+   *
+   * `null` for empty, whitespace and anything non-finite, and `null` is what reaches
+   * `checkFeasibility`, which answers with `bansPerPlayerNotAnInteger`. Coercing it to 0 here
+   * would hide the emptied field from the one module that is supposed to notice it — and 0 is
+   * `hostBanlist`'s legitimate value, so the coercion would be indistinguishable from a host
+   * who meant it.
+   */
+  const bansPerPlayer = useMemo(
+    () => parseNumericField(bansPerPlayerRaw),
+    [bansPerPlayerRaw],
+  );
+
+  /**
    * Recomputed on every keystroke — no debounce and no `Check` button (D-16). It is a pure
    * pass over a few hundred ids, and a gate the host has to ask for is a gate they find out
    * about after typing everything else.
@@ -851,14 +978,14 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
         // `Swaps` group's own comment makes about not attaching a reason to the field.
         swapBudget,
         swapRounds,
-        // The host's actual mode, and a placeholder count. `blind` and `snake` are still
-        // rendered disabled here, so `banMode` is `'hostBanlist'` in every reachable state
-        // and the gate's three bans-per-player codes cannot fire — which is what keeps this
-        // screen byte-identical to what Phase 2 verified. 04-05 owns the `Bans per player`
-        // control; the moment it enables the other two modes, `bansPerPlayerNotPositive`
-        // blocks Start until a real value is wired here, which is the right failure.
+        // The host's actual mode and the host's actual number, both raw. The gate is the one
+        // authority on whether the pair is satisfiable, and it already branches: at
+        // `hostBanlist` it zeroes the player-ban term and none of the three bans-per-player
+        // codes can fire, so this screen stays byte-identical to what Phase 2 verified without
+        // a second mode check here. A `banMode === 'hostBanlist' ? 0 : bansPerPlayer` at this
+        // line would be that second check, free to disagree with the first.
         banMode,
-        bansPerPlayer: 0,
+        bansPerPlayer,
         entries,
       }),
     [
@@ -871,6 +998,7 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       swapBudget,
       swapRounds,
       banMode,
+      bansPerPlayer,
       entries,
     ],
   );
@@ -1080,7 +1208,13 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
    * stored name should agree rather than carry it into the board and every export.
    */
   const handleStart = useCallback(() => {
-    if (feasibility.blocked || draw === null || poolSize === null) return;
+    // The gate and the pool SIZE are asked about in both modes; the drawn POOL is not, and
+    // that is T-04-22. `draw === null` used to sit on this line, and blind and snake have no
+    // draw at start by construction (D-23 makes the reveal what decides the draw), so leaving
+    // it here would return early on every one of their starts — a dead `Start draft` on a
+    // shared screen, silently, with nothing to say why. The guard moved into the `hostBanlist`
+    // branch below, where the value it guards is actually used.
+    if (feasibility.blocked || poolSize === null) return;
 
     const config: TournamentConfig = {
       formatLabel: formatLabel.trim(),
@@ -1114,19 +1248,32 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       // compiler cannot see that, and 0 rather than an invented number.
       swapBudget: swapBudget ?? 0,
       swapRounds: swapRounds ?? 0,
-      // Version 4's two fields, written as literals because this screen has no control for
-      // either one yet — 04-05 owns the `Bans per player` field and the `Duplicate bans`
-      // segmented control, and this plan is the schema that has to exist before a control
-      // can write to it.
-      //
-      // `0` rather than the config screen's eventual default of `1`, and that is not the
-      // constant from `migrate.ts` being reused: it is the same reasoning arriving at the
-      // same number. `blind` and `snake` are still disabled above, so every tournament this
-      // build creates is `hostBanlist`, and `hostBanlist` has no per-player bans. When the
-      // control lands it will supply a host-chosen number and this literal goes away.
-      bansPerPlayer: 0,
-      duplicateBanPolicy: 'bothApply',
+      // Version 4's two fields, now host-chosen. `0` at `hostBanlist` because the field is
+      // VOID in that mode rather than merely unset — there are no player bans to count — in
+      // the same shape and for the same reason `swapBudget: swapBudget ?? 0` above writes a
+      // number the compiler cannot prove is there. The `?? 0` is likewise unreachable while
+      // `feasibility.blocked` is false: at `snake` a null field is itself a blocker.
+      bansPerPlayer: hasPlayerBans ? (bansPerPlayer ?? 0) : 0,
+      duplicateBanPolicy,
     };
+
+    // D-01's two seams, and the branch is the whole of the routing decision. `hostBanlist`
+    // keeps the atomic three-dispatch path Phase 2 verified, byte for byte, with the pool it
+    // already drew; blind and snake go to the sibling, which dispatches the schedule and the
+    // order and NO pool, because D-23 makes the reveal what decides what the draw may
+    // contain. Do not merge these into one parameterised call — `createBanStage`'s own doc
+    // block records what the duplication buys.
+    if (hasPlayerBans) {
+      const stage = createBanStage({ config, order, orderSeed, schedule });
+
+      // A refused creation leaves the host on this screen with their answers intact.
+      if (stage === null) return;
+
+      onStarted();
+      return;
+    }
+
+    if (draw === null) return;
 
     const created = createTournament({
       config,
@@ -1170,6 +1317,9 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     depth,
     swapBudget,
     swapRounds,
+    hasPlayerBans,
+    bansPerPlayer,
+    duplicateBanPolicy,
     poolSeed,
     order,
     orderSeed,
@@ -1370,6 +1520,78 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
           value={banMode}
           onChange={setBanMode}
         />
+
+        {/*
+          Both player-ban controls are ABSENT at `hostBanlist`, not disabled — see
+          `hasPlayerBans` for the two halves of the reason (a wholly void affordance is not
+          rendered, and `hostBanlist` stays byte-identical to Phase 2's screen).
+
+          There is deliberately NO blocking reason attached to the field here, exactly as the
+          `Swaps` group's comment argues: `bansPerPlayerNotAnInteger` and
+          `bansPerPlayerNotPositive` belong to `feasibility.ts`, the single authority on what
+          is satisfiable, and a second authority in this file would be free to disagree.
+        */}
+        {hasPlayerBans && (
+          <NumericField
+            label={BANS_PER_PLAYER_LABEL}
+            value={bansPerPlayerRaw}
+            onInput={setBansPerPlayerRaw}
+            helper={BANS_PER_PLAYER_HELPER}
+            min={1}
+            // The IMPORTED constant, never a literal 24 — T-04-24. `import-guard.ts` owns the
+            // bound `isValidTournament` re-opens a document against, so restating it here
+            // would let the build write a document it then refuses to load.
+            max={MAX_BANS_PER_PLAYER}
+          />
+        )}
+
+        {hasPlayerBans && (
+          <div
+            class="config-screen__duplicate-bans"
+            // Derived, so it is SHED the instant the mode leaves `snake` — WR-04, and this
+            // phase is the fifth consumer of that rule. `undefined` rather than `'false'`:
+            // `aria-disabled="false"` is not the same thing as the attribute being absent, and
+            // plenty of assistive technology reports the former as disabled anyway.
+            aria-disabled={duplicatePolicyInert ? 'true' : undefined}
+          >
+            <SegmentedControl
+              legend={DUPLICATE_BANS_LEGEND}
+              // Its own group name. `SegmentedControl`'s `name` doc block states that two
+              // controls sharing one name merge into a single radio group, and this mounts on
+              // the same screen as `ban-mode`, the pool preset and one control per dual-Mega
+              // row — so a shared name would look like a rendering glitch rather than a
+              // naming bug.
+              name="duplicate-bans"
+              options={DUPLICATE_POLICY_OPTIONS}
+              value={duplicateBanPolicy}
+              onChange={(value) => {
+                // The early return is what keeps the ARIA honest. Without it the attribute
+                // would say inert while a click still changed the policy — the same guard
+                // `FilterBar`'s Mega toggle carries, and for the same reason.
+                if (duplicatePolicyInert) return;
+                setDuplicateBanPolicy(value);
+              }}
+            />
+
+            <p class="config-screen__duplicate-bans-helper">{DUPLICATE_BANS_HELPER}</p>
+
+            {/*
+              Reason after the control, in DOM order as in visual order, and the separator is
+              MARKUP rather than `::before` content — a dash generated by a stylesheet is half
+              a visible line that no test reads. The constant therefore EXCLUDES the separator,
+              so the copy contract, the source constant and the assertion are one value (WR-03).
+
+              An expression container holding a string literal, not bare JSX text, because JSX
+              collapses trailing whitespace and the space is half of the two characters.
+            */}
+            {duplicatePolicyInert && (
+              <span class="config-screen__inert-reason">
+                <span aria-hidden="true">{'— '}</span>
+                {DUPLICATE_BANS_SNAKE_REASON}
+              </span>
+            )}
+          </div>
+        )}
 
         {/*
           `candidates` is the FULL entry list, not the entries minus the banlist. Filtering
