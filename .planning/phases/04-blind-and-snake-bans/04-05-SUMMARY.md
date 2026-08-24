@@ -180,6 +180,19 @@ None. The plan's threat register was followed: T-04-20 is asserted by a containm
 
 Two one-line moves are queued and deliberate: 04-09 flips `blind` to enabled in `BAN_MODE_OPTIONS`, and 04-08 fills `SplitPanes`' `board` prop.
 
+## Self-Check: PASSED
+
+Created files present on disk: `src/ui/screens/BanStageScreen.tsx`,
+`src/ui/screens/BanStageScreen.css`, `tests/ui/config-bans.test.tsx`,
+`.planning/phases/04-blind-and-snake-bans/04-05-SUMMARY.md`.
+
+All seven commits present in history: `774cf87`, `74b747d` (Task 1, earlier agent, reachable
+through the merge at `e0ed5d6`), `cc462f3`, `eb67ac0` (Task 2), `34199cf`, `be68933` (Task 3),
+`c56d47d` (this summary).
+
+Gates on the final tree: `check:pure` 0 violations in 18 files, `check:nohtml` 0 violations in
+68 files, `tsc --noEmit` clean, `vite build` clean, `vitest run` 1775 passing in 55 files.
+
 ---
 *Phase: 04-blind-and-snake-bans*
 *Completed: 2026-08-24*
