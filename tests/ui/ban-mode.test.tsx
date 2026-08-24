@@ -5,9 +5,15 @@
  *
  * Three things, and each has a failure nobody would see in a screenshot.
  *
- * The mode control: two of its three options must refuse the click AND say why inside their
+ * The mode control: an option that is not built must refuse the click AND say why inside its
  * own accessible name. An option that merely looked greyed would be selectable, and a host
- * would start a draft in a mode this phase does not run.
+ * would start a draft in a mode the build does not run.
+ *
+ * **Narrowed by plan 04-05.** This file was written when `blind` AND `snake` were both
+ * refused. `snake` is now built and enabled, so the refusal case is `blind` alone until 04-09
+ * lands the locked state and the shield behind it. `tests/ui/config-bans.test.tsx` owns the
+ * assertion that `snake` is enabled and unsuffixed; the two files must not both grow an
+ * opinion about the same option.
  *
  * The confirm: its confirming button must come FIRST in DOM order, so the safe one is the
  * last thing focus reaches and the last thing read. That is asserted by POSITION, never by
@@ -265,19 +271,31 @@ describe('the ban mode control', () => {
     expect(inputs[0]?.checked).toBe(true);
   });
 
-  it('refuses the two that are not built, and says so inside their own names', () => {
+  it('refuses the one that is not built, and says so inside its own name', () => {
     mountScreen();
 
-    const [, blind, snake] = banModeInputs();
+    const [, blind] = banModeInputs();
 
-    for (const input of [blind, snake]) {
-      expect(input?.disabled).toBe(true);
-      expect(input?.getAttribute('aria-disabled')).toBe('true');
-      expect(labelFor(input as HTMLInputElement).endsWith('— Not yet available')).toBe(true);
-    }
-
+    expect(blind?.disabled).toBe(true);
+    expect(blind?.getAttribute('aria-disabled')).toBe('true');
+    expect(labelFor(blind as HTMLInputElement).endsWith('— Not yet available')).toBe(true);
     expect(labelFor(blind as HTMLInputElement)).toBe('Blind — Not yet available');
-    expect(labelFor(snake as HTMLInputElement)).toBe('Snake — Not yet available');
+  });
+
+  /**
+   * The counterpart, kept HERE rather than only in `config-bans.test.tsx`, because the
+   * regression this file guards is "a mode the build does not run is selectable" and its
+   * mirror image is "a mode the build DOES run is refused". 04-05 enabled `snake`; if a later
+   * change re-disables it, the host reads `— Not yet available` on a stage that exists.
+   */
+  it('offers snake without a suffix, now that its stage is built', () => {
+    mountScreen();
+
+    const [, , snake] = banModeInputs();
+
+    expect(snake?.disabled).toBe(false);
+    expect(snake?.hasAttribute('aria-disabled')).toBe(false);
+    expect(labelFor(snake as HTMLInputElement)).toBe('Snake');
   });
 
   it('leaves the selection alone when a refused option is clicked', () => {

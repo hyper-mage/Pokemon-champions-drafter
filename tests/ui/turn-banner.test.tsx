@@ -76,6 +76,9 @@ function mount(props: Partial<TurnBannerProps>): void {
         swapRounds={props.swapRounds ?? 0}
         swapOrderSource={props.swapOrderSource ?? 'lastRound'}
         lastMove={props.lastMove === undefined ? null : props.lastMove}
+        banPass={props.banPass === undefined ? null : props.banPass}
+        banPasses={props.banPasses ?? 0}
+        stillToBan={props.stillToBan ?? []}
       />,
       host,
     );
@@ -217,6 +220,9 @@ describe('what the sticky head announces', () => {
             swapRounds={props.swapRounds ?? 0}
             swapOrderSource={props.swapOrderSource ?? 'lastRound'}
             lastMove={props.lastMove === undefined ? null : props.lastMove}
+            banPass={props.banPass === undefined ? null : props.banPass}
+            banPasses={props.banPasses ?? 0}
+            stillToBan={props.stillToBan ?? []}
           />
         </>,
         host,
@@ -268,5 +274,84 @@ describe('what the sticky head announces', () => {
     expect(spoken()).toBe(
       'Cy plays 1. Round 1 pick order: 1 Cy, 2 Ada, 3 Bo. Round 1 of 6 — Cy picks',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The ban stage — BAN-03, D-12, 04-UI-SPEC §6
+// ---------------------------------------------------------------------------
+
+describe('the turn banner at the snake ban stage', () => {
+  /**
+   * `Pass`, never `Round`. `Round` is already taken by the draft's own rounds and by the
+   * board's `R{n}` header, and two meanings for one word on a shared screen is how a room
+   * ends up arguing about which round it is (04-UI-SPEC §6).
+   */
+  it('names the pass, the pass count and the player, in full', () => {
+    mount({ banPass: 1, banPasses: 2, playerName: 'Sam' });
+
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Sam bans');
+  });
+
+  it('counts a later pass', () => {
+    mount({ banPass: 2, banPasses: 3, playerName: 'Ada' });
+
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 2 of 3 — Ada bans');
+  });
+
+  /**
+   * The ban line wins over the draft's own line even though `round` and `phase` are set.
+   * This is Pitfall 4 made a test: `selectPhase` answers `'cards'` during a ban stage — an
+   * empty pool with a resolved order — so a banner that consulted `phase` first would put
+   * `Round 1 of 6 — Sam plays a card` over the ban roster.
+   */
+  it('wins over the round line, which selectPhase would otherwise produce', () => {
+    mount({ banPass: 1, banPasses: 2, playerName: 'Sam', round: 1, rounds: 6, phase: 'cards' });
+
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Sam bans');
+    expect(text()).not.toContain('plays a card');
+    expect(text()).not.toContain('Round 1 of 6');
+  });
+
+  it('names who is left in the pass, separated by a middle dot', () => {
+    mount({ banPass: 1, banPasses: 2, playerName: 'Sam', stillToBan: ['Ada', 'Kim'] });
+
+    expect(phaseLine()).toBe('Still to ban this pass: Ada · Kim');
+  });
+
+  /**
+   * Not rendered rather than rendered empty. `Still to ban this pass:` trailing into nothing
+   * reads as a broken template, and the last player of a pass is the case a room sees on
+   * every column.
+   */
+  it('does not render the phase line when nobody is left in the pass', () => {
+    mount({ banPass: 1, banPasses: 2, playerName: 'Sam', stillToBan: [] });
+
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Sam bans');
+    expect(phaseLine()).toBeNull();
+  });
+
+  /**
+   * The pick-order strip is a picking-phase line and must not follow the ban stage onto the
+   * screen — the banner would then carry two phase lines saying unrelated things.
+   */
+  it('renders no pick-order strip at the ban stage', () => {
+    mount({
+      banPass: 1,
+      banPasses: 2,
+      playerName: 'Sam',
+      phase: 'picking',
+      pickOrder: ['Sam', 'Ada'],
+      stillToBan: ['Ada'],
+    });
+
+    expect(phaseLine()).toBe('Still to ban this pass: Ada');
+    expect(host.querySelectorAll('.turn-banner__phase')).toHaveLength(1);
+  });
+
+  it('renders nothing when no ban is on the clock and no draft is under way', () => {
+    mount({ banPass: null, banPasses: 2, playerName: null, round: null });
+
+    expect(host.querySelector('.turn-banner')).toBeNull();
   });
 });

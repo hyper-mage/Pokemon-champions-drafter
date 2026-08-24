@@ -92,6 +92,24 @@ export interface TurnBannerProps {
    */
   lastMove: string | null;
   /**
+   * `selectBanTurn`'s `pass`, or `null` when no ban is on the clock — BAN-03, 04-UI-SPEC §6.
+   *
+   * A prop of its own rather than a member of `phase`, and that is Pitfall 4. `selectPhase`
+   * answers `'cards'` during a ban stage — the order is resolved and the pool is empty — so
+   * a ban branch keyed on `phase` would be unreachable, and the branch that IS reachable
+   * would put `Round 1 of 6 — Sam plays a card` over the ban roster. Non-null here wins
+   * outright and `phase` is never consulted; see `banLine` below.
+   */
+  banPass: number | null;
+  /** `config.bansPerPlayer`, never a literal — the passes in the stage. */
+  banPasses: number;
+  /**
+   * Who still bans in this pass, as NAMES, in order — `selectStillToBanThisPass` resolved by
+   * the caller. Empty means the line is not rendered at all, which is the case that matters:
+   * `Still to ban this pass:` trailing into nothing reads as a broken template.
+   */
+  stillToBan: readonly string[];
+  /**
    * Did the pick that caused this turn change also clear active pool filters (D-35)?
    *
    * Extends the ANNOUNCEMENT and nothing else. The banner rendered on screen is untouched
@@ -149,6 +167,32 @@ function swapTurnCopy(swapRound: number, swapRounds: number, playerName: string)
   return `Swap round ${swapRound} of ${swapRounds} — ${playerName} swaps or passes`;
 }
 
+/**
+ * `Pass {p} of {passes} — {playerName} bans` — 04-UI-SPEC §6, verbatim.
+ *
+ * **`Pass`, never `Round`.** `Round` is already taken by the draft's own rounds and by the
+ * board's `R{n}` header, and two meanings for one word on a shared screen is how a room ends
+ * up arguing about which round it is. In a true serpentine each player bans exactly once per
+ * pass, so a pass IS a column.
+ */
+function banTurnCopy(pass: number, passes: number, playerName: string): string {
+  return `Pass ${pass} of ${passes} — ${playerName} bans`;
+}
+
+const STILL_TO_BAN_PREFIX = 'Still to ban this pass: ';
+
+/**
+ * `Still to ban this pass: Ada · Kim`.
+ *
+ * One composed string, joined with the separator the pick-order strip already uses, so the
+ * visible line and any spoken form of it cannot come apart. It carries INFORMATION — who is
+ * left in this column — and never a rule: D-12 records that snake needs no explanation at
+ * the table, and the order itself is visible in the banner and the ban board.
+ */
+function stillToBanCopy(names: readonly string[]): string {
+  return `${STILL_TO_BAN_PREFIX}${names.join(PICK_ORDER_SEPARATOR)}`;
+}
+
 const PICK_ORDER_PREFIX = 'Pick order: ';
 const PICK_ORDER_SEPARATOR = ' · ';
 
@@ -190,6 +234,9 @@ export function TurnBanner({
   swapRounds,
   swapOrderSource,
   lastMove,
+  banPass,
+  banPasses,
+  stillToBan,
 }: TurnBannerProps) {
   /*
     The turn line, in plain text and before any markup — the order this component has
@@ -214,16 +261,33 @@ export function TurnBanner({
       ? swapTurnCopy(swapRound, swapRounds, playerName)
       : null;
 
+  /*
+    The ban line, worked out first and CONSULTING NOTHING ELSE — and it wins outright below.
+
+    That precedence is Pitfall 4 and it is the whole reason this is a prop rather than a
+    `phase` member: during a ban stage `selectPhase` answers `'cards'`, because the order is
+    resolved and round 1 is unpicked. Every branch after this one would therefore be wrong at
+    the ban stage, and the one that would actually render — `Round 1 of 6 — Sam plays a card`
+    — names a phase the room is nowhere near, over a roster of 235 species with no pool
+    behind it.
+  */
+  const banLine =
+    banPass !== null && playerName !== null
+      ? banTurnCopy(banPass, banPasses, playerName)
+      : null;
+
   const turnLine =
-    complete === true
-      ? draftCompleteCopy(picks, teams)
-      : swapLine !== null
-        ? swapLine
-        : round === null || playerName === null
-          ? null
-          : phase === 'cards'
-            ? turnCopy(phase, round, rounds, playerName)
-            : `${turnCopy(phase, round, rounds, playerName)}${filtersCleared ? CLEARED_SUFFIX : ''}`;
+    banLine !== null
+      ? banLine
+      : complete === true
+        ? draftCompleteCopy(picks, teams)
+        : swapLine !== null
+          ? swapLine
+          : round === null || playerName === null
+            ? null
+            : phase === 'cards'
+              ? turnCopy(phase, round, rounds, playerName)
+              : `${turnCopy(phase, round, rounds, playerName)}${filtersCleared ? CLEARED_SUFFIX : ''}`;
 
   /*
     The move first, then the state it produced: `Ada plays 4. Round 1 of 6 — Bo plays a
@@ -261,7 +325,12 @@ export function TurnBanner({
   return (
     <>
       <p class="turn-banner">
-        {complete ? (
+        {banLine !== null ? (
+          <>
+            Pass {banPass} of {banPasses} —{' '}
+            <span class="turn-banner__player">{playerName}</span> bans
+          </>
+        ) : complete ? (
           draftCompleteCopy(picks, teams)
         ) : swapLine !== null ? (
           <>
@@ -281,7 +350,23 @@ export function TurnBanner({
         )}
       </p>
 
-      {!complete && phase === 'cards' && (
+      {/*
+        Gated on `banLine` as well as on the list, so the phase line and the headline above
+        it cannot appear without each other — the same rule the swap line below follows. Not
+        rendered when the list is empty: the last player of a pass is the case a room sees on
+        every column, and `Still to ban this pass:` trailing into nothing reads as a template
+        that broke rather than as a column that is full.
+      */}
+      {banLine !== null && stillToBan.length > 0 && (
+        <p class="turn-banner__phase">{stillToBanCopy(stillToBan)}</p>
+      )}
+
+      {/*
+        Every branch below is guarded on `banLine === null` as well as its own condition. The
+        headline already short-circuits to the ban line, so an unguarded phase line here
+        would sit a sentence about card play or pick order under `Pass 1 of 2 — Sam bans`.
+      */}
+      {banLine === null && !complete && phase === 'cards' && (
         <p class="turn-banner__phase">{cardPhaseCopy(tiePossible)}</p>
       )}
 
@@ -291,11 +376,11 @@ export function TurnBanner({
         order, sitting under a banner still announcing a pick, would be the one failure
         this line exists to prevent.
       */}
-      {!complete && swapLine !== null && (
+      {banLine === null && !complete && swapLine !== null && (
         <p class="turn-banner__phase">{swapPhaseCopy(swapOrderSource, rounds)}</p>
       )}
 
-      {!complete && phase === 'picking' && pickOrder.length > 0 && (
+      {banLine === null && !complete && phase === 'picking' && pickOrder.length > 0 && (
         <p class="turn-banner__phase">
           {PICK_ORDER_PREFIX}
           {pickOrderSegments(pickOrder).map((segment, index) => (

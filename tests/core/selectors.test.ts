@@ -44,6 +44,7 @@ import {
   selectBanOrder,
   selectBanStageState,
   selectBanTurn,
+  selectStillToBanThisPass,
   selectCardPlayOrder,
   selectCardsPlayedThisRound,
   selectCurrentRound,
@@ -1225,6 +1226,60 @@ describe('selectBanTurn', () => {
 
   it('is null when the tournament allots no bans', () => {
     expect(selectBanTurn(banState(CONFIG, ORDER))).toBeNull();
+  });
+});
+
+describe('selectStillToBanThisPass — who is left in the column (04-UI-SPEC §6)', () => {
+  /**
+   * The phase line under the snake turn banner carries INFORMATION and never a rule (D-12),
+   * so the question it answers is exactly this one: who else bans before this column closes.
+   *
+   * It is asserted against the hand-written `SNAKE_SEQUENCE` rather than against
+   * `selectBanOrder`, for the reason that fixture's own comment gives — deriving the
+   * expectation from the serpentine would let one bug agree with itself.
+   */
+  it('names everyone after the player on the clock, in the first pass', () => {
+    expect(selectStillToBanThisPass(banState(SNAKE_CONFIG, SNAKE_ORDER))).toEqual([
+      'p2',
+      'p3',
+      'p4',
+    ]);
+  });
+
+  it('shortens as the pass fills', () => {
+    expect(
+      selectStillToBanThisPass(banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(1))),
+    ).toEqual(['p3', 'p4']);
+    expect(
+      selectStillToBanThisPass(banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(2))),
+    ).toEqual(['p4']);
+  });
+
+  /** The line is not rendered when this is empty, which is the case that makes it matter. */
+  it('is empty for the last player of a pass', () => {
+    expect(
+      selectStillToBanThisPass(banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(3))),
+    ).toEqual([]);
+  });
+
+  /**
+   * The reversal is the whole of D-12 and the place a naive `order.slice(index + 1)` breaks:
+   * pass 2 walks `p4 p3 p2 p1`, so after `p4` the ones left are `p3 p2 p1` and NOT `p1`.
+   */
+  it('follows the reversed leg in an even pass', () => {
+    expect(
+      selectStillToBanThisPass(banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(4))),
+    ).toEqual(['p3', 'p2', 'p1']);
+  });
+
+  it('is empty once every ban has been placed', () => {
+    expect(
+      selectStillToBanThisPass(banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(8))),
+    ).toEqual([]);
+  });
+
+  it('is empty when the tournament allots no bans', () => {
+    expect(selectStillToBanThisPass(banState(CONFIG, ORDER))).toEqual([]);
   });
 });
 

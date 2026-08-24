@@ -111,7 +111,13 @@ import {
   type LockChannel,
   type LockMessage,
 } from '../../src/adapters/tab-lock';
-import { draftStarted, poolBuilt, type Action, type Intent } from '../../src/core/actions';
+import {
+  draftStarted,
+  poolBuilt,
+  scheduleCompiled,
+  type Action,
+  type Intent,
+} from '../../src/core/actions';
 import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
 
 // ---------------------------------------------------------------------------
@@ -409,5 +415,116 @@ describe('the gate in a read-only tab', () => {
     expect(region?.textContent?.trim()).toBe(READ_ONLY_SENTENCE);
 
     rival.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The ban stage, which is the fourth screen the gate has to cover — T-04-20
+// ---------------------------------------------------------------------------
+
+/**
+ * A snake tournament parked at its ban stage: a schedule, an order and NO pool.
+ *
+ * The shape `createBanStage` writes, seeded directly rather than driven through the config
+ * form, so this file stays about the gate. `fold` runs no `canApply`, so a document may be
+ * assembled here without walking the dispatch path.
+ */
+function seedSavedBanStage(): void {
+  const config: TournamentConfig = {
+    formatLabel: 'Champions MB',
+    players: [
+      { id: 'p1', name: 'Ada' },
+      { id: 'p2', name: 'Bo' },
+    ],
+    rounds: 6,
+    rosterVersion: 'mb',
+    rosterChecksum: 'test-checksum',
+    poolSize: 12,
+    bans: [],
+    banMode: 'snake',
+    megasRequiredPerTeam: 0,
+    dualMegaChoices: [],
+    depth: 'draftOnly',
+    rules: [{ kind: 'mega', count: 0 }],
+    megaFormeBans: [],
+    swapBudget: 0,
+    swapRounds: 0,
+    bansPerPlayer: 2,
+    duplicateBanPolicy: 'bothApply',
+  };
+
+  const doc: TournamentDoc = {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'read-only-ban-stage-fixture',
+    createdAt: 1_770_000_000_000,
+    config,
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log: [
+      stamp(
+        scheduleCompiled(
+          Array.from({ length: 6 }, (_, index) => ({
+            index: index + 1,
+            kind: 'open' as const,
+          })),
+        ),
+        0,
+      ),
+      stamp(draftStarted(['p1', 'p2'], 13), 1),
+    ],
+  };
+
+  expect(saveTournament(doc)).toBe(true);
+}
+
+describe('the gate over the ban stage', () => {
+  /**
+   * T-04-20, and the reason it is a test rather than a review item: a `BanStageScreen`
+   * rendered as a SIBLING of the gate rather than a child of it looks identical on screen
+   * and reopens the rival-tournament hole the landing and config screens were moved inside
+   * the gate to close.
+   */
+  it('renders the ban stage INSIDE the inert region in a read-only tab', async () => {
+    seedSavedBanStage();
+    const rival = rivalTabTakesTheLock();
+
+    await mountApp();
+    await resumeSavedDraft();
+
+    const gate = shell();
+    expect(gate).not.toBeNull();
+    expect(gate?.hasAttribute('inert')).toBe(true);
+
+    // One gate, not two — the same assertion the draft case makes, and for the same reason.
+    expect(host.querySelectorAll('[inert]')).toHaveLength(1);
+
+    // CONTAINMENT rather than a click: happy-dom parses `inert` but implements neither its
+    // focus nor its pointer semantics. Whether the banner is under the attribute at all is
+    // what rots in a refactor, and it is what this asserts.
+    const banner = host.querySelector('.turn-banner');
+    expect(banner).not.toBeNull();
+    expect(gate?.contains(banner)).toBe(true);
+
+    rival.dispose();
+  });
+
+  /**
+   * `04-UI-SPEC` Amendment 2: snake keeps `.draft-shell` because it IS the two-pane working
+   * screen — pool on the left, ban board on the right, exactly the draft the room is about
+   * to run. Blind's locked and reveal screens take `.app-shell`, and 04-09 asserts that.
+   */
+  it('wears the draft shell at a snake ban stage', async () => {
+    seedSavedBanStage();
+    const bus = makeBus();
+    vi.useFakeTimers();
+    claimOwnership({ channel: bus.connect() });
+    vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+    vi.useRealTimers();
+
+    await mountApp();
+    await resumeSavedDraft();
+
+    expect(host.querySelector('.draft-shell')).not.toBeNull();
+    expect(host.querySelector('.app-shell')).toBeNull();
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Ada bans');
   });
 });

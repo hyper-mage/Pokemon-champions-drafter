@@ -25,15 +25,23 @@ import {
 } from './adapters/roster-source';
 import { claimOwnership, disposeTabLock, notifyAbandoned } from './adapters/tab-lock';
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
-import { cardsPlayed, orderResolved, pickMade, swapMade, swapPassed } from './core/actions';
+import {
+  bansPlaced,
+  cardsPlayed,
+  orderResolved,
+  pickMade,
+  swapMade,
+  swapPassed,
+} from './core/actions';
 import { bannedEntries } from './core/bans';
 import { resolvePickOrder, type CardOffer } from './core/cards';
 import { checkFeasibility } from './core/feasibility';
 import { parseTournamentFile } from './core/import-guard';
-import type { TournamentDoc } from './core/model';
+import type { DraftState, TournamentDoc } from './core/model';
 import type { RosterEntry } from './core/roster/types';
 import {
   selectAvailablePool,
+  selectBanStageState,
   selectCardOffer,
   selectCardPlayOrder,
   selectCardsPlayedThisRound,
@@ -96,6 +104,7 @@ import { SwapPanel } from './ui/components/SwapPanel';
 import { boardCellId } from './ui/components/TeamStrip';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
+import { BanStageScreen } from './ui/screens/BanStageScreen';
 import { CompletedDraft } from './ui/screens/CompletedDraft';
 import { ConfigScreen } from './ui/screens/ConfigScreen';
 import { LandingScreen } from './ui/screens/LandingScreen';
@@ -116,8 +125,44 @@ type LoadState =
  * exist" were the same question. They are not the same question any more — a host can be
  * on the config screen with no document, and can arrive at the draft from three different
  * places — so the answer is held rather than inferred.
+ *
+ * ## Why the ban stage is a FOURTH member and not a mode inside the draft screen
+ *
+ * Pitfall 4, and the comparison is recorded here so nobody reverses it later. D-11 puts
+ * `draft/started` BEFORE the ban stage, so `order` and `schedule` are both populated while
+ * `poolIds` is still empty — and `selectPhase` answers `'cards'` for exactly that shape. A
+ * mode inside the draft screen would therefore have to shield `selectPhase`, `selectCardTurn`,
+ * the card panel, the board and the two hand strips individually: five places that can each
+ * be got wrong, against one union member and one `setScreen` call. The answer is not close.
+ *
+ *   `landing`  the front door — resume, import, or a new tournament
+ *   `config`   the form, which writes a document exactly once
+ *   `bans`     the blind or snake ban stage, BEFORE the draft (D-11)
+ *   `draft`    the pool, the board and the rest of the tournament
  */
-type Screen = { name: 'landing' } | { name: 'config' } | { name: 'draft' };
+type Screen =
+  | { name: 'landing' }
+  | { name: 'config' }
+  | { name: 'bans' }
+  | { name: 'draft' };
+
+/**
+ * Which screen a document belongs on — the one place that is answered.
+ *
+ * Four call sites route to "the tournament screen": starting one, resuming one, importing
+ * one, and adopting one on promotion or a remote save. Every one of them can be handed a
+ * snake ban stage, so every one of them has to ask this question — and a `setScreen({ name:
+ * 'draft' })` left behind at any of them would drop the host onto the draft screen with an
+ * empty pool, which is Pitfall 4 arriving through the router instead of through a mode.
+ *
+ * It BRANCHES on `selectBanStageState` and decides nothing: `'notRunning'` is that
+ * selector's answer for a hostBanlist tournament and for a stage that is already behind the
+ * document, which are precisely the two cases that belong on the draft screen.
+ */
+function screenForState(state: DraftState | null): Screen {
+  if (state === null) return { name: 'draft' };
+  return selectBanStageState(state) === 'notRunning' ? { name: 'draft' } : { name: 'bans' };
+}
 
 /**
  * Where an import has got to.
@@ -650,7 +695,11 @@ export function App() {
       // on the config screen, so there is no in-progress work for this to discard. The
       // two changes shipped together and must not be separated — narrowing the gate back
       // to the draft region turns this line into a form-clobber.
-      setScreen({ name: 'draft' });
+      //
+      // Which tournament screen is `screenForState`'s call, not this line's: the document
+      // adopted here can be a snake ban stage, and the draft screen would render it with an
+      // empty pool.
+      setScreen(screenForState(getState()));
     };
 
     claimOwnership({
@@ -1470,6 +1519,25 @@ export function App() {
   }, []);
 
   /**
+   * Record a snake ban — BAN-03.
+   *
+   * The `playerId` and the `pass` arrive from `BanStageScreen`, which read them from
+   * `selectBanTurn`. Neither is worked out here and neither is worked out there: the
+   * serpentine clock has exactly one answer and `canApply`'s `notYourBanTurn` reads the same
+   * one, so a second derivation at either end could only ever disagree with the log about
+   * whose turn it is.
+   *
+   * A refused dispatch is left refused rather than reported. `canApply`'s `banAlreadyPlaced`
+   * backstop is what catches a click on a species that is already banned, and 04-06 renders
+   * those cells inert with a stated reason — the constraint upstream of the click rather than
+   * a rejection after it. Until it lands the refusal is silent, which is a rough edge that is
+   * sequenced rather than missed.
+   */
+  const handlePlaceBan = useCallback((playerId: string, monId: string, pass: number) => {
+    dispatch(bansPlaced(playerId, monId, pass));
+  }, []);
+
+  /**
    * Hand focus to the pool grid's first cell when the card panel has just unmounted.
    *
    * The same shape `SplitPanes` uses for the expand that removes the button that was
@@ -1717,10 +1785,11 @@ export function App() {
     const restored = getState();
     announce(importAnnouncement(restored === null ? 0 : selectPickCount(restored)));
     setImportFlow({ status: 'idle' });
-    // A successful import is a tournament, so it goes to the draft — from the landing
+    // A successful import is a tournament, so it goes to the tournament — from the landing
     // screen, which is where D-01 gives import its front door, and from the draft screen,
-    // where this is already where the host is.
-    setScreen({ name: 'draft' });
+    // where this is already where the host is. WHICH tournament screen is
+    // `screenForState`'s call: an imported document can be parked at a ban stage.
+    setScreen(screenForState(restored));
   }, []);
 
   /**
@@ -1747,7 +1816,9 @@ export function App() {
     const current = loadSavedTournament() ?? saved;
     if (current === null) return;
     if (!adoptTournament(current)) return;
-    setScreen({ name: 'draft' });
+    // A resumed document can be parked at a ban stage — that is the ordinary case for a
+    // snake tournament the room stopped part way through — so the screen is asked for.
+    setScreen(screenForState(getState()));
   }, [saved]);
 
   /**
@@ -1902,7 +1973,20 @@ export function App() {
       <ReadOnlyBanner ownership={ownership} />
 
       <div
-        class={screen.name === 'draft' ? 'draft-shell' : 'app-shell'}
+        /*
+          Three-way, per `04-UI-SPEC` Amendment 2. The snake ban stage keeps `.draft-shell`
+          because it IS the two-pane working screen — pool on the left, ban board on the
+          right, exactly the draft the room is about to run (D-02). Blind's locked and reveal
+          screens are read-and-act screens like the landing screen, so they take `.app-shell`
+          and 04-09 asserts that; the mode is read here rather than the stage, because the
+          answer is a property of the mode and not of how far through it the room is.
+        */
+        class={
+          screen.name === 'draft' ||
+          (screen.name === 'bans' && state?.config.banMode === 'snake')
+            ? 'draft-shell'
+            : 'app-shell'
+        }
         inert={readOnly ? true : undefined}
       >
         {/*
@@ -1937,7 +2021,41 @@ export function App() {
             snapshot={load.bundle.snapshot}
             entries={entries}
             spriteMeta={load.bundle.spriteMeta}
-            onStarted={() => setScreen({ name: 'draft' })}
+            // The config screen reports that a tournament exists and routes nothing —
+            // `ConfigScreen`'s own prop doc states that, and it is why `handleStart`'s
+            // branch on `banMode` did not have to grow a second output. A snake start lands
+            // on `bans`, a hostBanlist start on `draft`, and one selector decides which.
+            onStarted={() => setScreen(screenForState(getState()))}
+          />
+        )}
+
+        {/*
+          INSIDE the gate, as a sibling of the other three screens rather than beside it.
+          The gate's doc block above records why: the landing and config screens were moved
+          in here because a secondary tab could otherwise build a whole rival tournament, and
+          a ban stage rendered beside the gate would reopen exactly that hole (T-04-20). No
+          new ownership machinery is needed — the stage's only route in is a control inside
+          the gate, so a read-only tab can never reach it.
+        */}
+        {screen.name === 'bans' && load.status === 'ready' && state !== null && (
+          <BanStageScreen
+            state={state}
+            entries={entries}
+            spriteMeta={load.bundle.spriteMeta}
+            topBar={{
+              onDownload: handleDownload,
+              onImportFile: handleImportFile,
+              importError: importFlow.status === 'failed' ? importFlow.message : null,
+              onRequestUndo: handleRequestUndo,
+              onRequestAbandon: handleRequestAbandon,
+              bannedNames,
+            }}
+            // The STORED preference, uncoerced. `pane` below coerces against the DRAFT's
+            // availability, which tracks `selectPhase` — and `selectPhase` answers `'cards'`
+            // at a ban stage. Amendment 2's coercion is the stage's own and lives there.
+            storedPane={storedPane}
+            onPaneChange={handlePaneChange}
+            onPlaceBan={handlePlaceBan}
           />
         )}
 
@@ -2006,6 +2124,13 @@ export function App() {
                 swapRounds={state.config.swapRounds}
                 swapOrderSource={selectSwapOrderSource(state)}
                 lastMove={lastMove}
+                // Null on this screen, always: the ban stage is a screen of its own (see
+                // the `Screen` doc block), so a non-null pass here would mean the router
+                // put a ban stage on the draft. Required rather than optional so every
+                // call site states which of the two it is.
+                banPass={null}
+                banPasses={state.config.bansPerPlayer}
+                stillToBan={[]}
               />
 
               {feasibilityNotice !== null && (

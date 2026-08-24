@@ -914,6 +914,40 @@ export function selectBanTurn(state: DraftState): BanTurn | null {
 }
 
 /**
+ * Who still bans in the CURRENT pass, after the player on the clock — 04-UI-SPEC §6.
+ *
+ * The snake sticky head's second line reads `Still to ban this pass: {name} · {name}`, and
+ * D-12 is emphatic that the line carries INFORMATION rather than a rule: the serpentine
+ * needs no explanation at the table, so the phase line answers "who is left in this column"
+ * and never states how the order works.
+ *
+ * ## Why it is a selector rather than a `slice` in the screen
+ *
+ * The obvious `order.slice(index + 1)` is wrong on every even pass, and wrong in the way
+ * that looks right: pass 2 walks the order REVERSED, so after `p4` the players left are
+ * `p3 p2 p1` and not `p1`. Deriving it in the component would be a second implementation of
+ * the serpentine, free to disagree with {@link selectBanOrder} about the very column the
+ * board is drawing. So it COMPOSES that one, exactly as {@link selectBanTurn} does.
+ *
+ * Empty — and the line is then not rendered at all — for the last player of a pass, for a
+ * finished stage, and for a tournament that allots no bans. `[]` rather than `null` because
+ * "nobody is left" and "there is no pass" produce the same screen, and a caller forced to
+ * distinguish them would have to invent a difference the surface does not have.
+ */
+export function selectStillToBanThisPass(state: DraftState): string[] {
+  const turn = selectBanTurn(state);
+  if (turn === null) return [];
+
+  const sequence = selectBanOrder(state.order, state.config.bansPerPlayer);
+
+  // The end of the CURRENT pass, not the end of the sequence. A pass is exactly one leg of
+  // the serpentine — `order.length` entries — so the column closes at the next multiple.
+  const passEnd = turn.pass * state.order.length;
+
+  return sequence.slice(turn.index + 1, passEnd);
+}
+
+/**
  * Which ban surface is on screen — and the ONE place that is decided (BAN-03, BAN-04).
  *
  * `app.tsx` and `BanStageScreen` BRANCH on this; no component works it out. That is what
