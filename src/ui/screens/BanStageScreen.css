@@ -1,0 +1,30 @@
+/*
+ * BanStageScreen.css — and what it deliberately does NOT contain.
+ *
+ * This file adds no rule, and that is worth stating so nobody adds one by reflex. The
+ * stage is the DRAFT screen's interaction model with ban columns instead of round columns
+ * (D-02, 04-UI-SPEC §6), so it inherits its geometry wholesale:
+ *
+ *   `.draft-shell`            app.css — the one-viewport shell Amendment 2 keeps for snake
+ *   `.draft-shell .sticky-head`  app.css — the head the TopBar and TurnBanner stick as
+ *   `.draft-panes` / `.pane`  SplitPanes.css — the two panes and their expand controls
+ *   `.turn-banner`            TurnBanner.css — `--text-display`, unchanged
+ *   `.turn-banner__phase`     TurnBanner.css — `--text-body`, unchanged
+ *   `.pool-grid`              PoolGrid.css — including its capped scroll region
+ *
+ * Restating any of those here would be a second thing that can disagree with the first
+ * about how tall the head is or how wide a pane runs — and the room reads whose turn it is
+ * from the same line on this screen and the draft, so two sizes for one sentence is exactly
+ * how that line stops being scannable from across a table.
+ *
+ * The file exists rather than the import being dropped because it is where a rule belongs
+ * when the stage first needs one, and because the screen/stylesheet pair is the shape every
+ * other screen in `src/ui/screens/` takes. 04-08 lands `BanBoard` and its own stylesheet,
+ * beside the component, and the board pane's rules go THERE rather than here.
+ *
+ * When a rule does arrive: tokens only. No raw hex and no raw length — the four
+ * complete-shorthand `--text-*` values carry size and weight together, and the `--space-*`
+ * scale carries every gap. 04-UI-SPEC §Design System adds no token and sanctions no new raw
+ * length. A plan-level grep asserts this file contains none of them, so it must stay clean
+ * of the literal property names as well as of the values.
+ */

@@ -220,6 +220,9 @@ describe('what the sticky head announces', () => {
             swapRounds={props.swapRounds ?? 0}
             swapOrderSource={props.swapOrderSource ?? 'lastRound'}
             lastMove={props.lastMove === undefined ? null : props.lastMove}
+            banPass={props.banPass === undefined ? null : props.banPass}
+            banPasses={props.banPasses ?? 0}
+            stillToBan={props.stillToBan ?? []}
           />
         </>,
         host,
