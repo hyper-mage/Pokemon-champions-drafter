@@ -271,7 +271,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 04-10-PLAN.md — the full-screen entry surface and the bfcache / visibility shield (BAN-04, BAN-05, BAN-06)
+- [x] 04-10-PLAN.md — the full-screen entry surface and the bfcache / visibility shield (BAN-04, BAN-05, BAN-06)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -308,7 +308,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
-| 4. Blind and Snake Bans | 9/11 | In Progress|  |
+| 4. Blind and Snake Bans | 10/11 | In Progress|  |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
 ## Requirement Coverage
