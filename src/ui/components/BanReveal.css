@@ -1,0 +1,155 @@
+/*
+ * BanReveal — the ban stage's last screen, and the one the whole room reads at once.
+ *
+ * Tokens only: no raw colour literal and no raw length. No :focus rule — the global accent
+ * ring in app.css covers every focusable element, including the headline, which takes focus
+ * programmatically and shows no ring because it is never reached by pointer or by tab.
+ *
+ * ONE accent fill, on the primary action, which is accent's second reserved use
+ * (04-UI-SPEC §Accent reserved for). Nothing else on this screen competes with it.
+ *
+ * ## The three sizes are DRFT-14 assertions, not preferences
+ *
+ * 13 — the headline at --text-display, the largest the project has.
+ * 14 — every player name at --text-heading, the same size the progress board's rows use.
+ * 15 — every species name, collision line and feasibility line at --text-body, which is the
+ *      floor a shared screen was physically verified against at 3 metres.
+ *
+ * No fourth size is introduced and none may be. A failure at the 18px floor is a finding
+ * about --text-body on a shared screen; the remedies inside this contract are the existing
+ * four-size scale and the existing pane states.
+ *
+ * ## Nothing here moves
+ *
+ * The phase's motion prohibition is declared on the surfaces either side of the entry
+ * change-over, and this stylesheet declares no rule of that kind either — arriving at the
+ * reveal is the moment the room is asked to read six players' bans at once, and anything
+ * fading in underneath that reading is a shared screen changing while people are looking at
+ * it. The property names are deliberately not written out, because a comment quoting a
+ * forbidden pattern makes the mechanical check report its own documentation.
+ */
+
+.ban-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+/* DRFT-14 assertion 13. --space-6 above and below is what stops the panel reading as a form. */
+.ban-reveal__headline {
+  margin: var(--space-6) 0 0;
+  font: var(--text-display);
+  color: var(--color-text);
+  text-align: center;
+}
+
+.ban-reveal__sub-head {
+  margin: 0 0 var(--space-4);
+  font: var(--text-body);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.ban-reveal__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/*
+ * The name ABOVE its chips rather than beside them. A side-by-side row would put the widest
+ * player name in charge of where every species starts, and at eight players the room reads
+ * down the names first and then across the bans — which is the order this stacks them in.
+ */
+.ban-reveal__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* DRFT-14 assertion 14 — the same size the progress board gives a player name. */
+.ban-reveal__player {
+  font: var(--text-heading);
+  color: var(--color-text);
+}
+
+/*
+ * Wrapping at --space-1 gaps, which is 04-UI-SPEC §7's figure. The chips are a run of named
+ * sprites and there is no column to keep: a player with six bans wraps onto a second line
+ * rather than shrinking the sprites below --sprite-sm.
+ */
+.ban-reveal__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.ban-reveal__collisions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--hairline-w) solid var(--color-hairline);
+}
+
+/*
+ * NOT muted. A collision line reports something that happened and cost a player a ban, which
+ * is a different class of statement from the sub-head above it, and the room has to be able
+ * to hear it read out and follow it on screen.
+ */
+.ban-reveal__collision {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}
+
+/*
+ * The passing verdict is muted: it says the screen is ready and asks nothing of anybody. The
+ * blocked one is not, because it is the last thing this tournament will ever say.
+ */
+.ban-reveal__feasibility {
+  margin: var(--space-4) 0 0;
+  font: var(--text-body);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.ban-reveal__feasibility--blocked {
+  color: var(--color-text);
+}
+
+/*
+ * The one accent-filled control on this screen — accent's second reserved use, one per
+ * screen. --target-min in BOTH axes: the height is set here and the horizontal padding
+ * carries the width past it.
+ *
+ * The blocked state keeps the fill and the pointer, because the control is still focusable
+ * and still explains itself; it is the accessible state, not the paint, that says it will
+ * not act. Colour is never the only signal, and here the signal is the sentence above it.
+ */
+.ban-reveal__action {
+  align-self: center;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--hairline-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+/*
+ * The blocked action reads as unavailable without relying on colour alone: the sentence
+ * above it states the reason in words, and this drops the fill so the two agree.
+ */
+.ban-reveal__action[aria-disabled='true'] {
+  border-color: var(--color-hairline);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  cursor: default;
+}
