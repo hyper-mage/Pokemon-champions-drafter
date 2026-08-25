@@ -258,8 +258,8 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 04-06-PLAN.md — inert cells and inert typeahead options: the snake pool pane knows what is gone (BAN-03)
-- [ ] 04-07-PLAN.md — undo across the ban stage, and the exhaustive announcement that cannot speak a private ban (BAN-03, BAN-04)
+- [x] 04-06-PLAN.md — inert cells and inert typeahead options: the snake pool pane knows what is gone (BAN-03)
+- [x] 04-07-PLAN.md — undo across the ban stage, and the exhaustive announcement that cannot speak a private ban (BAN-03, BAN-04)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -308,7 +308,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
-| 4. Blind and Snake Bans | 5/11 | In Progress|  |
+| 4. Blind and Snake Bans | 7/11 | In Progress|  |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
 ## Requirement Coverage
