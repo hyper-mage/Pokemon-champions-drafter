@@ -36,12 +36,21 @@ import './BanChipList.css';
 /**
  * Which list a chip removes from, named so the accessible name stays one construction.
  *
- * The species banlist is `banlist` and the Mega-forme banlist is `Mega-forme banlist`, which
- * are the two strings 02-UI-SPEC §4 and 03-UI-SPEC §3 give. Only the NOUN PHRASE varies — the
- * sentence around it is composed once below, so two surfaces cannot end up naming their chips
- * in two different shapes.
+ * The species banlist is `the banlist` and the Mega-forme banlist is `the Mega-forme
+ * banlist`, which are the two strings 02-UI-SPEC §4 and 03-UI-SPEC §3 give. Only the NOUN
+ * PHRASE varies — the sentence around it is composed once below, so two surfaces cannot end
+ * up naming their chips in two different shapes.
+ *
+ * ## The article is part of the phrase, and that is deliberate
+ *
+ * It used to be hard-coded into the sentence below, which worked for exactly as long as
+ * every list was named with a common noun. 04-UI-SPEC §5's entry surface names its list
+ * with a POSSESSIVE — `Sam's bans` — and `from the Sam's bans` is not English. A determiner
+ * belongs to the noun phrase it determines, so it moved into the phrase rather than growing
+ * a second parameter or a branch: a caller that supplies the phrase supplies all of it.
+ * Every shipped string is byte-identical across this change.
  */
-const DEFAULT_LIST_NAME = 'banlist';
+const DEFAULT_LIST_NAME = 'the banlist';
 
 export interface BanChipListProps<T extends PoolSubject> {
   /**
@@ -51,7 +60,7 @@ export interface BanChipListProps<T extends PoolSubject> {
    */
   banned: readonly T[];
   onRemove: (entry: T) => void;
-  /** The list named in every chip's accessible name. Defaults to `banlist`. */
+  /** The list named in every chip's accessible name, article included. Defaults to `the banlist`. */
   listName?: string;
 }
 
@@ -69,7 +78,7 @@ export function BanChipList<T extends PoolSubject>({
           <button
             type="button"
             class="ban-chip"
-            aria-label={`Remove ${entry.name} from the ${listName}`}
+            aria-label={`Remove ${entry.name} from ${listName}`}
             onClick={() => onRemove(entry)}
           >
             <span class="ban-chip__name">{entry.name}</span>

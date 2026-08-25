@@ -181,7 +181,7 @@ const MEGA_BAN_SUBJECT = 'Mega forme';
 /** The plural noun in the grid's count line: `{n} of {total} Mega formes banned`. */
 const MEGA_BAN_COUNT_SUBJECT = 'Mega formes';
 /** The list every chip names: `Remove {formeName} from the Mega-forme banlist`. */
-const MEGA_BAN_LIST_NAME = 'Mega-forme banlist';
+const MEGA_BAN_LIST_NAME = 'the Mega-forme banlist';
 /**
  * Why the `Mega capability` filter is unusable over this grid.
  *

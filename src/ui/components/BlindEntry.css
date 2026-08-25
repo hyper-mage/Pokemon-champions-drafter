@@ -1,0 +1,137 @@
+/*
+ * BlindEntry — the full-screen surface a player's bans are typed on, 04-UI-SPEC §5.
+ *
+ * Tokens only: no raw hex and no raw length beyond the one viewport-relative measure noted
+ * below. The four --text-* values are complete font shorthands carrying size and weight
+ * together, so no rule here sets either on its own. No :focus rule — the global accent ring
+ * in app.css already covers every focusable element, including the headline.
+ *
+ * ## NOTHING ON THIS SURFACE MOVES, AND THAT IS A SECURITY PROPERTY
+ *
+ * 04-UI-SPEC S9 makes the change-over from this surface to the locked state a hard
+ * prohibition on motion at any duration — the project's first, and stated there as a
+ * security property rather than a taste. A fade, a slide or a cross-dissolve leaves the
+ * roster and the pending selection readable for the whole length of the effect, which is a
+ * leak measured in frames. So this stylesheet declares no motion rule of any kind, and the
+ * screen above unmounts the component rather than hiding it, which is a change-over nothing
+ * can be attached to in the first place.
+ *
+ * The prohibition is worded to DESCRIBE what is banned rather than to name the properties.
+ * A comment quoting a forbidden pattern makes the mechanical check report its own
+ * documentation, which is a defect this phase has already hit three times.
+ *
+ * ## The capped scroll region is not here
+ *
+ * `.pool--ban` in PoolGrid.css already caps the ban-mode grid and gives it its hairline
+ * border and radius. Restating that treatment here would be a second thing that can
+ * disagree with the first about how tall the roster runs, and the config screen's ban grid
+ * reads from the same rule.
+ */
+
+.blind-entry {
+  display: flex;
+  flex-direction: column;
+  /* The gap between the blocks — progress, field, chips, grid, footer. */
+  gap: var(--space-3);
+  padding: var(--space-3);
+  /*
+   * The surface IS the screen (BAN-05), so it fills the viewport rather than sitting in it
+   * as a panel. --color-bg rather than --color-surface for the same reason: a raised panel
+   * would imply something behind it, and there is deliberately nothing behind it.
+   */
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+/*
+ * DRFT-14 assertion 13: the headline renders at --text-display, the largest size the
+ * project has. Whose bans these are is the one fact that must never be got wrong, and it
+ * is also the focus target on arrival.
+ */
+.blind-entry__headline {
+  margin: 0;
+  font: var(--text-display);
+  color: var(--color-text);
+}
+
+/*
+ * Muted and quieter than the headline, matching the locked state's own progress line — the
+ * two counts sit in the same position on the two halves of this stage, so a host who has
+ * read one recognises the other.
+ */
+.blind-entry__progress {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text-muted);
+}
+
+/*
+ * FeasibilityBar.css's mechanism, reused rather than reinvented: sticky rather than fixed,
+ * because fixed would take the footer out of flow and overlay the grid at every scroll
+ * position including the top. The --color-bg backdrop is what stops the roster showing
+ * through the two controls the host is reaching for.
+ *
+ * NOTHING here may create a containing block, the prohibition app.css states for the same
+ * pattern one screen over.
+ */
+.blind-entry__footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  background: var(--color-bg);
+  border-top: var(--hairline-w) solid var(--color-hairline);
+}
+
+/*
+ * The one accent fill on this surface — accent's second reserved use, one control per
+ * screen. --target-min in both axes: the height is set here and the horizontal padding
+ * carries the width past it for every label this button can hold.
+ *
+ * It looks identical whether or not it is currently blocked, and that is deliberate. The
+ * blocked state is carried by aria-disabled plus the reason beside it rather than by a
+ * greyed fill, because 04-UI-SPEC §Colour is never the only signal — the reason says what
+ * to do, where a colour change only says that something is wrong.
+ */
+.blind-entry__lock {
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--hairline-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+/*
+ * The panic control, secondary: outlined rather than filled, because two accent fills on
+ * one screen would spend the reserved use twice and leave the room unable to tell which
+ * control the surface is actually about.
+ */
+.blind-entry__hide {
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+/*
+ * Beside the controls rather than under them, because it is about the tap the host is
+ * deciding whether to make. Not muted: it is the sentence that says what is missing, and a
+ * host who has just pressed a control that did nothing needs to find it immediately.
+ */
+.blind-entry__reason {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}
