@@ -9,6 +9,7 @@ import {
   selectPublicBanIds,
   selectStillToBanThisPass,
 } from '../../core/selectors';
+import { BanBoard } from '../components/BanBoard';
 import { PoolGrid, type BanInertState } from '../components/PoolGrid';
 import { SplitPanes } from '../components/SplitPanes';
 import { TopBar, type TopBarProps } from '../components/TopBar';
@@ -135,6 +136,22 @@ const BAN_FIELD_LABEL = 'Ban a Pokémon by name';
 const BAN_FIELD_PLACEHOLDER = 'Name';
 const BAN_FIELD_ID = 'ban-stage-ban';
 
+/**
+ * The board pane before the first ban — 04-UI-SPEC §6, and deliberately the shape Phase 2
+ * set with `No picks yet. {firstPlayerName} picks first.`
+ *
+ * ONE sentence rather than the draft board's heading-plus-body pair. The draft board's
+ * second line tells a host how to start (`Choose any Pokémon in the pool…`); here the pool
+ * pane beside it is the whole screen and already says so, and a second instruction would be
+ * telling the room something it is looking at.
+ *
+ * A composer rather than an inline template: JSX collapses whitespace between text lines,
+ * and this string is a contract asserted on exact equality.
+ */
+function emptyBoardBody(firstPlayerName: string): string {
+  return `No bans yet. ${firstPlayerName} bans first.`;
+}
+
 export function BanStageScreen({
   state,
   entries,
@@ -249,6 +266,61 @@ export function BanStageScreen({
       onPlaceBan(turn.playerId, monId, turn.pass);
     };
 
+    /*
+      --- THE BOARD PANE, AND EVERY VALUE ON IT IS SOMEBODY ELSE'S ANSWER ---
+
+      The columns. 1-based, matching `BanPlacement.pass` and the `Pass {n}` headers, and
+      derived once so the header text and the cell position cannot come apart.
+    */
+    const passNumbers = Array.from(
+      { length: state.config.bansPerPlayer },
+      (_, index) => index + 1,
+    );
+
+    /*
+      A LOOKUP, exactly like `reasonFor` above, and for the same reason: finding which
+      placement sits at a coordinate is not a rule and not a derivation over the log. The
+      serpentine already decided who bans when — `selectBanOrder` inside `selectBanTurn` —
+      and the placement carries its own `pass`, so this reads the answer rather than
+      recomputing it. `04-UI-SPEC` §Pure-core boundary: if this ever starts to look like a
+      rule, the selector is missing and belongs in `src/core/`.
+
+      Matched on `id` in both halves. Never on a name, and never by taking a name apart.
+
+      An id the current roster no longer carries resolves to `null`, which renders as an
+      empty cell. That is a real loss of fidelity for a document that outlived a regulation
+      — the draft board renders the raw id in that case — and it is accepted here because
+      `BanBoard`'s props carry resolved entries rather than ids, which is what keeps its
+      blind arm incapable of holding a species (S2). Trading a rare display case for the
+      secrecy guarantee is the right way round.
+    */
+    function bannedIn(playerId: string, pass: number): RosterEntry | null {
+      const placement = state.banPlacements.find(
+        (ban) => ban.playerId === playerId && ban.pass === pass,
+      );
+      if (placement === undefined) return null;
+
+      return entries.find((entry) => entry.id === placement.monId) ?? null;
+    }
+
+    /* One row per player in STARTING order — `state.order`, which is what the serpentine
+       itself is built from, so the board's rows and its columns agree by construction. */
+    const banRows = state.order.map((playerId) => ({
+      playerName: selectPlayerName(state, playerId) ?? playerId,
+      cells: passNumbers.map((pass) => bannedIn(playerId, pass)),
+    }));
+
+    /*
+      `selectBanTurn` names the next cell; this turns its two ids into two positions and the
+      component renders them. Both coordinates are 0-based on the board.
+
+      `null` when the order does not contain the player on the clock, which only a
+      hand-edited document produces. An unmarked board is the honest answer there — a row
+      index of -1 would mark nothing anyway, but silently, and this says so.
+    */
+    const nextRow = state.order.indexOf(turn.playerId);
+    const nextCell = nextRow === -1 ? null : { row: nextRow, column: turn.pass - 1 };
+
     return (
       <>
         <div class="sticky-head">
@@ -334,13 +406,45 @@ export function BanStageScreen({
             </div>
           }
           /*
-            Empty until 04-08, which owns `BanBoard` and the snake board pane. Rendering
-            already-banned cells inert with a stated reason is 04-06's. Until both land, a
-            click on a species that is already banned is refused by `canApply`'s
-            `banAlreadyPlaced` backstop — a real refusal rather than a crash, and a rough
-            edge that is sequenced rather than missed.
+            The board, or the sentence that stands in for it before there is one.
+
+            NO SCROLL CONTAINER is added around either. `.pane__scroll` already scrolls the
+            pane vertically, and the layout arithmetic says the board fits to eight passes at
+            split and twenty-three at `board-full` (04-UI-SPEC §Layout Budget). A horizontal
+            scroller here would hide exactly the regression DRFT-14 assertion 16 exists to
+            catch, and the expand control is the remedy the contract actually names.
+
+            NO CAP, NO WARNING AND NO GATE on a large `bansPerPlayer`, and that omission is
+            deliberate rather than forgotten — 04-UI-SPEC §Deferred records it explicitly so
+            nobody adds one reflexively. Layout is not satisfiability: the gate is the one
+            authority on what is satisfiable, and a wide board is a preference problem the
+            expand control answers. `MAX_BANS_PER_PLAYER` is the only bound, and it exists to
+            bound an allocation rather than to hold an opinion about a screen.
           */
-          board={null}
+          board={
+            state.banPlacements.length === 0 ? (
+              /*
+                `turn.playerId` IS the first banner while no ban has landed — the serpentine's
+                first position is the one nobody has spent yet. Read from the selector rather
+                than from `order[0]`, so the sentence and the turn banner above it cannot
+                name two different people.
+              */
+              <p class="ban-stage__board-empty">
+                {emptyBoardBody(selectPlayerName(state, turn.playerId) ?? turn.playerId)}
+              </p>
+            ) : (
+              <BanBoard
+                mode="public"
+                rows={banRows}
+                passes={state.config.bansPerPlayer}
+                nextCell={nextCell}
+                // The shipped D-21 rule, resolved by the composition root exactly as the
+                // draft board's is: names at full width, sprites alone in split.
+                showName={pane === 'board'}
+                spriteMeta={spriteMeta}
+              />
+            )
+          }
         />
       </>
     );

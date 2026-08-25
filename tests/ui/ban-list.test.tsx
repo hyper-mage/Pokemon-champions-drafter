@@ -431,6 +431,17 @@ describe('bans reaching the feasibility gate', () => {
    * threshold on the same ban and `feasibility.ts` deliberately suppresses the second. Its
    * doc block states why: telling a host the pool is too large when the fix is fewer players
    * or fewer bans sends them to the wrong field.
+   *
+   * ## The explicit timeout, and why it is not a smell
+   *
+   * 188 bans, each one a typeahead selection that re-renders a 235-entry config screen
+   * against the real committed roster. That is genuine work and it lands a little either
+   * side of vitest's 5-second default depending on how many suites are sharing the worker
+   * pool — so the test was passing on luck, and it started failing when an unrelated file
+   * grew tests in 04-08. Raising the bound for THIS test is what vitest's own timeout
+   * message recommends and it is the honest fix: the alternative is a suite whose green
+   * depends on how many other tests exist. The number is deliberately generous rather than
+   * snug, because a timeout tuned to the current machine is the same bug again.
    */
   it('survives 187 bans at eight players and Exact, and dies on the 188th', () => {
     mount();
@@ -447,7 +458,7 @@ describe('bans reaching the feasibility gate', () => {
 
     expect(reasonText()).toContain('Too many players for the roster.');
     expect(startButton()?.getAttribute('aria-disabled')).toBe('true');
-  });
+  }, 30000);
 
   /**
    * The Mega mode, and it is independent of the one above. 74 Mega-capable species and a

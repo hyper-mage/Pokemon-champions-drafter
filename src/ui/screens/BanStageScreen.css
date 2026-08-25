@@ -28,20 +28,43 @@
  * length. A plan-level grep asserts this file contains none of them, so it must stay clean
  * of the literal property names as well as of the values.
  *
- * --- ONE RULE HAS NOW ARRIVED, AND ONLY ONE ---
+ * --- TWO RULES HAVE NOW ARRIVED, AND ONLY TWO ---
  *
  * The pool pane holds two children rather than one: the ban field and the grid beneath it
  * (04-UI-SPEC §6, "the ban-mode `PoolGrid` over 235 entries plus the `TypeaheadField`").
  * `.pane__scroll` is a plain scroll container with no gap of its own, so without this the
  * field's input would sit flush against the grid's border and read as part of it.
  *
+ * The board pane's empty state is the second, and it is the only thing this file says about
+ * that pane. 04-08's board is `BanBoard`, whose rules live in `BanBoard.css` beside the
+ * component exactly as the paragraph above promised.
+ *
  * Still nothing about the head, the panes, the banner or the grid — every one of those is
  * inherited from the stylesheets named above and restating any of them here is what the
  * paragraph at the top of this file forbids.
+ *
+ * AND STILL NO OVERFLOW RULE, on this pane or any other. The board fits the split pane to
+ * eight passes and `board-full` to twenty-three (04-UI-SPEC §Layout Budget), and a scroll
+ * container here would hide the overflow that DRFT-14 assertion 16 exists to catch rather
+ * than fix it. `.pane__scroll` already handles the vertical axis for both panes.
  */
 
 .ban-stage__pool {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+/*
+ * `No bans yet. {firstPlayerName} bans first.`
+ *
+ * Muted and measure-capped, matching `.board__empty-body` — the same sentence in the same
+ * position on the draft screen, so a host who has seen one recognises the other. The size
+ * is the body default and is deliberately not restated: a `--text-*` token is a complete
+ * font shorthand, and a rule that set only part of one would be off-contract.
+ */
+.ban-stage__board-empty {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--color-text-muted);
 }

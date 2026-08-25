@@ -1,0 +1,121 @@
+/*
+ * BanBoard — players as rows, passes as columns, and the progress list that is the same
+ * board with the species taken out of it.
+ *
+ * Consumes tokens only, and declares NO raw length of any kind. That is stricter than
+ * `BoardGrid.css`, which owns two geometry values this file deliberately does not restate:
+ *
+ *   --board-label-w   the label column, declared once in BoardGrid.css and read here
+ *   the scroll floor  BoardGrid's own responsive rule, which this board does not have
+ *
+ * The label column is READ, never re-declared. A second literal for it would be a second
+ * thing that can drift from the draft board sitting on the other side of the same stage,
+ * and the two boards misaligning by a few points is exactly the kind of defect nobody files
+ * and everybody notices.
+ *
+ * The column template itself is NOT declared here. It arrives inline from BanBoard.tsx,
+ * because CSS repeat() takes an integer at parse time and cannot read a custom property for
+ * its count, and the pass count is derived from the tournament config. Same posture
+ * BoardGrid takes, for the same reason.
+ *
+ * The cell rules are BoardGrid's too — `.board__cell`, `.board__cell--empty`,
+ * `.board__cell--filled` and `.board__cell--next` are reused rather than copied, so the
+ * dashed empty slot and the accent-bordered next slot have one definition across both
+ * boards. `04-UI-SPEC` §6 names those classes for this board explicitly.
+ */
+
+.ban-board__grid {
+  display: grid;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+/*
+ * `Pass {n}`, and the widest string a six-pass board produces sits inside the narrowest
+ * cell that board can have (`04-UI-SPEC` §6, measured). One line, sitting on the baseline
+ * of the header row rather than floating in it.
+ */
+.ban-board__pass {
+  align-self: end;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.ban-board__label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font: var(--text-heading);
+}
+
+/*
+ * The ellipsis mechanism, on the line that carries the text rather than on the cell —
+ * BoardGrid's shipped arrangement, and `min-width: 0` above is what actually lets a grid
+ * item shrink far enough for it to fire.
+ */
+.ban-board__label-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/*
+ * --- THE BLIND ARM ---
+ *
+ * A stack of rows rather than a grid of cells, because there are no cells: this arm has no
+ * species to place, by construction. It keeps the SAME label column as the public board so
+ * the two arms of one component read as one component, which is the whole reason
+ * `--board-label-w` is a token and not a number.
+ */
+
+.ban-board__blind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ban-board__blind-row {
+  display: grid;
+  grid-template-columns: var(--board-label-w) minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.ban-board__blind-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--text-heading);
+}
+
+.ban-board__blind-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: var(--text-body);
+  color: var(--color-text);
+}
+
+/*
+ * The marker beside the word, and it is a BOX rather than a glyph — this phase ships no
+ * icon, no SVG and no icon font (`04-UI-SPEC` §Design System). It is also never the only
+ * signal: `Entered` and `Not yet` say the same thing in words, so the row reads correctly
+ * with no colour perception at all, which is what the marker's two shapes are for.
+ */
+.ban-board__marker {
+  flex: none;
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius);
+}
+
+/* Solid, and in the text colour rather than the accent — the accent is reserved. */
+.ban-board__marker--entered {
+  background: var(--color-text);
+}
+
+/* Dashed and hollow: the shipped empty-board-slot treatment, unchanged. */
+.ban-board__marker--waiting {
+  border: var(--hairline-w) dashed var(--color-border-strong);
+  background: transparent;
+}
