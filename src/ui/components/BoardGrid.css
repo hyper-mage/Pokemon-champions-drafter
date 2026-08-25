@@ -20,7 +20,26 @@
  * The column template itself is NOT declared here. It arrives inline from BoardGrid.tsx,
  * because CSS repeat() takes an integer at parse time and cannot read a custom property
  * for its count, and the round count is derived from the tournament config.
+ *
+ * --- THE LABEL WIDTH MOVED TO :root IN 04-08, AND STAYS DECLARED IN THIS FILE ---
+ *
+ * It used to sit on `.board__grid`, which was correct while this was the only board. Phase 4
+ * adds a second one — `BanBoard`, players by ban PASS — and 04-UI-SPEC §6 requires its label
+ * column to be the same width as this one, because the two render on the same stage and a
+ * few points of difference between them is the kind of defect nobody files and everybody
+ * notices.
+ *
+ * A custom property declared on `.board__grid` reaches that element's own subtree and
+ * nothing else, so the second board could not read it. The two honest options were to
+ * promote it or to write the number twice; a second literal is a second thing that can
+ * drift, so it is promoted. It is NOT moved into tokens.css: this is one layout's geometry
+ * rather than a value the token table covers, and the paragraphs above are its
+ * justification. One declaration, in the file that owns the reasoning.
  */
+
+:root {
+  --board-label-w: 176px;
+}
 
 .board {
   margin: 0 0 var(--space-6);
@@ -51,8 +70,6 @@
 }
 
 .board__grid {
-  --board-label-w: 176px;
-
   display: grid;
   gap: var(--space-2);
   align-items: stretch;
