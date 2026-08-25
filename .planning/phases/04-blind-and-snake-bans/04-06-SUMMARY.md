@@ -293,6 +293,12 @@ None — no external service configuration required.
   `SplitPanes` table and the `BanStageScreen` arm: mount no panes, and neither read nor write the
   stored pane preference.
 
+## Self-Check: PASSED
+
+All ten modified files exist on disk. All five commits are reachable — `df7ed93` and `4b78722`
+(Task 1, inherited from `main` via base `c34aa78`), `f9ef4f3` and `0717742` (Task 2), and
+`1d36cd0` (this summary). Working tree clean, no untracked files.
+
 ---
 *Phase: 04-blind-and-snake-bans*
 *Completed: 2026-08-24*
