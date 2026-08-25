@@ -9,11 +9,17 @@
  * own accessible name. An option that merely looked greyed would be selectable, and a host
  * would start a draft in a mode the build does not run.
  *
- * **Narrowed by plan 04-05.** This file was written when `blind` AND `snake` were both
- * refused. `snake` is now built and enabled, so the refusal case is `blind` alone until 04-09
- * lands the locked state and the shield behind it. `tests/ui/config-bans.test.tsx` owns the
- * assertion that `snake` is enabled and unsuffixed; the two files must not both grow an
- * opinion about the same option.
+ * **Narrowed by 04-05, and emptied by 04-09.** This file was written when `blind` AND
+ * `snake` were both refused. 04-05 built the snake stage; 04-09 built blind's locked state,
+ * and **no ban mode is refused any more.** The rule the control still has to hold is the
+ * mirror image of the original one — a mode the build DOES run must not read
+ * `— Not yet available` on a stage that exists — so the cases below assert every member is
+ * selectable and unsuffixed. `tests/ui/config-bans.test.tsx` owns the detail of each mode's
+ * own controls; the two files must not both grow an opinion about the same option.
+ *
+ * The suffix mechanism itself is NOT dead and must not be deleted: `Re-ban` in the
+ * duplicate-policy control still carries it, and that member is asserted in
+ * `config-bans.test.tsx`.
  *
  * The confirm: its confirming button must come FIRST in DOM order, so the safe one is the
  * last thing focus reaches and the last thing read. That is asserted by POSITION, never by
@@ -271,43 +277,68 @@ describe('the ban mode control', () => {
     expect(inputs[0]?.checked).toBe(true);
   });
 
-  it('refuses the one that is not built, and says so inside its own name', () => {
+  /**
+   * Every member is built, so every member is selectable — and the regression this guards
+   * is now the mirror image of the one it was written for: a mode the build DOES run
+   * reading `— Not yet available` on a stage that exists. Asserted across all three in one
+   * loop, so re-disabling any of them fails here rather than only where that mode's own
+   * controls are tested.
+   */
+  it('refuses none of them, now that all three stages are built', () => {
     mountScreen();
 
-    const [, blind] = banModeInputs();
+    for (const input of banModeInputs()) {
+      expect(input.disabled).toBe(false);
+      expect(input.hasAttribute('aria-disabled')).toBe(false);
+      expect(labelFor(input).endsWith('— Not yet available')).toBe(false);
+    }
+  });
 
-    expect(blind?.disabled).toBe(true);
-    expect(blind?.getAttribute('aria-disabled')).toBe('true');
-    expect(labelFor(blind as HTMLInputElement).endsWith('— Not yet available')).toBe(true);
-    expect(labelFor(blind as HTMLInputElement)).toBe('Blind — Not yet available');
+  it('names each mode as itself, with no suffix on any of them', () => {
+    mountScreen();
+
+    expect(banModeInputs().map((input) => labelFor(input))).toEqual([
+      'Host banlist',
+      'Blind',
+      'Snake',
+    ]);
   });
 
   /**
-   * The counterpart, kept HERE rather than only in `config-bans.test.tsx`, because the
-   * regression this file guards is "a mode the build does not run is selectable" and its
-   * mirror image is "a mode the build DOES run is refused". 04-05 enabled `snake`; if a later
-   * change re-disables it, the host reads `— Not yet available` on a stage that exists.
+   * The mechanism, retargeted rather than deleted.
+   *
+   * This case was written against `blind` while `blind` was refused, and every ban mode is
+   * now selectable — so the only refused option left on this screen is `Re-ban` in the
+   * duplicate-policy control (BAN-07 is partial by D-19). The rule it guards is unchanged
+   * and is the reason a disabled member is safe to ship: a click on one must leave the
+   * selection exactly where it was, rather than merely LOOKING greyed while writing a
+   * policy nothing implements into a saved tournament.
+   *
+   * `config-bans.test.tsx` owns that member's attributes and its label; this owns what a
+   * click does, which is the half neither an attribute assertion nor a screenshot covers.
    */
-  it('offers snake without a suffix, now that its stage is built', () => {
-    mountScreen();
-
-    const [, , snake] = banModeInputs();
-
-    expect(snake?.disabled).toBe(false);
-    expect(snake?.hasAttribute('aria-disabled')).toBe(false);
-    expect(labelFor(snake as HTMLInputElement)).toBe('Snake');
-  });
-
   it('leaves the selection alone when a refused option is clicked', () => {
     mountScreen();
 
-    const [hostBanlist, blind] = banModeInputs();
+    // The duplicate-policy control is not rendered at `hostBanlist` — there are no player
+    // bans in that mode — and at `snake` the whole group is inert. `blind` is the mode it
+    // exists for, and it is reachable for the first time here.
+    const [, blind] = banModeInputs();
     act(() => {
       host.querySelector<HTMLLabelElement>(`label[for="${blind?.id ?? ''}"]`)?.click();
     });
+    expect(blind?.checked).toBe(true);
 
-    expect(hostBanlist?.checked).toBe(true);
-    expect(blind?.checked).toBe(false);
+    const policies = [...host.querySelectorAll<HTMLInputElement>('input[name="duplicate-bans"]')];
+    const [bothApply, reBan] = policies;
+    expect(reBan?.disabled).toBe(true);
+
+    act(() => {
+      host.querySelector<HTMLLabelElement>(`label[for="${reBan?.id ?? ''}"]`)?.click();
+    });
+
+    expect(bothApply?.checked).toBe(true);
+    expect(reBan?.checked).toBe(false);
   });
 
   it('is a native radio group, not a hand-rolled one', () => {

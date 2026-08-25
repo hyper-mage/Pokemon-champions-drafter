@@ -27,6 +27,7 @@ import { claimOwnership, disposeTabLock, notifyAbandoned } from './adapters/tab-
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
 import {
   bansPlaced,
+  bansRevealed,
   cardsPlayed,
   orderResolved,
   pickMade,
@@ -55,6 +56,7 @@ import {
   selectPhase,
   selectPickCount,
   selectPlayerName,
+  selectPublicBanIds,
   selectResolvedOrder,
   selectRoundEligibleIds,
   selectRoundKind,
@@ -1367,16 +1369,41 @@ export function App() {
   }, [state, entries, entryById]);
 
   /**
-   * The banned species' names, for the top-bar disclosure — D-13.
+   * The banned species' names, for the top-bar disclosure — D-13, and `04-UI-SPEC`
+   * Amendment 1.
    *
-   * Its length IS the set cardinality by construction: `bannedEntries` intersects the stored
-   * banlist with the roster, so a duplicate written by two ban surfaces and a stale id left
-   * by a regulation rotation both contribute nothing. That makes it equal to the `banCount`
+   * ## WHAT THE ROOM MAY SEE IS DECIDED IN ONE PLACE, AND IT IS NOT HERE
+   *
+   * `selectPublicBanIds` is Amendment 1's four-row table, already implemented and tested in
+   * core (04-04). This line is the wiring and nothing else: it does NOT branch on `banMode`,
+   * because a branch here would be a second authority free to disagree with the selector at
+   * exactly the moment secrecy matters — a blind stage before the reveal, where the
+   * difference between the two answers is every sealed ban in the tournament.
+   *
+   * The disclosure is a native `<details>` anyone standing in the room can open with one
+   * click, and the blind stage's visual shield does not cover the chrome above it. Sourced
+   * from `config.bans` this was correct for two modes and a total disclosure for the third.
+   * `selectAllBanIds` is the one that must never reach a surface.
+   *
+   * ## The count still comes from the resolved set, and never from an array length
+   *
+   * Its length IS the set cardinality by construction: `bannedEntries` intersects the ids
+   * with the roster, so a duplicate written by two ban surfaces and a stale id left by a
+   * regulation rotation both contribute nothing. That makes it equal to the `banCount`
    * inside the feasibility memo above without the two being computed the same way — and it
-   * is why the count is not read off the stored array's length anywhere in this file.
+   * is why the count is not read off a stored array's length anywhere in this file.
+   *
+   * Phase 4 adds a second form of that same mistake: flattening the revealed submissions and
+   * taking the length. It is wrong by exactly the number of collisions, because a collision
+   * is two submissions and one banned species. The expression is deliberately not written
+   * out here — a comment quoting a forbidden pattern is the first copy of it free to drift,
+   * and it makes the mechanical check report its own documentation.
    */
   const bannedNames = useMemo(
-    () => (state === null ? [] : bannedEntries(entries, state.config.bans).map((entry) => entry.name)),
+    () =>
+      state === null
+        ? []
+        : bannedEntries(entries, selectPublicBanIds(state)).map((entry) => entry.name),
     [state, entries],
   );
 
@@ -1550,6 +1577,40 @@ export function App() {
    */
   const handlePlaceBan = useCallback((playerId: string, monId: string, pass: number) => {
     dispatch(bansPlaced(playerId, monId, pass));
+  }, []);
+
+  /**
+   * The blind reveal — BAN-04, D-08, D-13.
+   *
+   * ## It is MATERIALIZED, not an instruction to re-derive
+   *
+   * The payload carries the attributed lists themselves rather than "reveal what was
+   * submitted" (ARCHITECTURE Pattern 5). The reveal is a host act at a point in the log, and
+   * a build that re-derived it would be free to disagree about which submissions were in it
+   * after an undo — which is the one moment the room is watching the screen together.
+   *
+   * ## In STARTING order, and assembled here rather than in the screen
+   *
+   * `banSubmissions` is in LOG order, which is the order the host happened to type them. The
+   * reveal reads down the starting order like every other list in the phase, so the mapping
+   * is over `state.order` and the submission is looked up by `playerId`. It lives at the
+   * composition root because this is the layer that owns `dispatch` — `BanStageScreen`
+   * reports the tap and carries no payload at all, so it cannot become a second opinion
+   * about what was revealed.
+   *
+   * `getState()` rather than the render's `state`: the tap is an event, and the document at
+   * the moment of the tap is the one being revealed.
+   */
+  const handleRevealBans = useCallback(() => {
+    const current = getState();
+    if (current === null) return;
+
+    const bans = current.order.map((playerId) => ({
+      playerId,
+      monIds: current.banSubmissions.find((entry) => entry.playerId === playerId)?.monIds ?? [],
+    }));
+
+    dispatch(bansRevealed(bans));
   }, []);
 
   /**
@@ -2071,6 +2132,7 @@ export function App() {
               onRequestAbandon: handleRequestAbandon,
               bannedNames,
             }}
+            onReveal={handleRevealBans}
             // The STORED preference, uncoerced. `pane` below coerces against the DRAFT's
             // availability, which tracks `selectPhase` — and `selectPhase` answers `'cards'`
             // at a ban stage. Amendment 2's coercion is the stage's own and lives there.

@@ -1,3 +1,5 @@
+import { useRef } from 'preact/hooks';
+
 import type { SpriteMeta } from '../../adapters/roster-source';
 import type { PaneState } from '../../adapters/view-prefs';
 import type { DraftState } from '../../core/model';
@@ -8,8 +10,10 @@ import {
   selectPlayerName,
   selectPublicBanIds,
   selectStillToBanThisPass,
+  selectSubmittedPlayerIds,
 } from '../../core/selectors';
 import { BanBoard } from '../components/BanBoard';
+import { BlindLocked } from '../components/BlindLocked';
 import { PoolGrid, type BanInertState } from '../components/PoolGrid';
 import { SplitPanes } from '../components/SplitPanes';
 import { TopBar, type TopBarProps } from '../components/TopBar';
@@ -65,6 +69,19 @@ export interface BanStageScreenProps {
    * bag keeps the screen's own contract the four fields above it.
    */
   topBar: TopBarProps;
+  /**
+   * The host's deliberate tap on `Reveal bans` — BAN-04, D-08.
+   *
+   * No payload. The reveal is a host act over the WHOLE fold rather than over anything this
+   * screen picked, so the caller assembles the attributed lists from the document it already
+   * holds and stamps the envelope; this screen reports the tap and nothing else. `dispatch`
+   * lives in the store and no component may reach it (CLAUDE.md §Architecture).
+   *
+   * It is a prop rather than an effect because it must NEVER fire on its own. A reveal that
+   * followed the last submission automatically would show every player's bans to the last
+   * player to enter, while they are still standing at the screen alone.
+   */
+  onReveal: () => void;
   /**
    * The host's STORED pane preference, uncoerced. See below for why the coercion happens
    * here rather than in `app.tsx`.
@@ -158,10 +175,21 @@ export function BanStageScreen({
   spriteMeta,
   onPlaceBan,
   topBar,
+  onReveal,
   storedPane,
   onPaneChange,
 }: BanStageScreenProps) {
   const stage = selectBanStageState(state);
+
+  /**
+   * The focus target every exit from the entry surface lands on — 04-10 wires the exits.
+   *
+   * It lives HERE rather than inside `BlindLocked` because the entry surface and the locked
+   * state are siblings this screen swaps between: a ref owned by the component that unmounts
+   * is a ref that is null exactly when focus needs somewhere to go. Declared before the
+   * branches, because a hook may not be called conditionally.
+   */
+  const primaryActionRef = useRef<HTMLButtonElement | null>(null);
 
   if (stage === 'snake') {
     const turn = selectBanTurn(state);
@@ -450,6 +478,77 @@ export function BanStageScreen({
     );
   }
 
+  if (stage === 'blindLocked') {
+    /*
+      --- THE LOCKED STATE, AND EVERY VALUE ON IT IS A LOOKUP OVER SELECTOR OUTPUT ---
+
+      `selectSubmittedPlayerIds` answers who has sealed an allotment, in ids and nothing
+      else — the selector's own doc block says a surface cannot leak what it was never
+      handed. Turning those ids into a per-row boolean and a display name is the only work
+      done here, and neither is a rule. If any of it starts to look like one, the selector
+      is missing and belongs in `src/core/` (04-UI-SPEC §Pure-core boundary).
+
+      The order is `state.order` — the STARTING order, which is the order the room reads
+      down and the order every other list in this phase uses.
+    */
+    const submitted = new Set(selectSubmittedPlayerIds(state));
+
+    const rows = state.order.map((playerId) => ({
+      playerName: selectPlayerName(state, playerId) ?? playerId,
+      entered: submitted.has(playerId),
+    }));
+
+    /*
+      Whose turn it is, and `null` once nobody's is. Read off the ROWS rather than off the
+      submissions, so "who is next" and "which row says `Not yet`" cannot disagree — they
+      are the same list. A player who submits out of turn therefore does not become next
+      again, which is the honest answer: the host types the bans and the order is a
+      running order, not a lock.
+    */
+    const next = rows.find((row) => !row.entered) ?? null;
+
+    return (
+      <>
+        {/*
+          `.app-shell` and `TopBar` only — 04-UI-SPEC §3's blind row. NO panes are mounted
+          below this line, so `storedPane` is not consulted and `onPaneChange` is not
+          called: Amendment 2 requires the host's preference to survive the whole blind ban
+          stage untouched, so the draft opens in the state they actually chose.
+
+          `TopBar`'s own disclosure is safe here because `app.tsx` sources its names from
+          `selectPublicBanIds`, which at blind before the reveal is the host's banlist only.
+          That is Amendment 1, and it is decided there rather than here so this screen
+          cannot become a second authority on it.
+        */}
+        <div class="sticky-head">
+          <TopBar {...topBar} />
+        </div>
+
+        <BlindLocked
+          rows={rows}
+          nextPlayerName={next === null ? null : next.playerName}
+          entered={submitted.size}
+          total={state.order.length}
+          /*
+            04-10 owns the discard notice and the three paths that raise it. Until then
+            nothing has been discarded, and `null` renders no notice at all — which is the
+            same thing a host sees on every entry that was not interrupted.
+          */
+          discardedPlayerName={null}
+          /*
+            04-10 owns the transition into the entry surface. Until it lands this is a
+            no-op, deliberately: a placeholder entry surface is exactly what D-18 forbids,
+            because a half-private state is where a leak bug lives. A button that does
+            nothing is visibly unfinished; a half-built entry surface is invisibly unsafe.
+          */
+          onEnter={() => undefined}
+          onReveal={onReveal}
+          primaryActionRef={primaryActionRef}
+        />
+      </>
+    );
+  }
+
   /*
     --- AMENDMENT 2's BLIND ROW, WHICH IS A THING THIS FILE DOES NOT DO ---
 
@@ -470,12 +569,9 @@ export function BanStageScreen({
 
     ---
 
-    Every other arm renders nothing, and each is unreachable TODAY for a stated reason. A
+    The remaining arms render nothing, and each is unreachable TODAY for a stated reason. A
     `null` that outlives its plan is invisible otherwise.
 
-      'blindLocked'  04-09. Unreachable because `Blind` is still a disabled option in
-                     `BAN_MODE_OPTIONS`, so no host can start a blind tournament — though an
-                     imported document can sit here, which is why the arm exists at all.
       'blindEntry'   04-10. Never returned by `selectBanStageState` at all: entry is a
                      transient state a component enters on a deliberate tap, and D-18
                      requires the in-progress selection to die with the component rather
