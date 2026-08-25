@@ -24,6 +24,14 @@ import {
   type LockMessage,
 } from '../../src/adapters/tab-lock';
 import {
+  CHECKPOINT_BODY,
+  CHECKPOINT_CTA,
+  CHECKPOINT_DISMISS,
+  CHECKPOINT_HEADING,
+  CHECKPOINT_HEADING_BANS,
+  CheckpointPrompt,
+} from '../../src/ui/components/CheckpointPrompt';
+import {
   IMPORT_CONFIRM_HEADING,
   ImportConfirmDialog,
   importConfirmBody,
@@ -424,5 +432,86 @@ describe('takeover confirmation', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * The checkpoint's second milestone — D-09, assertion S8.
+ *
+ * The checkpoint is a file control, which is why it is asserted here beside the other two.
+ * S8's negative half — that no prompt is rendered before `bans/revealed` — belongs to the
+ * screen and is asserted at three separate moments in `ban-stage.test.tsx`. What is left is
+ * the positive half: the offer that fires after the reveal is the SAME offer, over the same
+ * file, and still cannot write one without a click.
+ */
+describe('the ban-reveal checkpoint', () => {
+  function mountCheckpoint(heading: string, onDownload = () => undefined): void {
+    act(() => {
+      render(
+        <CheckpointPrompt
+          heading={heading}
+          reached
+          dismissed={false}
+          onDownload={onDownload}
+          onDismiss={() => undefined}
+        />,
+        host,
+      );
+    });
+  }
+
+  it('names the milestone it is standing at, and claims nothing about the draft', () => {
+    expect(CHECKPOINT_HEADING_BANS).toBe('Bans are final — save a copy?');
+
+    mountCheckpoint(CHECKPOINT_HEADING_BANS);
+
+    expect(host.querySelector('.checkpoint-prompt__heading')?.textContent).toBe(
+      CHECKPOINT_HEADING_BANS,
+    );
+    // The draft has not started. The heading it must NOT inherit says it is finished.
+    expect(host.textContent).not.toContain(CHECKPOINT_HEADING);
+  });
+
+  it('offers the same file, in the same words, at both milestones', () => {
+    // The heading is the only string a milestone varies, because it is the only one that is
+    // about the moment rather than about the file. A second body would be a second promise
+    // about one object.
+    mountCheckpoint(CHECKPOINT_HEADING_BANS);
+    expect(host.querySelector('.checkpoint-prompt__body')?.textContent).toBe(CHECKPOINT_BODY);
+    expect(buttonLabelled(CHECKPOINT_CTA)).toBeDefined();
+    expect(buttonLabelled(CHECKPOINT_DISMISS)).toBeDefined();
+  });
+
+  it('writes nothing on mount, at this milestone as at the other', () => {
+    // D-09's whole reason for moving the offer past the reveal is that the file TRAVELS. A
+    // prompt that downloaded on mount would put unrevealed bans in a downloads folder the
+    // moment the screen appeared — and this component cannot, because the call to action's
+    // own click handler is the only caller of `onDownload`.
+    const onDownload = vi.fn();
+
+    mountCheckpoint(CHECKPOINT_HEADING_BANS, onDownload);
+    expect(onDownload).not.toHaveBeenCalled();
+
+    act(() => {
+      buttonLabelled(CHECKPOINT_CTA)?.click();
+    });
+    expect(onDownload).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders nothing at all once the host has waved it away', () => {
+    act(() => {
+      render(
+        <CheckpointPrompt
+          heading={CHECKPOINT_HEADING_BANS}
+          reached
+          dismissed
+          onDownload={() => undefined}
+          onDismiss={() => undefined}
+        />,
+        host,
+      );
+    });
+
+    expect(host.querySelector('.checkpoint-prompt')).toBeNull();
   });
 });

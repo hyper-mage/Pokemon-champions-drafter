@@ -1211,3 +1211,86 @@ describe('the ban stage on screen asks, or does not, as the stage requires', () 
     expect(dialogButtonNamed('Abandon tournament')).toBeDefined();
   });
 });
+
+/**
+ * Undoing the reveal, driven through the real surface rather than through the composer.
+ *
+ * 04-07 wrote `UNDO_REVEAL_CONFIRM` and routed it in `app.tsx` before anything could reach
+ * it: the `'reveal'` arm rendered nothing, so the dialog was asserted against a directly
+ * rendered `ConfirmDialog` and its routing was never exercised. 04-11 built the surface, so
+ * these drive the whole path — a saved revealed document, the top bar's own undo control,
+ * the dialog, and where the screen lands afterwards.
+ */
+describe('undoing the reveal, through the surface that now exists', () => {
+  /** A blind stage with every allotment sealed and the reveal landed, saved for resume. */
+  function revealedSaved(): void {
+    const doc = banStageDoc('blind', (push) => {
+      for (const playerId of BAN_PLAYERS) {
+        push(bansSubmitted(playerId, BLIND_ALLOTMENTS[playerId] as string[]));
+      }
+      push(
+        bansRevealed(
+          BAN_PLAYERS.map((playerId) => ({
+            playerId,
+            monIds: BLIND_ALLOTMENTS[playerId] as string[],
+          })),
+        ),
+      );
+    });
+
+    expect(saveTournament(doc)).toBe(true);
+  }
+
+  async function reachReveal(): Promise<void> {
+    revealedSaved();
+    claimLock();
+    await mountApp();
+    await click(buttonNamed('Resume saved draft'));
+  }
+
+  it('lands on the reveal, which is what makes the rest of this reachable', async () => {
+    await reachReveal();
+
+    expect(host.querySelector('.ban-reveal')).not.toBeNull();
+  });
+
+  it('asks first, in the words 04-07 wrote for this exact moment', async () => {
+    await reachReveal();
+    await click(buttonNamed('Undo last move'));
+
+    expect(dialogText()).toContain(UNDO_REVEAL_CONFIRM.body(3));
+    expect(dialogButtonNamed('Undo the reveal')).toBeDefined();
+    expect(dialogButtonNamed('Keep the reveal')).toBeDefined();
+  });
+
+  it('goes back to the locked screen with every submission still recorded', async () => {
+    await reachReveal();
+    await click(buttonNamed('Undo last move'));
+    await click(dialogButtonNamed('Undo the reveal'));
+
+    expect(host.querySelector('.ban-reveal')).toBeNull();
+    expect(host.querySelector('.blind-locked')).not.toBeNull();
+    expect(getState()?.banSubmissions).toHaveLength(3);
+  });
+
+  it('has nothing to un-draw, which is why this undo is clean enough to offer', async () => {
+    // D-23. The pool is drawn on a separate `Start draft` tap, so undoing the reveal takes
+    // back exactly one action and touches no pool.
+    await reachReveal();
+    await click(buttonNamed('Undo last move'));
+    await click(dialogButtonNamed('Undo the reveal'));
+
+    expect(getState()?.poolIds).toEqual([]);
+  });
+
+  it('keeps the reveal when the safe label is chosen', async () => {
+    await reachReveal();
+
+    const before = getDoc()?.log.length ?? 0;
+    await click(buttonNamed('Undo last move'));
+    await click(dialogButtonNamed('Keep the reveal'));
+
+    expect(getDoc()?.log.length).toBe(before);
+    expect(host.querySelector('.ban-reveal')).not.toBeNull();
+  });
+});
