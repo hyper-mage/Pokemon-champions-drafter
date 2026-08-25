@@ -1157,3 +1157,61 @@ export function selectBanCollisions(state: DraftState): BanCollision[] {
 
   return collisions;
 }
+
+/**
+ * Whose bans are whose — BAN-04, D-13, and the one place blind and snake converge.
+ *
+ * One record per seat in STARTING order, so the reveal maps it straight onto its rows and
+ * a player with nothing attributed to them still gets a row rather than silently vanishing
+ * from a list the room is reading down.
+ *
+ * ## Why this is a selector and not a lookup the screen could do
+ *
+ * The answer branches on `config.banMode`: a blind tournament's attribution is the reveal's
+ * materialised array (D-13), and a snake tournament's is the run of placements. That is a
+ * rule about which source is authoritative, and `04-UI-SPEC` §Pure-core boundary is explicit
+ * that a surface which seems to need the UI to decide one is a surface missing a selector.
+ *
+ * The branch is deliberately {@link selectPublicBanIds}' branch, in the same order and with
+ * the same reading of a hand-edited snake document that also carries a reveal. One of those
+ * two functions decides what the room may see and this one decides whose name sits above it;
+ * disagreeing about the source would put a species under the wrong player's name at the one
+ * moment the whole room is looking at the screen (T-04-57).
+ *
+ * ## Empty until the reveal, in blind
+ *
+ * `bans/submitted` carries the ids in the clear (D-06), and this function is not the crack.
+ * Before `bans/revealed` every record is empty, which is the same posture
+ * {@link selectBanCollisions} takes for the same reason.
+ *
+ * The arrays are FRESH. A caller that pushed into one would otherwise be writing into the
+ * fold, and the fold is a cache of the log rather than somewhere to keep things.
+ */
+export function selectAttributedBans(
+  state: DraftState,
+): { playerId: string; monIds: string[] }[] {
+  return state.order.map((playerId) => ({ playerId, monIds: attributedTo(state, playerId) }));
+}
+
+/** One seat's ban ids, from whichever source this mode makes authoritative. */
+function attributedTo(state: DraftState, playerId: string): string[] {
+  if (state.config.banMode === 'snake') {
+    const placed: string[] = [];
+    // In the order they were PLACED, which is pass order — the same order the board's
+    // columns read across, so the reveal and the board name a player's bans alike.
+    for (const placement of state.banPlacements) {
+      if (placement.playerId === playerId) placed.push(placement.monId);
+    }
+    return placed;
+  }
+
+  if (state.config.banMode === 'blind') {
+    const revealed = state.bansRevealed;
+    if (revealed === null) return [];
+    return [...(revealed.find((entry) => entry.playerId === playerId)?.monIds ?? [])];
+  }
+
+  // `hostBanlist` runs no player ritual, so nothing is attributed to anybody. The host's own
+  // banlist is not attribution: it belongs to the tournament rather than to a seat.
+  return [];
+}

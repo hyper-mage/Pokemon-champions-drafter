@@ -40,6 +40,7 @@ import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import {
   selectAllBanIds,
   selectAvailablePool,
+  selectAttributedBans,
   selectBanCollisions,
   selectBanOrder,
   selectBanStageState,
@@ -1600,5 +1601,83 @@ describe('selectBanCollisions', () => {
     selectBanCollisions(state)[0]?.playerIds.push('p6');
 
     expect(selectBanCollisions(state)[0]?.playerIds).toEqual(['p1', 'p2', 'p3']);
+  });
+});
+
+/**
+ * `selectAttributedBans` — who banned what, and the one place the two modes converge.
+ *
+ * The reveal serves blind and snake from one component, so something has to answer "which
+ * bans belong to this seat" for both — and the answer branches on `config.banMode`, which
+ * makes it a rule rather than a lookup. It mirrors `selectPublicBanIds`'s structure
+ * deliberately: the same branch, in the same order, so the set the room may see and the
+ * attribution beside it cannot disagree about which source is authoritative.
+ */
+describe('selectAttributedBans', () => {
+  it('returns one record per seat, in STARTING order, whatever order the log is in', () => {
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, [...BLIND_SUBMISSIONS, BLIND_REVEAL]);
+
+    expect(selectAttributedBans(state).map((row) => row.playerId)).toEqual(BLIND_ORDER);
+  });
+
+  it('attributes nothing in blind until the reveal has landed', () => {
+    // The secrecy property, restated where a careless change would break it: a submission
+    // is in the log in the clear (D-06), and this is one of the functions that must not
+    // hand it to a surface before the host taps.
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, BLIND_SUBMISSIONS);
+
+    expect(selectAttributedBans(state).every((row) => row.monIds.length === 0)).toBe(true);
+  });
+
+  it('attributes the revealed lists once the reveal has landed', () => {
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, [...BLIND_SUBMISSIONS, BLIND_REVEAL]);
+
+    expect(selectAttributedBans(state)).toEqual([
+      { playerId: 'p1', monIds: ['starmie', 'venusaur'] },
+      { playerId: 'p2', monIds: ['starmie', 'charizard'] },
+      { playerId: 'p3', monIds: ['starmie', 'skarmory'] },
+      { playerId: 'p4', monIds: [] },
+      { playerId: 'p5', monIds: [] },
+      { playerId: 'p6', monIds: [] },
+    ]);
+  });
+
+  it('attributes snake placements in the order they were placed', () => {
+    const state = banState(SNAKE_CONFIG, SNAKE_ORDER, snakePlacements(8));
+    const rows = selectAttributedBans(state);
+
+    // The serpentine gives p1 the first and the last placement of the two passes.
+    expect(rows[0]).toEqual({ playerId: 'p1', monIds: [POOL[0], POOL[7]] });
+    expect(rows[3]).toEqual({ playerId: 'p4', monIds: [POOL[3], POOL[4]] });
+  });
+
+  it('reads snake placements even when a hand-edited document also carries a reveal', () => {
+    // `selectPublicBanIds` takes the same reading of the same document, and the two agreeing
+    // is the point: one of them decides what the room may see and the other decides whose
+    // name sits above it.
+    const state = banState(SNAKE_CONFIG, SNAKE_ORDER, [
+      ...snakePlacements(4),
+      bansRevealed([{ playerId: 'p1', monIds: ['dragonite'] }]),
+    ]);
+
+    expect(selectAttributedBans(state)[0]).toEqual({ playerId: 'p1', monIds: [POOL[0]] });
+  });
+
+  it('attributes nothing under hostBanlist, which runs no player ritual', () => {
+    const hostBanned: TournamentConfig = { ...CONFIG, bans: ['dragonite', 'meganium'] };
+    const state = banState(hostBanned, ['p1', 'p2']);
+
+    expect(selectAttributedBans(state)).toEqual([
+      { playerId: 'p1', monIds: [] },
+      { playerId: 'p2', monIds: [] },
+    ]);
+  });
+
+  it('cannot be mutated back into the fold', () => {
+    const state = banState(BLIND_CONFIG, BLIND_ORDER, [...BLIND_SUBMISSIONS, BLIND_REVEAL]);
+
+    selectAttributedBans(state)[0]?.monIds.push('dragonite');
+
+    expect(selectAttributedBans(state)[0]?.monIds).toEqual(['starmie', 'venusaur']);
   });
 });
