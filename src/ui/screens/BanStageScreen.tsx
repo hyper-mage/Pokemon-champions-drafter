@@ -1,5 +1,6 @@
-import { useRef } from 'preact/hooks';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
+import { installBanShield } from '../../adapters/ban-shield';
 import type { SpriteMeta } from '../../adapters/roster-source';
 import type { PaneState } from '../../adapters/view-prefs';
 import type { DraftState } from '../../core/model';
@@ -13,6 +14,7 @@ import {
   selectSubmittedPlayerIds,
 } from '../../core/selectors';
 import { BanBoard } from '../components/BanBoard';
+import { BlindEntry } from '../components/BlindEntry';
 import { BlindLocked } from '../components/BlindLocked';
 import { PoolGrid, type BanInertState } from '../components/PoolGrid';
 import { SplitPanes } from '../components/SplitPanes';
@@ -82,6 +84,19 @@ export interface BanStageScreenProps {
    * player to enter, while they are still standing at the screen alone.
    */
   onReveal: () => void;
+  /**
+   * A player's sealed allotment — BAN-04, D-06.
+   *
+   * The whole allotment in one call, because that is what a submission IS: `canApply`'s
+   * `wrongBanCount` refuses anything that is not exactly `bansPerPlayer` long, so a
+   * per-species prop would be a prop whose every individual call is refused. The caller
+   * stamps the envelope and dispatches; `dispatch` lives in the store and no component may
+   * reach it (CLAUDE.md §Architecture — one write path).
+   *
+   * SHOULD BE A STABLE IDENTITY, and this screen no longer depends on the caller for that —
+   * see the latest-value ref below.
+   */
+  onSubmitBans: (playerId: string, monIds: string[]) => void;
   /**
    * The host's STORED pane preference, uncoerced. See below for why the coercion happens
    * here rather than in `app.tsx`.
@@ -176,13 +191,14 @@ export function BanStageScreen({
   onPlaceBan,
   topBar,
   onReveal,
+  onSubmitBans,
   storedPane,
   onPaneChange,
 }: BanStageScreenProps) {
   const stage = selectBanStageState(state);
 
   /**
-   * The focus target every exit from the entry surface lands on — 04-10 wires the exits.
+   * The focus target every exit from the entry surface lands on.
    *
    * It lives HERE rather than inside `BlindLocked` because the entry surface and the locked
    * state are siblings this screen swaps between: a ref owned by the component that unmounts
@@ -190,6 +206,143 @@ export function BanStageScreen({
    * branches, because a hook may not be called conditionally.
    */
   const primaryActionRef = useRef<HTMLButtonElement | null>(null);
+
+  /*
+    --- WHO IS CURRENTLY ENTERING, AND WHY THIS IS COMPONENT STATE ---
+
+    `selectBanStageState` NEVER answers `'blindEntry'`, and that is the design rather than a
+    gap: entry is a transient state this screen enters on a deliberate tap, and D-18
+    requires the in-progress selection to die with the component rather than be derivable
+    from anything stored. A `useState` that could "obviously" be lifted into the fold is
+    exactly what a later contributor would lift, so this says it in place — lifting it would
+    make the half-private state survive a restore, which is the one thing the whole shield
+    exists to prevent.
+
+    `null` when nobody is entering, which is the resting condition of the whole stage.
+  */
+  const [entering, setEntering] = useState<{ playerId: string; playerName: string } | null>(
+    null,
+  );
+
+  /**
+   * What just happened, handed down so the locked state can say it.
+   *
+   * `BlindLocked` speaks the lock sentence on an INCREASE in `entered` within its own
+   * lifetime — and that increase never happens here, because the entry surface swaps the
+   * locked state out and back, so the submission lands across a remount. Without these the
+   * screen would be correct and completely silent about a submission the room is waiting on.
+   *
+   * They live in COMPONENT state on purpose, which is what keeps a page resume honest: a
+   * reload starts with both `null`, so arriving at a stage with three entries already in it
+   * says nothing rather than claiming three submissions just landed.
+   *
+   * At most one is ever set, because a departure from entry is either a submission or a
+   * discard and never both.
+   */
+  const [discardedPlayerName, setDiscardedPlayerName] = useState<string | null>(null);
+  const [lockedPlayerName, setLockedPlayerName] = useState<string | null>(null);
+
+  /*
+    The stable-callback read paths.
+
+    `installBanShield`'s doc block requires `onLock` to be a stable identity or the effect
+    re-registers on every render, and the transition it calls needs two values that change:
+    who is entering, and the caller's submit handler. Reading both through refs is what lets
+    `leaveEntry` below close over NOTHING and carry an empty dependency array, so its
+    stability is a property of this component rather than a promise every caller has to
+    keep. A caller passing an inline arrow cannot make the shield churn.
+  */
+  const enteringRef = useRef<{ playerId: string; playerName: string } | null>(null);
+  const onSubmitBansRef = useRef(onSubmitBans);
+
+  useEffect(() => {
+    onSubmitBansRef.current = onSubmitBans;
+  });
+
+  /** Armed by every exit from entry, consumed by the focus handoff below. */
+  const focusPrimaryRef = useRef(false);
+
+  /**
+   * ONE transition for all four exits — locking in, `Hide these bans`, a tab-hide and a
+   * restore from the back/forward cache.
+   *
+   * `null` is a discard and an array is a submission. Writing four handlers would be
+   * writing four things that can disagree about what just happened: the notice, the focus
+   * move and the unmount would each be free to drift on one path and not the others, and
+   * three of the four are paths nobody will ever exercise by hand.
+   *
+   * `enteringRef` rather than `entering`, so this closes over nothing and stays stable.
+   */
+  const leaveEntry = useCallback((submission: readonly string[] | null) => {
+    const current = enteringRef.current;
+    if (current === null) return;
+
+    enteringRef.current = null;
+    setEntering(null);
+    focusPrimaryRef.current = true;
+
+    if (submission === null) {
+      setLockedPlayerName(null);
+      setDiscardedPlayerName(current.playerName);
+      return;
+    }
+
+    setDiscardedPlayerName(null);
+    setLockedPlayerName(current.playerName);
+    onSubmitBansRef.current(current.playerId, [...submission]);
+  }, []);
+
+  /** The shield's callback. Stable, because `leaveEntry` is. */
+  const handleShieldLock = useCallback(() => {
+    leaveEntry(null);
+  }, [leaveEntry]);
+
+  const handleDiscard = useCallback(() => {
+    leaveEntry(null);
+  }, [leaveEntry]);
+
+  const handleLockIn = useCallback(
+    (monIds: string[]) => {
+      leaveEntry(monIds);
+    },
+    [leaveEntry],
+  );
+
+  const handleEnter = useCallback((playerId: string, playerName: string) => {
+    enteringRef.current = { playerId, playerName };
+    setEntering({ playerId, playerName });
+    // The notice clears on the transition INTO entry, so the locked state a host returns to
+    // is never still explaining a discard from two entries ago.
+    setDiscardedPlayerName(null);
+    setLockedPlayerName(null);
+  }, []);
+
+  /*
+    The shield is registered while the entry surface is mounted and torn down with it —
+    BAN-06, D-17, D-18. Scoped to that lifetime rather than to the screen's, because a
+    permanently registered listener is one that will one day fire against a stale closure,
+    and a restore that lands on the locked state should find nothing listening for it.
+  */
+  useEffect(() => {
+    if (entering === null) return undefined;
+    return installBanShield(handleShieldLock);
+  }, [entering, handleShieldLock]);
+
+  /**
+   * Hand focus to the locked state's primary action after every exit from entry.
+   *
+   * ONE target for all four, because the control that was focused no longer exists in any of
+   * them — leaving focus on a detached node or dropping it to `<body>` are the two failures
+   * this closes. `useLayoutEffect` with no dependency array, always clearing its own flag,
+   * exactly like `app.tsx`'s two handoffs: an armed handoff must never survive into a later,
+   * unrelated render.
+   */
+  useLayoutEffect(() => {
+    if (!focusPrimaryRef.current) return;
+    focusPrimaryRef.current = false;
+
+    primaryActionRef.current?.focus();
+  });
 
   if (stage === 'snake') {
     const turn = selectBanTurn(state);
@@ -493,19 +646,66 @@ export function BanStageScreen({
     */
     const submitted = new Set(selectSubmittedPlayerIds(state));
 
-    const rows = state.order.map((playerId) => ({
+    /*
+      The seats carry the `playerId` as well, because the entry transition needs it and the
+      row does not — `BlindLocked` is handed the two display fields below and nothing else.
+      One list, mapped down, so "who is next" and "which row says `Not yet`" cannot come
+      apart the way two independent lookups over the submissions could.
+    */
+    const seats = state.order.map((playerId) => ({
+      playerId,
       playerName: selectPlayerName(state, playerId) ?? playerId,
       entered: submitted.has(playerId),
     }));
 
+    const rows = seats.map((seat) => ({
+      playerName: seat.playerName,
+      entered: seat.entered,
+    }));
+
     /*
-      Whose turn it is, and `null` once nobody's is. Read off the ROWS rather than off the
+      Whose turn it is, and `null` once nobody's is. Read off the SEATS rather than off the
       submissions, so "who is next" and "which row says `Not yet`" cannot disagree — they
       are the same list. A player who submits out of turn therefore does not become next
       again, which is the honest answer: the host types the bans and the order is a
       running order, not a lock.
     */
-    const next = rows.find((row) => !row.entered) ?? null;
+    const next = seats.find((seat) => !seat.entered) ?? null;
+
+    /*
+      --- THE ENTRY SURFACE IS CONDITIONALLY RENDERED AND NEVER HIDDEN ---
+
+      04-RESEARCH calls this a CORRECTNESS RULE rather than a design choice, with two
+      verified reasons, and both are why there is no `hidden` prop and no rule in the
+      stylesheet that could take its place:
+
+      1. A hidden component KEEPS ITS STATE. D-18's guarantee is that the in-progress
+         selection dies on every exit, and a surface that is merely invisible has thrown
+         nothing away — the next host to arrive would find the previous player's half-built
+         allotment waiting behind whatever was covering it.
+      2. `PoolGrid` schedules its filter announcements on a 300 ms debounce plus a
+         zero-delay repeat timer, and BOTH are cancelled only on unmount. A
+         hidden-but-mounted grid therefore leaves a pending message that fires AFTER the
+         locked state has cleared the live region, which defeats assertion S7 through a
+         channel no visual shield covers.
+
+      Unmounting satisfies S9 for free as well: there is no change-over for a fade or a
+      cross-dissolve to attach to, and 04-UI-SPEC states that prohibition as a security
+      property rather than a taste — an effect of any duration leaves the roster and the
+      selection readable for its whole length.
+    */
+    if (entering !== null) {
+      return (
+        <BlindEntry
+          playerName={entering.playerName}
+          required={state.config.bansPerPlayer}
+          entries={entries}
+          spriteMeta={spriteMeta}
+          onLockIn={handleLockIn}
+          onDiscard={handleDiscard}
+        />
+      );
+    }
 
     return (
       <>
@@ -530,18 +730,24 @@ export function BanStageScreen({
           entered={submitted.size}
           total={state.order.length}
           /*
-            04-10 owns the discard notice and the three paths that raise it. Until then
-            nothing has been discarded, and `null` renders no notice at all — which is the
-            same thing a host sees on every entry that was not interrupted.
+            ONE string serving the three discard paths — the panic control, a tab-hide and a
+            restore from the back/forward cache. `null` renders no notice at all, which is
+            what a host sees on every entry that was not interrupted, and it is what a fresh
+            page load sees because this screen's memory of the discard does not survive one.
           */
-          discardedPlayerName={null}
+          discardedPlayerName={discardedPlayerName}
+          lockedPlayerName={lockedPlayerName}
           /*
-            04-10 owns the transition into the entry surface. Until it lands this is a
-            no-op, deliberately: a placeholder entry surface is exactly what D-18 forbids,
-            because a half-private state is where a leak bug lives. A button that does
-            nothing is visibly unfinished; a half-built entry surface is invisibly unsafe.
+            `next` is non-null on every render that reaches this prop — the button only
+            calls `onEnter` while it is showing `Enter {name}'s bans`, which is the
+            `complete === false` arm, and `complete` is `nextPlayerName === null`. The guard
+            is here rather than as an assertion because the compiler cannot see that
+            invariant across the component boundary.
           */
-          onEnter={() => undefined}
+          onEnter={() => {
+            if (next === null) return;
+            handleEnter(next.playerId, next.playerName);
+          }}
           onReveal={onReveal}
           primaryActionRef={primaryActionRef}
         />
@@ -572,10 +778,12 @@ export function BanStageScreen({
     The remaining arms render nothing, and each is unreachable TODAY for a stated reason. A
     `null` that outlives its plan is invisible otherwise.
 
-      'blindEntry'   04-10. Never returned by `selectBanStageState` at all: entry is a
-                     transient state a component enters on a deliberate tap, and D-18
+      'blindEntry'   BUILT, and it does not reach here. It is never returned by
+                     `selectBanStageState` at all: entry is a transient state this screen
+                     enters on a deliberate tap and holds in `entering` above, because D-18
                      requires the in-progress selection to die with the component rather
-                     than be derivable from anything stored.
+                     than be derivable from anything stored. The surface is mounted from
+                     inside the `'blindLocked'` arm and unmounted on every exit from it.
       'reveal'       04-11. Reachable in snake the moment the last ban lands, and D-23
                      requires a separate `Start draft` tap there rather than the pool
                      appearing on its own.

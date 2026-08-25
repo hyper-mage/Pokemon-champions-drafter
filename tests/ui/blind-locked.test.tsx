@@ -64,6 +64,7 @@ function propsWith(overrides: Partial<BlindLockedProps> = {}): BlindLockedProps 
     entered,
     total: TOTAL,
     discardedPlayerName: null,
+    lockedPlayerName: null,
     onEnter: () => undefined,
     onReveal: () => undefined,
     primaryActionRef: createRef<HTMLButtonElement>(),

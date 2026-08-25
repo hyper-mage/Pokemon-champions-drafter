@@ -45,7 +45,7 @@ import {
   getState,
   undo,
 } from '../../src/store';
-import { announce } from '../../src/ui/components/LiveRegion';
+import { announce, LiveRegion } from '../../src/ui/components/LiveRegion';
 import { BanStageScreen } from '../../src/ui/screens/BanStageScreen';
 
 // ---------------------------------------------------------------------------
@@ -347,6 +347,8 @@ function mountStage(): { calls: { playerId: string; monId: string; pass: number 
         onPaneChange={() => undefined}
         // Snake has no reveal in its ritual, so the snake arm never calls this.
         onReveal={() => undefined}
+        // The snake arm never enters a blind allotment, so this is never called there.
+        onSubmitBans={() => undefined}
         onPlaceBan={(playerId, monId, pass) => {
           calls.push({ playerId, monId, pass });
         }}
@@ -524,6 +526,7 @@ function LiveStage({
       storedPane={storedPane}
       onPaneChange={onPaneChange}
       onReveal={() => undefined}
+      onSubmitBans={() => undefined}
       onPlaceBan={(playerId, monId, pass) => {
         dispatch(bansPlaced(playerId, monId, pass));
         bump((count) => count + 1);
@@ -964,6 +967,7 @@ function LiveBlindStage({
   onPaneChange?: (pane: PaneState) => void;
   onReveal?: () => void;
 }) {
+  const [, bump] = useState(0);
   const state = getState();
   if (state === null) return null;
 
@@ -977,18 +981,48 @@ function LiveBlindStage({
       onPaneChange={onPaneChange}
       onPlaceBan={() => undefined}
       onReveal={onReveal}
+      /*
+        `app.tsx`'s shape with the smallest mechanism that reproduces it — the composition
+        root owns `dispatch` and re-renders off the store signal, and this dispatches then
+        bumps. Without the bump the locked state would re-render against the fold it was
+        mounted with and the count would not move, which would be a test asserting a stale
+        snapshot rather than what a host sees after their own tap.
+      */
+      onSubmitBans={(playerId, monIds) => {
+        dispatch(bansSubmitted(playerId, monIds));
+        bump((count) => count + 1);
+      }}
     />
   );
 }
 
+/**
+ * The blind stage WITH the live region mounted beside it.
+ *
+ * `announce` writes a module-level signal and `LiveRegion` is the only reader, so a suite
+ * that wants to assert what the room heard has to render one. It is mounted for every case
+ * rather than only the announcement ones, so the surface under test is the same surface in
+ * all of them — and it stays empty unless something spoke, which the leak sweep above
+ * depends on and which the locked state's own clear-on-arrival guarantees.
+ */
 function mountBlindStage(options: {
   storedPane?: PaneState;
   onPaneChange?: (pane: PaneState) => void;
   onReveal?: () => void;
 } = {}): void {
   act(() => {
-    render(<LiveBlindStage {...options} />, host);
+    render(
+      <>
+        <LiveRegion />
+        <LiveBlindStage {...options} />
+      </>,
+      host,
+    );
   });
+}
+
+function liveText(): string {
+  return host.querySelector('[aria-live="polite"]')?.textContent ?? '';
 }
 
 function startBlindStage(
@@ -1136,5 +1170,412 @@ describe('BanStageScreen at the blind locked stage', () => {
 
     expect(paneChanges).toBe(0);
     expect(localStorage.getItem('champions-drafter:view')).toBe(stored);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 04-10 — the entry surface, and the four ways out of it
+// ---------------------------------------------------------------------------
+
+/*
+  THE MEASURED SYNTHETIC-EVENT FORMS, and they are the same ones
+  `tests/adapters/ban-shield.test.ts` uses — 04-RESEARCH executed all of them against this
+  repository's installed happy-dom.
+
+  Constructing a `PageTransitionEvent` with `{ persisted: true }` yields a `persisted` of
+  `undefined`: the init dictionary is not honoured, so a test written the obvious way
+  exercises the falsy branch, passes, and proves nothing. Do not "tidy" the `Object.assign`
+  back into a constructor argument. `visibilityState` is a getter, so it is redefined rather
+  than assigned.
+
+  BOTH POLARITIES ARE ASSERTED HERE TOO. A single-polarity test at the screen level is as
+  much a false-positive gate as at the adapter level — it cannot tell the shield from a
+  handler that discards on every page load.
+*/
+function persistedPageShowEvent(): Event {
+  return Object.assign(new Event('pageshow'), { persisted: true });
+}
+
+function setVisibility(visibilityState: 'hidden' | 'visible'): Event {
+  Object.defineProperty(document, 'visibilityState', {
+    value: visibilityState,
+    configurable: true,
+  });
+  return new Event('visibilitychange');
+}
+
+afterEach(() => {
+  Object.defineProperty(document, 'visibilityState', {
+    value: 'visible',
+    configurable: true,
+  });
+});
+
+function entrySurface(): HTMLElement | null {
+  return host.querySelector<HTMLElement>('.blind-entry');
+}
+
+function lockedPanel(): HTMLElement | null {
+  return host.querySelector<HTMLElement>('.blind-locked');
+}
+
+function discardNotice(): string | null {
+  return host.querySelector('.blind-locked__discard')?.textContent?.trim() ?? null;
+}
+
+function enterBans(): void {
+  act(() => {
+    primaryAction().click();
+  });
+}
+
+function entryControl(selector: string): HTMLButtonElement {
+  const button = host.querySelector<HTMLButtonElement>(selector);
+  if (button === null) throw new Error(`the entry surface rendered no ${selector}`);
+  return button;
+}
+
+/** Choose `count` species through the entry grid, in roster order. */
+function chooseOnEntry(count: number): RosterEntry[] {
+  const chosen = Array.from({ length: count }, (_, index) => rosterEntryAt(index));
+  chosen.forEach((entry) => {
+    const cell = [...host.querySelectorAll<HTMLButtonElement>('button.mon-card')].find(
+      (button) => (button.getAttribute('aria-label') ?? '').startsWith(entry.name),
+    );
+    if (cell === undefined) throw new Error(`no entry cell for ${entry.name}`);
+    act(() => {
+      cell.click();
+    });
+  });
+  return chosen;
+}
+
+function submissionCount(): number {
+  return getState()?.banSubmissions.length ?? -1;
+}
+
+describe('BanStageScreen, entering a player’s bans', () => {
+  it('swaps the locked state for the entry surface on the primary action', () => {
+    startBlindStage(2);
+    mountBlindStage();
+
+    expect(lockedPanel()).not.toBeNull();
+    expect(entrySurface()).toBeNull();
+
+    enterBans();
+
+    expect(entrySurface()).not.toBeNull();
+    expect(lockedPanel()).toBeNull();
+    expect(host.querySelector('h1.blind-entry__headline')?.textContent).toBe("Ada's bans");
+  });
+
+  /**
+   * `04-UI-SPEC` §5 read literally: the entry surface is the ENTIRE working area. The top
+   * bar the locked state renders above it is gone too, which is what separates an
+   * interstitial from an input mask over a still-populated screen.
+   */
+  it('renders no top bar while the entry surface is up', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+
+    expect(host.querySelector('.sticky-head')).toBeNull();
+    expect(host.querySelector('.top-bar')).toBeNull();
+  });
+
+  it('locks in the whole allotment and returns to the locked state with the count raised', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+
+    const chosen = chooseOnEntry(2);
+
+    act(() => {
+      entryControl('.blind-entry__lock').click();
+    });
+
+    expect(entrySurface()).toBeNull();
+    expect(lockedPanel()).not.toBeNull();
+    expect(lockedText('.blind-locked__progress')).toBe('1 of 4 entered');
+    // `toMatchObject` because a submission also carries the `seq` 04-07's undo finds it by,
+    // which is the store's business and not this screen's.
+    expect(getState()?.banSubmissions).toMatchObject([
+      { playerId: 'p1', monIds: [chosen[0]?.id, chosen[1]?.id] },
+    ]);
+    // A submission is not a discard, so the notice that serves the three discard paths
+    // must NOT appear here.
+    expect(discardNotice()).toBeNull();
+  });
+});
+
+describe('the four ways out of the entry surface', () => {
+  it('hides on the panic control, recording nothing', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    act(() => {
+      entryControl('.blind-entry__hide').click();
+    });
+
+    expect(entrySurface()).toBeNull();
+    expect(discardNotice()).toBe("Ada's entry was discarded. Nothing was recorded.");
+    expect(submissionCount()).toBe(0);
+  });
+
+  it('discards when the tab is hidden', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    act(() => {
+      document.dispatchEvent(setVisibility('hidden'));
+    });
+
+    expect(entrySurface()).toBeNull();
+    expect(discardNotice()).toBe("Ada's entry was discarded. Nothing was recorded.");
+    expect(submissionCount()).toBe(0);
+  });
+
+  it('leaves the surface up when the tab merely becomes visible', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+
+    act(() => {
+      document.dispatchEvent(setVisibility('visible'));
+    });
+
+    expect(entrySurface()).not.toBeNull();
+    expect(lockedPanel()).toBeNull();
+  });
+
+  it('discards on a restore from the back/forward cache', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    act(() => {
+      window.dispatchEvent(persistedPageShowEvent());
+    });
+
+    expect(entrySurface()).toBeNull();
+    expect(discardNotice()).toBe("Ada's entry was discarded. Nothing was recorded.");
+    expect(submissionCount()).toBe(0);
+  });
+
+  /**
+   * THE ASSERTION THAT MAKES THE SCREEN-LEVEL GATE ABLE TO FAIL.
+   *
+   * An ordinary load is not a restore, and a shield that discarded on both would throw away
+   * a host's entry every time the page loaded. Without this case the suite cannot tell the
+   * two apart.
+   */
+  it('leaves the surface up on an ordinary, non-persisted pageshow', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    act(() => {
+      window.dispatchEvent(new Event('pageshow'));
+    });
+
+    expect(entrySurface()).not.toBeNull();
+    expect(lockedPanel()).toBeNull();
+  });
+
+  /**
+   * ONE OUTCOME, ONE MESSAGE, THREE PATHS — `04-UI-SPEC` §4.
+   *
+   * Compared against ONE ANOTHER rather than against a literal three times: three literals
+   * would be three things that can be edited apart, which is the exact failure the single
+   * composer exists to prevent.
+   */
+  it('says the same thing however the entry was left', () => {
+    const notices: (string | null)[] = [];
+
+    const leaveBy = (leave: () => void): void => {
+      abandonTournament();
+      render(null, host);
+      startBlindStage(2);
+      mountBlindStage();
+      enterBans();
+      chooseOnEntry(1);
+      act(leave);
+      notices.push(discardNotice());
+    };
+
+    leaveBy(() => entryControl('.blind-entry__hide').click());
+    leaveBy(() => document.dispatchEvent(setVisibility('hidden')));
+    leaveBy(() => window.dispatchEvent(persistedPageShowEvent()));
+
+    expect(notices[0]).not.toBeNull();
+    expect(notices[1]).toBe(notices[0]);
+    expect(notices[2]).toBe(notices[0]);
+  });
+
+  /**
+   * D-18's guarantee, asserted DIRECTLY rather than inferred from the notice: the
+   * in-progress selection dies with the component. Re-entering the same player starts from
+   * nothing, so there is no half-private state for a leak bug to live in.
+   */
+  it('retains nothing when the same player enters again', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    expect(host.querySelector('.ban-chip-list')).not.toBeNull();
+
+    act(() => {
+      entryControl('.blind-entry__hide').click();
+    });
+    enterBans();
+
+    expect(entrySurface()).not.toBeNull();
+    expect(host.querySelector('.ban-chip-list')).toBeNull();
+    expect(host.querySelector('.blind-entry__progress')?.textContent).toBe('0 of 2 chosen');
+  });
+
+  it('clears the discard notice on the next transition into entry', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+
+    act(() => {
+      entryControl('.blind-entry__hide').click();
+    });
+    expect(discardNotice()).not.toBeNull();
+
+    enterBans();
+
+    // Back on the entry surface the notice is gone with the screen that held it, and
+    // leaving by locking in must not bring it back.
+    chooseOnEntry(2);
+    act(() => {
+      entryControl('.blind-entry__lock').click();
+    });
+
+    expect(discardNotice()).toBeNull();
+  });
+
+  /**
+   * `04-UI-SPEC` §Interaction: ONE focus target for all four exits, because the control
+   * that was focused no longer exists in any of them. Focus must never be left on a
+   * detached node and never dropped to `<body>`.
+   */
+  it('lands focus on the locked state’s primary action however it was reached', () => {
+    const leaveBy = (leave: () => void, choose: number): void => {
+      abandonTournament();
+      render(null, host);
+      startBlindStage(2);
+      mountBlindStage();
+      enterBans();
+      chooseOnEntry(choose);
+      act(leave);
+
+      expect(entrySurface()).toBeNull();
+      expect(document.activeElement).toBe(primaryAction());
+    };
+
+    leaveBy(() => entryControl('.blind-entry__lock').click(), 2);
+    leaveBy(() => entryControl('.blind-entry__hide').click(), 1);
+    leaveBy(() => document.dispatchEvent(setVisibility('hidden')), 1);
+    leaveBy(() => window.dispatchEvent(persistedPageShowEvent()), 1);
+  });
+
+  /**
+   * The shield is scoped to the entry surface's own lifetime. Once the surface is gone its
+   * listeners are gone with it, so a later restore does not raise a discard notice on a
+   * screen nobody was entering — a permanently registered listener is one that eventually
+   * fires against a stale closure.
+   */
+  it('stops listening once the entry surface is gone', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(2);
+
+    act(() => {
+      entryControl('.blind-entry__lock').click();
+    });
+    expect(discardNotice()).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(persistedPageShowEvent());
+      document.dispatchEvent(setVisibility('hidden'));
+    });
+
+    expect(discardNotice()).toBeNull();
+    expect(entrySurface()).toBeNull();
+  });
+
+  /**
+   * 04-09's handover note, closed rather than inherited.
+   *
+   * `BlindLocked` speaks the lock sentence on an INCREASE in `entered` within its own
+   * lifetime, which never happens once the entry surface swaps it out and back — the lock
+   * lands across a remount and the screen would be correct and silent. The screen therefore
+   * hands down WHAT JUST HAPPENED, and a resume stays silent because the screen's own
+   * memory of it does not survive a reload.
+   */
+  it('says a submission landed, across the remount the entry surface causes', () => {
+    startBlindStage(2, ['Ada', 'Bo']);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(2);
+
+    act(() => {
+      entryControl('.blind-entry__lock').click();
+    });
+
+    expect(liveText()).toBe("Ada's bans are locked in. 1 of 2 entered.");
+  });
+
+  it('says the ritual is over when the last allotment lands', () => {
+    startBlindStage(2, ['Ada', 'Bo']);
+    dispatch(bansSubmitted('p2', [rosterEntryAt(8).id, rosterEntryAt(9).id]));
+
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(2);
+
+    act(() => {
+      entryControl('.blind-entry__lock').click();
+    });
+
+    expect(liveText()).toBe('All bans are in. 2 of 2 entered. Ready to reveal.');
+  });
+
+  it('speaks the discard rather than leaving the room to read it', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    act(() => {
+      entryControl('.blind-entry__hide').click();
+    });
+
+    expect(liveText()).toBe("Ada's entry was discarded. Nothing was recorded.");
+  });
+
+  /**
+   * A fresh arrival at the locked state is NOT a submission that just happened, so it
+   * clears the region and says nothing — 04-09's rule, which is what keeps a page resume at
+   * three entries from claiming three submissions just landed.
+   */
+  it('stays silent on a plain arrival with entries already in the log', () => {
+    startBlindStage(2, ['Ada', 'Bo']);
+    dispatch(bansSubmitted('p1', [rosterEntryAt(0).id, rosterEntryAt(1).id]));
+    announce('something the previous screen said');
+
+    mountBlindStage();
+
+    expect(liveText()).toBe('');
   });
 });
