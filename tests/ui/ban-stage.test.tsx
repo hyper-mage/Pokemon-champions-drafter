@@ -394,6 +394,12 @@ function mountStage(): { calls: { playerId: string; monId: string; pass: number 
         onPlaceBan={(playerId, monId, pass) => {
           calls.push({ playerId, monId, pass });
         }}
+        /*
+          The shell class the entry sub-state wears is `app.tsx`'s to render, so this harness
+          has nothing to do with it. Asserted against the real composition root in
+          `tests/ui/read-only-shell.test.tsx`, where the gate element exists.
+        */
+        onEntryActiveChange={() => undefined}
       />,
       host,
     );
@@ -588,6 +594,7 @@ function LiveStage({
         dispatch(bansPlaced(playerId, monId, pass));
         bump((count) => count + 1);
       }}
+      onEntryActiveChange={() => undefined}
     />
   );
 }
@@ -1055,6 +1062,7 @@ function LiveBlindStage({
         onDownload: () => undefined,
         onDismiss: () => undefined,
       }}
+      onEntryActiveChange={() => undefined}
     />
   );
 }
@@ -1920,6 +1928,7 @@ function LiveRevealStage({ onStartDraft }: { onStartDraft?: () => void } = {}) {
           bump((count) => count + 1);
         })
       }
+      onEntryActiveChange={() => undefined}
     />
   );
 }
@@ -2181,6 +2190,7 @@ describe('the checkpoint, and the three moments it must not appear at', () => {
           onSubmitBans={() => undefined}
           checkpoint={{ ...CHECKPOINT, dismissed: true }}
           onStartDraft={() => undefined}
+          onEntryActiveChange={() => undefined}
         />,
         host,
       );

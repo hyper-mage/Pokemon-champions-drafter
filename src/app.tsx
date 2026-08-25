@@ -565,6 +565,26 @@ export function App() {
   // something worth keeping — with nothing on screen to explain why.
   const [revealCheckpointDismissed, setRevealCheckpointDismissed] = useState(false);
 
+  /*
+    --- IS THE BLIND ENTRY SURFACE UP RIGHT NOW? ---
+
+    A BOOLEAN, and deliberately nothing more. `04-UI-SPEC` §3's shell table gives the blind
+    entry surface its own row — "own full-screen surface", distinct from both shells the
+    rest of the app wears — and the shell class is decided here, on the gate element, so
+    this layer has to be able to tell that the stage is in its entry sub-state.
+
+    WHO is entering and WHAT they have chosen stay in `BanStageScreen` and must never be
+    lifted here: D-18 requires the in-progress selection to die with the component, and its
+    doc block records why. This flag is a rendering fact about the shell, not a copy of that
+    state — it says a surface is mounted, never whose or with what on it.
+
+    `BanStageScreen` reports it from a layout effect, so the class flips in the same commit
+    that mounts the surface and no frame is ever painted with the entry surface inside the
+    capped column. It reports `false` on unmount too, and the class expression below reads
+    `screen.name === 'bans'` alongside it, so a stale `true` cannot reach any other screen.
+  */
+  const [blindEntryActive, setBlindEntryActive] = useState(false);
+
   const storageOk = probe.ok;
 
   // The saved document, probed once during the same first render as the canary, so
@@ -2104,18 +2124,34 @@ export function App() {
 
       <div
         /*
-          Three-way, per `04-UI-SPEC` Amendment 2. The snake ban stage keeps `.draft-shell`
-          because it IS the two-pane working screen — pool on the left, ban board on the
-          right, exactly the draft the room is about to run (D-02). Blind's locked and reveal
-          screens are read-and-act screens like the landing screen, so they take `.app-shell`
-          and 04-09 asserts that; the mode is read here rather than the stage, because the
-          answer is a property of the mode and not of how far through it the room is.
+          Four-way, per `04-UI-SPEC` §3's shell table and Amendment 2.
+
+          The snake ban stage keeps `.draft-shell` because it IS the two-pane working screen
+          — pool on the left, ban board on the right, exactly the draft the room is about to
+          run (D-02). Blind's locked and reveal screens are read-and-act screens like the
+          landing screen, so they take `.app-shell` and 04-09 asserts that.
+
+          Blind's ENTRY sub-state takes neither. §3 gives it its own row — "own full-screen
+          surface" — and §5 states the reason as the literal reading of BAN-05: "the ban
+          entry is the entire working area, not a masked field inside a visible screen." An
+          earlier three-way version of this expression keyed on the MODE alone and this arm
+          fell through to `.app-shell`, which put the phase's most important screen inside a
+          1200px centred column with page padding around it. That was WR-01. The mode is
+          still what decides the snake arm, because that answer really is a property of the
+          mode; the entry arm is a property of the STAGE, so it is read from the stage.
+
+          ALL FOUR ARMS ARE THE SAME ELEMENT, which is the point. This is the element that
+          carries `inert`, and the entry surface has to be under it: a read-only tab handed a
+          live ban screen is a rival-tournament hole (T-04-20) and a secrecy one. Moving the
+          entry surface out to a sibling would look identical on screen and reopen both.
         */
         class={
-          screen.name === 'draft' ||
-          (screen.name === 'bans' && state?.config.banMode === 'snake')
-            ? 'draft-shell'
-            : 'app-shell'
+          screen.name === 'bans' && blindEntryActive
+            ? 'entry-shell'
+            : screen.name === 'draft' ||
+                (screen.name === 'bans' && state?.config.banMode === 'snake')
+              ? 'draft-shell'
+              : 'app-shell'
         }
         inert={readOnly ? true : undefined}
       >
@@ -2200,6 +2236,13 @@ export function App() {
             storedPane={storedPane}
             onPaneChange={handlePaneChange}
             onPlaceBan={handlePlaceBan}
+            /*
+              The one fact this layer needs about the stage's own transient state, and the
+              only one it is given: a surface is up, or it is not. The shell class above
+              reads it; nothing else does. `setBlindEntryActive` is a `useState` setter, so
+              it is a stable identity and the effect that calls it cannot churn.
+            */
+            onEntryActiveChange={setBlindEntryActive}
           />
         )}
 

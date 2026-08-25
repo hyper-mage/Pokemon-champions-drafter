@@ -120,6 +120,36 @@ body {
 }
 
 /*
+ * The blind entry shell — 04-UI-SPEC section 3's third row, "own full-screen surface".
+ *
+ * A THIRD shell rather than a modifier on either of the two above, because it is neither of
+ * them: it is not a capped reading column and it is not a two-pane working screen. Section 5
+ * states the requirement as the literal reading of BAN-05 — "the ban entry is the entire
+ * working area, not a masked field inside a visible screen" — and WR-01 was this arm falling
+ * through to `.app-shell`, where the surface inherited a 1200px cap and page padding and
+ * rendered as a centred column with the page showing on both sides of it.
+ *
+ * So: no `max-width`, no `margin-inline`, and NO PADDING. The last one is not a tidy-up. The
+ * surface inside declares one viewport of height, and page padding around it stacks on top of
+ * that height rather than inside it — which is what made the one screen the spec says should
+ * have no scroll geometry of its own scroll by exactly the padding. `BlindEntry.css` owns the
+ * inset instead, which is the same division `.draft-panes` has with `.draft-shell`.
+ *
+ * `flex: 1; min-height: 0` for the reasons `.draft-shell` gives at length: the viewport length
+ * lives on `#app`, and a flex item's default minimum is its content. No `width` is needed
+ * because there is no auto cross-axis margin here to suppress the default stretch.
+ *
+ * The read-only prohibition above applies to this element too — it is the third class the
+ * gate can wear, so no containing-block-creating property may be declared here either.
+ */
+.entry-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/*
  * Everything above the panes keeps its natural height and only the region holding them
  * grows. `flex: none` rather than the default, because the default lets a flex item
  * SHRINK — and a top bar squeezed by a tall board is a top bar whose buttons overlap.

@@ -38,6 +38,18 @@
    * The surface IS the screen (BAN-05), so it fills the viewport rather than sitting in it
    * as a panel. --color-bg rather than --color-surface for the same reason: a raised panel
    * would imply something behind it, and there is deliberately nothing behind it.
+   *
+   * THIS ONLY HOLDS BECAUSE OF THE SHELL ABOVE IT, and the coupling is worth naming because
+   * it already broke once. `.entry-shell` in app.css is the ancestor here — no max-width, no
+   * margin-inline, no padding — and app.tsx wears it only while this surface is mounted.
+   * Under `.app-shell` instead, which is what shipped as WR-01, the same declarations render
+   * a centred 1200px column with the page showing either side of it, and the viewport height
+   * below stacks on the ancestor's own padding to produce a page scroll on the one surface
+   * the spec says has no scroll geometry of its own. Nothing in this file can detect that,
+   * which is why `tests/ui/read-only-shell.test.tsx` pins the shell class instead.
+   *
+   * The padding is declared here rather than on the shell so this file owns its own inset —
+   * the same division `.draft-panes` has with `.draft-shell`.
    */
   min-height: 100vh;
   background: var(--color-bg);

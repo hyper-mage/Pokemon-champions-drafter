@@ -137,6 +137,29 @@ export interface BanStageScreenProps {
    */
   storedPane: PaneState;
   onPaneChange: (pane: PaneState) => void;
+  /**
+   * Is the blind entry surface mounted right now? — `04-UI-SPEC` §3's shell table.
+   *
+   * §3 gives the entry sub-state its own shell row ("own full-screen surface"), and the
+   * shell element is `app.tsx`'s: it is the one that carries `inert`, and the entry surface
+   * has to stay under it or a read-only tab is handed a live ban screen. So the composition
+   * root has to be told which of its four shell classes to wear, and only this screen knows.
+   *
+   * A BOOLEAN, and that is the whole contract. `entering` itself — who, and what they have
+   * chosen so far — stays in this component, because D-18 requires the in-progress selection
+   * to die with it. This reports that a surface is up; it never reports whose.
+   *
+   * Called from a LAYOUT effect below rather than from the handlers, so it is driven by what
+   * actually rendered rather than by a second bookkeeping path that could disagree with it,
+   * and so the class flips before paint. It is called with `false` on unmount as well: the
+   * stage can be left by an abandon or an import while a surface is up, and a flag left
+   * `true` would be a flag nothing ever clears.
+   *
+   * SHOULD BE A STABLE IDENTITY — a `useState` setter or a `useCallback` — for the same
+   * reason `onLock` must be. Read through a ref here anyway, so a caller passing an inline
+   * arrow cannot make the effect churn.
+   */
+  onEntryActiveChange: (active: boolean) => void;
 }
 
 /**
@@ -230,6 +253,7 @@ export function BanStageScreen({
   checkpoint,
   storedPane,
   onPaneChange,
+  onEntryActiveChange,
 }: BanStageScreenProps) {
   const stage = selectBanStageState(state);
 
@@ -290,9 +314,20 @@ export function BanStageScreen({
   */
   const enteringRef = useRef<{ playerId: string; playerName: string } | null>(null);
   const onSubmitBansRef = useRef(onSubmitBans);
+  const onEntryActiveChangeRef = useRef(onEntryActiveChange);
 
   useEffect(() => {
     onSubmitBansRef.current = onSubmitBans;
+  });
+
+  /*
+    LAYOUT rather than passive, unlike the refresh above, and the two are not interchangeable.
+    The reporter that reads this ref is itself a layout effect — it has to be, or the shell
+    class flips a frame after the surface mounts — so a passive refresh here would leave it
+    reading one render behind on the render that matters.
+  */
+  useLayoutEffect(() => {
+    onEntryActiveChangeRef.current = onEntryActiveChange;
   });
 
   /** Armed by every exit from entry, consumed by the focus handoff below. */
@@ -374,6 +409,33 @@ export function BanStageScreen({
     if (entering === null) return undefined;
     return installBanShield(handleShieldLock);
   }, [entering, handleShieldLock]);
+
+  /*
+    --- THE SHELL CLASS FOLLOWS THE SURFACE, IN THE SAME COMMIT ---
+
+    `04-UI-SPEC` §3's shell table gives the entry sub-state its own row, and the element that
+    wears the class is `app.tsx`'s gate — the one that carries `inert`. The entry surface has
+    to stay UNDER that element (T-04-20: a ban screen rendered beside the gate looks identical
+    and hands a read-only tab a live one), so the class has to change on the element rather
+    than the element change around the surface. That is the whole reason this reports upward.
+
+    `useLayoutEffect`, for the reason the focus handoff below is one: it runs before paint, so
+    the class and the surface land in the same frame. A passive effect would paint the entry
+    surface once inside the capped 1200px column and then correct itself, which is the WR-01
+    bug for exactly one frame.
+
+    DRIVEN BY `entering` RATHER THAN BY THE FIVE HANDLERS. Every exit already funnels through
+    `leaveEntry`, but calling from there would be a second path that can disagree with what
+    actually rendered — and `entering` is the value the render branch itself reads.
+
+    The unmount arm is separate and unconditional. The stage can be left with a surface up
+    (an abandon, an import, a takeover), and a `true` left behind would be one nothing clears.
+  */
+  useLayoutEffect(() => {
+    onEntryActiveChangeRef.current(entering !== null);
+  }, [entering]);
+
+  useLayoutEffect(() => () => onEntryActiveChangeRef.current(false), []);
 
   /**
    * Hand focus to the locked state's primary action after every exit from entry.

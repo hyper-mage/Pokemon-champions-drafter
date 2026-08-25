@@ -192,12 +192,17 @@ async function mountApp(): Promise<void> {
  * assert the attribute is ABSENT as well as present — `[inert]` would return null in both
  * the healthy no-gate case and the case where the shell stopped rendering at all.
  *
- * Two classes because the shell wears one or the other by screen: `.app-shell` on landing
- * and config, `.draft-shell` on the draft. `.app-shell__title` is a different class and
- * does not match either.
+ * Three classes because the shell wears one of them by screen: `.app-shell` on landing and
+ * config, `.draft-shell` on the draft and the snake ban stage, `.entry-shell` while the
+ * blind entry surface is up (`04-UI-SPEC` section 3). `.app-shell__title` is a different
+ * class and does not match any of them.
+ *
+ * All three are listed here rather than only the two the gate wore before Phase 4, because
+ * this helper's job is to find the GATE — a selector that missed the third would make every
+ * `inert` assertion below silently skip the one screen the phase added.
  */
 function shell(): HTMLElement | null {
-  return host.querySelector('.draft-shell, .app-shell');
+  return host.querySelector('.draft-shell, .app-shell, .entry-shell');
 }
 
 function buttonNamed(name: string): HTMLButtonElement | undefined {
@@ -423,13 +428,17 @@ describe('the gate in a read-only tab', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * A snake tournament parked at its ban stage: a schedule, an order and NO pool.
+ * A tournament parked at its ban stage: a schedule, an order and NO pool.
+ *
+ * The mode is a parameter because the shell answer differs by it — snake keeps
+ * `.draft-shell`, blind does not — and one fixture with one varying field is what keeps the
+ * two cases comparable. Everything else about the document is identical.
  *
  * The shape `createBanStage` writes, seeded directly rather than driven through the config
  * form, so this file stays about the gate. `fold` runs no `canApply`, so a document may be
  * assembled here without walking the dispatch path.
  */
-function seedSavedBanStage(): void {
+function seedSavedBanStage(banMode: 'snake' | 'blind' = 'snake'): void {
   const config: TournamentConfig = {
     formatLabel: 'Champions MB',
     players: [
@@ -441,7 +450,7 @@ function seedSavedBanStage(): void {
     rosterChecksum: 'test-checksum',
     poolSize: 12,
     bans: [],
-    banMode: 'snake',
+    banMode,
     megasRequiredPerTeam: 0,
     dualMegaChoices: [],
     depth: 'draftOnly',
@@ -526,5 +535,134 @@ describe('the gate over the ban stage', () => {
     expect(host.querySelector('.draft-shell')).not.toBeNull();
     expect(host.querySelector('.app-shell')).toBeNull();
     expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Ada bans');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The blind entry surface's own shell — 04-UI-SPEC section 3, third row (WR-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * WHICH SHELL THE ENTRY SUB-STATE WEARS, AND THAT IT IS STILL THE GATE.
+ *
+ * `04-UI-SPEC` section 3's shell table has four rows, and until this file had these two cases
+ * only three of them were asserted anywhere: snake's `.draft-shell` above, and blind's locked
+ * and reveal `.app-shell` in `top-bar-bans.test.tsx` (04-09). The fourth — "own full-screen
+ * surface" for the entry sub-state — had no test, and it shipped wrong: the shell expression
+ * in `app.tsx` keyed on the MODE rather than the stage, so the entry arm fell through to
+ * `.app-shell` and the phase's most important screen rendered inside a 1200px centred column
+ * with page padding around it. That is WR-01, and it is the kind of fact no screenshot at one
+ * viewport width catches — which is why it is pinned here rather than left to a human pass.
+ *
+ * The two cases below are deliberately a pair and neither is sufficient alone:
+ *
+ *   The first says the surface escapes `.app-shell`. On its own, the cheapest way to satisfy
+ *   it is to render `BlindEntry` as a SIBLING of the gate — which is what the verification
+ *   report's own suggested fix would have done, and it would hand a read-only tab a live,
+ *   interactive ban screen.
+ *
+ *   The second says it is still under the gate. On its own it is satisfied by the shipped
+ *   bug, which never left `.app-shell` at all.
+ *
+ * Neither case touches the locked or reveal states, so 04-09's assertions about those stay
+ * the only authority on them.
+ */
+describe('the shell over the blind entry surface', () => {
+  /** Put this tab in charge, mount, resume, and open the first player's entry surface. */
+  async function enterFirstPlayersBans(): Promise<void> {
+    await mountApp();
+    await resumeSavedDraft();
+
+    // The locked state first — this is what the entry surface has to REPLACE, and asserting
+    // it here is what makes the class change below a change rather than a coincidence.
+    expect(host.querySelector('.app-shell')).not.toBeNull();
+
+    const enter = buttonNamed("Enter Ada's bans");
+    expect(enter).toBeDefined();
+
+    await act(async () => {
+      enter?.click();
+      await Promise.resolve();
+    });
+  }
+
+  it('wears its own full-screen shell while a player is entering bans', async () => {
+    seedSavedBanStage('blind');
+    const bus = makeBus();
+    vi.useFakeTimers();
+    claimOwnership({ channel: bus.connect() });
+    vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+    vi.useRealTimers();
+
+    await enterFirstPlayersBans();
+
+    // The surface is up.
+    const surface = host.querySelector('.blind-entry');
+    expect(surface).not.toBeNull();
+
+    // On its own shell, and on NEITHER of the other two. The absence assertions are the
+    // load-bearing half: `.app-shell` present alongside `.entry-shell` would mean the cap
+    // and the page padding are both still in the ancestry.
+    const gate = shell();
+    expect(gate?.className).toBe('entry-shell');
+    expect(host.querySelector('.app-shell')).toBeNull();
+    expect(host.querySelector('.draft-shell')).toBeNull();
+    expect(gate?.contains(surface)).toBe(true);
+
+    // And it goes back. `Hide these bans` is the panic control and the shortest of the five
+    // exits; the locked state's shell returning is what proves the class is not a one-way
+    // latch left set for the rest of the tournament.
+    const hide = buttonNamed('Hide these bans');
+    expect(hide).toBeDefined();
+
+    await act(async () => {
+      hide?.click();
+      await Promise.resolve();
+    });
+
+    expect(host.querySelector('.entry-shell')).toBeNull();
+    expect(host.querySelector('.app-shell')).not.toBeNull();
+  });
+
+  /**
+   * T-04-20 again, one sub-state further in. The entry surface is the most interactive
+   * screen the phase has — a typeahead, a 235-cell grid and a lock-in — so a version of it
+   * rendered beside the gate rather than under it is the rival-tournament hole reopened with
+   * a secrecy problem stapled to it.
+   *
+   * The click is honoured here even though the tab is read-only, and that is not a flaw in
+   * the test: happy-dom parses `inert` but implements neither its focus nor its pointer
+   * semantics, so the press reaches the handler. That is exactly what makes this case able to
+   * reach the surface at all, and CONTAINMENT rather than the click is what it asserts.
+   */
+  it('keeps the entry surface inside the inert region in a read-only tab', async () => {
+    seedSavedBanStage('blind');
+    const rival = rivalTabTakesTheLock();
+
+    await enterFirstPlayersBans();
+
+    const gate = shell();
+    expect(gate).not.toBeNull();
+    expect(gate?.hasAttribute('inert')).toBe(true);
+
+    // One gate, not two — the same assertion the draft and snake cases make.
+    expect(host.querySelectorAll('[inert]')).toHaveLength(1);
+
+    const surface = host.querySelector('.blind-entry');
+    expect(surface).not.toBeNull();
+    expect(gate?.contains(surface)).toBe(true);
+
+    // The lock-in control specifically, because it is the one that writes to the document.
+    const lockIn = buttonNamed("Lock in Ada's bans");
+    expect(lockIn).toBeDefined();
+    expect(gate?.contains(lockIn ?? null)).toBe(true);
+
+    // The banner stays OUTSIDE, which is the other half of the gate's contract: a takeover
+    // button under `inert` is a lockout, and this is the screen a host would be stuck on.
+    const takeover = buttonNamed(TAKEOVER_LABEL);
+    expect(takeover).toBeDefined();
+    expect(gate?.contains(takeover ?? null)).toBe(false);
+
+    rival.dispose();
   });
 });
