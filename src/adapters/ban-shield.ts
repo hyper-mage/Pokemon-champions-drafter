@@ -63,6 +63,32 @@
  * listener and announce a discard on the way out of a surface that had already been left —
  * including on the lock-in path, where nothing was discarded at all.
  *
+ * ### The traversal is QUEUED, so that invariant is about intent rather than `history.state`
+ *
+ * `pushState` fires no event and takes effect immediately. `history.back()` does neither:
+ * per the HTML history-traversal algorithm the navigation and its `popstate` run in a task
+ * queued after the call returns. So between a teardown and the traversal it asked for there
+ * is a window in which `window.history.state` still reports the sentinel that is about to be
+ * spent — and a host entering six players in a row walks straight through it:
+ *
+ *   Player A locks in, teardown calls `back()`, the host taps `Enter B's bans` before the
+ *   task runs, install reads the still-current sentinel and ADOPTS it, and then A's
+ *   traversal finally lands and fires `popstate` into B's listener. B's half-entered
+ *   allotment is discarded and nobody pressed anything.
+ *
+ * That was WR-02. `consumeInFlight` below closes it rather than narrowing it: teardown
+ * records that it has asked for a traversal BEFORE it asks, and an installation that adopts
+ * a sentinel while a request is outstanding owes exactly one `popstate` to that request and
+ * swallows it — re-pushing a sentinel of its own, so the player it is guarding still has
+ * somewhere for their own Back to land. Nothing here reads a clock, a duration or an
+ * elapsed ordering, so it holds whether the browser resolves the traversal in a millisecond
+ * or a second, and it cannot be defeated by moving the two host actions closer together.
+ *
+ * The mirror matters as much: an installation that PUSHED its own sentinel owes nothing, so
+ * the flag cannot leak into a later, unrelated entry and eat that player's real Back. That
+ * failure is WR-02 with the sign flipped, and it is what a plain "ignore one `popstate`
+ * after any teardown" flag would have shipped.
+ *
  * ## `pagehide` is here on purpose, beyond the two events D-17 and D-18 name
  *
  * It is the event that fires on the way *into* the back/forward cache, so locking there
@@ -81,6 +107,24 @@
  */
 const ENTRY_HISTORY_STATE = { blindBanEntry: true } as const;
 
+/**
+ * Has a teardown asked the browser for a traversal that has not been accounted for yet?
+ *
+ * MODULE-LEVEL, and it has to be: the whole point is that it outlives the installation that
+ * set it, so the NEXT one can tell an orphaned sentinel it may adopt (Back then Forward,
+ * nothing outstanding) from one that is already on its way to being spent. A field on the
+ * closure would be a field the next install cannot see, which is the bug.
+ *
+ * A boolean rather than a count, because at most one request can ever be outstanding. One
+ * entry surface is mounted at a time, so an installation gets exactly one teardown; that
+ * teardown either issues the only request, or adopts one already outstanding and declines to
+ * issue a second — spending one sentinel twice would traverse PAST the entry surface's own
+ * entry and out of the application.
+ *
+ * It is cleared by the installation that takes responsibility for it, never on a timer.
+ */
+let consumeInFlight = false;
+
 /** Is `state` the marker this adapter stamps? Written as a guard, because `history.state` is
  * whatever the last writer put there and this module is not the only thing that could ever
  * write it. */
@@ -98,6 +142,15 @@ export function installBanShield(onLock: () => void): () => void {
   // by construction rather than by knowing every caller.
   if (typeof window === 'undefined') return () => undefined;
 
+  /*
+    Does this installation owe one `popstate` to a traversal a PREVIOUS teardown asked for?
+
+    Per-installation, in the closure, because it is a debt this installation took on and no
+    other one can pay it. Set below, spent at most once, and handed back on teardown if the
+    traversal has still not landed by the time this surface goes.
+  */
+  let swallowStale = false;
+
   const onPageShow = (event: PageTransitionEvent): void => {
     // Restored from the back/forward cache — a browser Back followed by Forward puts the
     // entry surface back on screen with nobody having chosen to put it there (D-17). An
@@ -112,10 +165,27 @@ export function installBanShield(onLock: () => void): () => void {
   };
   const onPageHide = (): void => onLock();
   const onPopState = (): void => {
-    // Unconditional, and there is nothing to discriminate on anyway: this adapter pushes the
-    // only history entry the application has, so the only traversal reachable while the entry
-    // surface is up is the host leaving it. D-17's rule is that a browser navigation gesture
-    // away from the entry surface discards, whichever direction it went.
+    /*
+      ONE exception, and it is not a heuristic about timing. `swallowStale` is set at install
+      only when this installation adopted a sentinel that a previous teardown had already
+      asked the browser to spend, so this `popstate` is that request landing rather than
+      anything the host did. Locking here would discard a player who has touched nothing.
+
+      The re-push is what keeps the exception honest: consuming the request leaves this
+      installation with no entry of its own, and an entry surface with no entry below it is
+      the 04-11 defect — Back leaves the application — handed to every player after the first.
+
+      Otherwise unconditional, and there is nothing else to discriminate on: this adapter
+      pushes the only history entry the application has, so every other traversal reachable
+      while the entry surface is up is the host leaving it. D-17's rule is that a browser
+      navigation gesture away from the entry surface discards, whichever direction it went.
+    */
+    if (swallowStale) {
+      swallowStale = false;
+      pushSentinel();
+      return;
+    }
+
     onLock();
   };
 
@@ -131,14 +201,38 @@ export function installBanShield(onLock: () => void): () => void {
     failure is swallowed on purpose: with no sentinel pushed, Back leaves the document exactly
     as it did before this existed, `pagehide` still fires, and the entry is still discarded.
     The degradation is the previously shipped behaviour rather than a broken screen.
+
+    A named function rather than a statement, because there are now two callers: here, and
+    the `popstate` handler above re-establishing an entry after it swallows a stale traversal.
   */
-  if (!isEntrySentinel(window.history.state)) {
+  function pushSentinel(): void {
     try {
       window.history.pushState(ENTRY_HISTORY_STATE, '');
     } catch {
       // Deliberately silent — see above. There is no user-facing consequence to report.
     }
   }
+
+  /*
+    ADOPT, OR PUSH — and the answer decides whether this installation owes a swallow.
+
+    `isEntrySentinel` alone was the shipped condition and it cannot tell the two adoptions
+    apart. An ORPHAN — Back then Forward left a sentinel current with no surface mounted — is
+    genuinely this installation's to reuse. A sentinel a previous teardown has already asked
+    the browser to spend is NOT: it is about to be popped, and the `popstate` that pops it is
+    owed to that request rather than to whoever is sitting at the screen now.
+
+    `consumeInFlight` is what tells them apart, and it is cleared here in both branches
+    because responsibility for the outstanding request moves onto this installation — as a
+    swallow it owes, or as nothing at all when the traversal has evidently already landed.
+  */
+  if (isEntrySentinel(window.history.state)) {
+    swallowStale = consumeInFlight;
+  } else {
+    pushSentinel();
+  }
+
+  consumeInFlight = false;
 
   /*
     THE `window` / `document` ASYMMETRY IS COPIED, NOT NORMALISED.
@@ -161,9 +255,26 @@ export function installBanShield(onLock: () => void): () => void {
     window.removeEventListener('popstate', onPopState);
     document.removeEventListener('visibilitychange', onVisibilityChange);
 
+    /*
+      An unpaid debt goes back on the shelf rather than being written off. The traversal this
+      installation adopted is still outstanding and will spend the sentinel on its own; asking
+      for a second one would spend an entry that no longer exists and take the room out of the
+      application. Whoever installs next inherits the swallow, exactly as this one did.
+    */
+    if (swallowStale) {
+      consumeInFlight = true;
+      return;
+    }
+
     // Still the sentinel means this surface was left some way OTHER than Back, so the entry
     // it pushed is still on the stack and is this teardown's to spend. After a Back it is
     // already gone and this correctly does nothing.
-    if (isEntrySentinel(window.history.state)) window.history.back();
+    //
+    // The flag is raised BEFORE the call and never after: the whole hazard lives between the
+    // two, and a version ordered the other way would be the bug with a comment on it.
+    if (isEntrySentinel(window.history.state)) {
+      consumeInFlight = true;
+      window.history.back();
+    }
   };
 }

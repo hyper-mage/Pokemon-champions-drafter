@@ -104,6 +104,42 @@ function currentEntryIsSentinel(): boolean {
 }
 
 /**
+ * Make `history.back()` behave the way a REAL browser's does: queued, not immediate.
+ *
+ * This is the one place in the suite where happy-dom's synchronous traversal is not a
+ * convenience but the thing standing between the test and the defect. Per the HTML
+ * history-traversal algorithm the navigation and its `popstate` happen in a task queued
+ * AFTER the call returns; happy-dom runs both inside the call. WR-02 is a race that exists
+ * only in the gap between those two moments, so a suite that cannot open that gap cannot
+ * see it — and would pass against the unfixed adapter, which is Pitfall 3's warning sign
+ * one layer up.
+ *
+ * So the call is captured rather than suppressed. `flush` restores the real method and runs
+ * every captured traversal, which is the browser's task finally running. `requested` is
+ * exposed because "how many traversals were asked for" is itself an assertion: a teardown
+ * that spends a sentinel another teardown has already spent would traverse PAST the entry
+ * surface's own entry and out of the application.
+ */
+function queueTraversals(): {
+  readonly requested: () => number;
+  flush: () => void;
+} {
+  const real = window.history.back.bind(window.history);
+  const pending: (() => void)[] = [];
+  const spy = vi.spyOn(window.history, 'back').mockImplementation(() => {
+    pending.push(real);
+  });
+
+  return {
+    requested: () => pending.length,
+    flush(): void {
+      spy.mockRestore();
+      for (const traversal of pending.splice(0)) traversal();
+    },
+  };
+}
+
+/**
  * happy-dom keeps ONE history for the whole file and there is no API that clears it.
  *
  * A case that ended sitting on a sentinel would arm the next case's `history.back()` before
@@ -453,5 +489,116 @@ describe('installBanShield, the browser Back button', () => {
     teardown();
 
     expect(currentEntryIsSentinel()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Successive mounts and the queued traversal between them — WR-02
+// ---------------------------------------------------------------------------
+
+/**
+ * ONE PLAYER'S TEARDOWN MUST NOT DISCARD THE NEXT PLAYER'S ENTRY.
+ *
+ * Teardown spends its sentinel with `history.back()`, and in a real browser that traversal
+ * is a queued task rather than a completed navigation. The host enters six or eight players
+ * in a row, so the sequence teardown-then-install is the ordinary one and the gap between
+ * the call and the task is the whole hazard:
+ *
+ *   1. Player A locks in. Teardown removes its listeners and calls `back()`. Nothing has
+ *      traversed yet, so `history.state` still reports the sentinel.
+ *   2. The host taps `Enter B's bans`. Install reads `history.state`, sees the sentinel and
+ *      — per the documented adopt-rather-than-stack rule — takes it as its own.
+ *   3. The queued traversal runs. `popstate` fires into B's freshly-registered listener,
+ *      which discards B's in-progress selection exactly as if somebody had pressed Back.
+ *
+ * The fix does not narrow that window, it closes it: teardown records that a traversal it
+ * asked for is outstanding BEFORE it asks, and an installation that adopts a sentinel while
+ * one is outstanding owes exactly one `popstate` to it and swallows that one instead of
+ * locking. Nothing anywhere reads a clock or a duration, so the guard holds whether the
+ * browser resolves the traversal in one millisecond or five hundred.
+ *
+ * ## What these cases do NOT establish
+ *
+ * They model the queue; they do not run one. `queueTraversals` above replaces happy-dom's
+ * synchronous `history.back()` with a captured call the test releases by hand, which
+ * reproduces the ORDERING a real browser produces but not the browser. No real Back button
+ * is pressed, no real task queue runs, and the ordinary path where the traversal lands
+ * before the next install is the same synchronous path every other case in this file takes.
+ * Exercising the real ordering needs a host: enter one player's bans, lock in, and tap
+ * `Enter {next}'s bans` as fast as the tap can be made. The next player's entry surface must
+ * come up empty and STAY up.
+ */
+describe('installBanShield, a teardown traversal still in flight', () => {
+  it('does not discard the next entry when a previous teardown’s Back lands late', () => {
+    let locksA = 0;
+    const teardownA = installBanShield(() => (locksA += 1));
+    expect(currentEntryIsSentinel()).toBe(true);
+
+    const traversals = queueTraversals();
+
+    // Player A locks in. The browser has been asked for the sentinel back and has not
+    // taken it yet, which is why `history.state` still reports it.
+    teardownA();
+    expect(traversals.requested()).toBe(1);
+    expect(currentEntryIsSentinel()).toBe(true);
+
+    // The host taps `Enter B's bans` before that traversal runs.
+    let locksB = 0;
+    const teardownB = installBanShield(() => (locksB += 1));
+
+    // Now it runs.
+    traversals.flush();
+
+    // B'S ENTRY SURVIVES IT. Without the guard this is 1 and the host watches the surface
+    // vanish under a player who has touched nothing.
+    expect(locksB).toBe(0);
+    expect(locksA).toBe(0);
+
+    // And B is not left without a sentinel, which would be the 04-11 defect handed to
+    // every player after the first: B's own Back has to land on the locked state.
+    expect(currentEntryIsSentinel()).toBe(true);
+
+    window.history.back();
+
+    expect(locksB).toBe(1);
+    expect(currentEntryIsSentinel()).toBe(false);
+
+    teardownB();
+  });
+
+  /**
+   * THE GUARD MUST NOT LEAK INTO A LATER, UNRELATED INSTALLATION.
+   *
+   * A swallow that outlived the traversal it was owed to would eat the next player's real
+   * Back, which is the same failure as WR-02 with the sign flipped — and it is the failure
+   * a naive "ignore one popstate after any teardown" flag would ship. The discriminator is
+   * that an installation only owes a swallow when it ADOPTED a sentinel that was already
+   * being spent; one that pushed its own owes nothing.
+   */
+  it('leaves a later installation’s own Back working normally', () => {
+    const teardownA = installBanShield(() => undefined);
+    const traversals = queueTraversals();
+    teardownA();
+
+    // The next install adopts the outstanding sentinel, then leaves before the traversal
+    // lands. It must NOT ask for a second traversal: the first one has not spent the entry
+    // yet, and spending it twice traverses past the entry surface and out of the app.
+    const teardownB = installBanShield(() => undefined);
+    teardownB();
+    expect(traversals.requested()).toBe(1);
+
+    traversals.flush();
+    expect(currentEntryIsSentinel()).toBe(false);
+
+    // A whole player later, with nothing outstanding, Back is Back again.
+    let locksC = 0;
+    const teardownC = installBanShield(() => (locksC += 1));
+    expect(currentEntryIsSentinel()).toBe(true);
+
+    window.history.back();
+
+    expect(locksC).toBe(1);
+
+    teardownC();
   });
 });
