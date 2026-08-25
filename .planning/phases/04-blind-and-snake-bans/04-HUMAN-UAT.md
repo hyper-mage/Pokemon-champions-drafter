@@ -1,5 +1,5 @@
 ---
-status: partial
+status: complete
 phase: 04-blind-and-snake-bans
 source: [04-UI-SPEC.md §DRFT-14 item 4, 04-RESEARCH.md §Environment Availability, 04-11-PLAN.md task 3]
 started: 2026-08-25T00:00:00Z
@@ -61,8 +61,8 @@ expected: |
   - it lands on the locked state;
   - it shows the **same** discard notice;
   - it retains **nothing** — re-enter that player's bans and confirm no chip is pre-selected.
-result: pending
-note: "Host verdict 2026-08-25: paths 1 (`Hide these bans`) and 2 (alt-tab) PASSED in full — correct destination, same notice, nothing retained. Neither needs repeating. Path 3 FAILED (Back left the document) and has since been fixed in `ec75b4b`, so this item is back to pending on ONE re-test: press Back from the entry surface and confirm it lands on the locked state INSIDE the app, showing the same discard notice, with nothing retained when that player enters again; then press Forward and confirm you are still on the locked state and the entry surface has not come back. Only the host can mark this passed."
+result: passed
+note: "Host verdict 2026-08-25, in two rounds. Paths 1 (`Hide these bans`) and 2 (alt-tab) passed on the first pass — correct destination, same discard notice, nothing retained. Path 3 (browser Back) FAILED on the first pass: it left the document entirely rather than landing on the locked state. Fixed in `ec75b4b` by giving the entry surface a sentinel history entry to return to. Host re-tested path 3 only and approved: Back lands on the locked state inside the app, Forward does not bring the entry surface back, nothing is retained, and sentinels do not accumulate across repeated entries. All three discard paths now pass."
 
 ### (c) The reveal
 setup: |
@@ -99,9 +99,9 @@ note: "Host verdict 2026-08-25. Snake surfaces — turn banner, pass column head
 ## Summary
 
 total: 4
-passed: 3
+passed: 4
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 descoped: 0
