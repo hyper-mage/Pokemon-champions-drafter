@@ -32,15 +32,20 @@ import type { SpriteMeta } from '../../src/adapters/roster-source';
 import { disposeTabLock } from '../../src/adapters/tab-lock';
 import type { PaneState } from '../../src/adapters/view-prefs';
 import type { RoundSpec } from '../../src/core/actions';
-import { bansPlaced, bansSubmitted } from '../../src/core/actions';
-import type { TournamentConfig } from '../../src/core/model';
+import { bansPlaced, bansRevealed, bansSubmitted } from '../../src/core/actions';
+import type { DraftState, TournamentConfig } from '../../src/core/model';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
-import { selectBanTurn, selectBanStageState } from '../../src/core/selectors';
+import {
+  selectAllBanIds,
+  selectBanTurn,
+  selectBanStageState,
+} from '../../src/core/selectors';
 import {
   abandonTournament,
   createBanStage,
   createTournament,
   dispatch,
+  drawPoolForBanStage,
   getDoc,
   getState,
   undo,
@@ -1577,5 +1582,140 @@ describe('the four ways out of the entry surface', () => {
     mountBlindStage();
 
     expect(liveText()).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 2 — the separate draw (D-23)
+// ---------------------------------------------------------------------------
+
+/**
+ * `drawPoolForBanStage` — the tournament's first and only `pool/built`.
+ *
+ * D-23 splits the reveal from the draw so the room reads the reveal before the screen
+ * changes under them, and so a failed RULE-08 check never has to un-draw anything. These
+ * cases are at the STORE rather than at the screen because the seed is rolled here: the
+ * impure edge stamps ambient values, and a component that rolled one would be a second
+ * place randomness enters the document.
+ */
+describe('drawPoolForBanStage', () => {
+  /** A blind stage with every allotment sealed and the reveal landed. */
+  function revealedBlindStage(overrides: Partial<TournamentConfig> = {}): TournamentConfig {
+    const config = { ...configFor('blind', 2), ...overrides };
+    createBanStage({ config, order: order(config), orderSeed: 11, schedule: schedule() });
+    submitEveryAllotment(config);
+    dispatch(
+      bansRevealed(
+        config.players.map((player, index) => ({
+          playerId: player.id,
+          monIds: [rosterEntryAt(index * 2).id, rosterEntryAt(index * 2 + 1).id],
+        })),
+      ),
+    );
+    return config;
+  }
+
+  function poolBuiltEntries(): readonly { type: string }[] {
+    return (getDoc()?.log ?? []).filter((action) => action.type === 'pool/built');
+  }
+
+  it('appends exactly one pool/built and reports that it did', () => {
+    revealedBlindStage();
+
+    expect(drawPoolForBanStage(ENTRIES)).toBe(true);
+    expect(poolBuiltEntries()).toHaveLength(1);
+  });
+
+  it('draws the configured pool size', () => {
+    revealedBlindStage();
+    drawPoolForBanStage(ENTRIES);
+
+    expect(getState()?.poolIds).toHaveLength(24);
+  });
+
+  it('excludes every ban — the host banlist and every revealed player ban alike', () => {
+    const config = revealedBlindStage({ bans: [rosterEntryAt(200).id] });
+    const banned = new Set(selectAllBanIds(getState() as DraftState));
+    // Four players × two bans, plus the host's one.
+    expect(banned.size).toBe(config.players.length * 2 + 1);
+
+    drawPoolForBanStage(ENTRIES);
+
+    for (const id of getState()?.poolIds ?? []) {
+      expect(banned.has(id)).toBe(false);
+    }
+  });
+
+  it('materialises the regulation and the checksum the draw was made against', () => {
+    revealedBlindStage();
+    drawPoolForBanStage(ENTRIES);
+
+    const state = getState() as DraftState;
+    expect(state.rosterVersion).toBe('mb');
+    expect(state.rosterChecksum).toBe('abc123');
+  });
+
+  it('ends the ban stage, which is what a non-empty pool means', () => {
+    revealedBlindStage();
+    expect(selectBanStageState(getState() as DraftState)).toBe('reveal');
+
+    drawPoolForBanStage(ENTRIES);
+
+    expect(selectBanStageState(getState() as DraftState)).toBe('notRunning');
+  });
+
+  it('draws a snake stage from its placements, with no reveal action in the log', () => {
+    const config = startSnakeStage(1);
+    config.players.forEach((player, index) => {
+      dispatch(bansPlaced(player.id, rosterEntryAt(index).id, 1));
+    });
+
+    expect(getState()?.bansRevealed).toBeNull();
+    expect(drawPoolForBanStage(ENTRIES)).toBe(true);
+
+    const banned = new Set(selectAllBanIds(getState() as DraftState));
+    for (const id of getState()?.poolIds ?? []) {
+      expect(banned.has(id)).toBe(false);
+    }
+  });
+
+  /**
+   * The failure `drawPool` deliberately does not clamp — `draw.ts:108-112` surfaces a
+   * `RangeError` rather than handing back a pool quietly smaller than the host configured.
+   * 04-02's pessimistic gate makes it unreachable from the config flow; an imported document
+   * can still get here, and a throw on a shared screen mid-ritual has no recovery path.
+   */
+  it('refuses a pool larger than the post-ban roster rather than throwing', () => {
+    revealedBlindStage({ poolSize: 300 });
+
+    expect(() => drawPoolForBanStage(ENTRIES)).not.toThrow();
+    expect(drawPoolForBanStage(ENTRIES)).toBe(false);
+    expect(poolBuiltEntries()).toHaveLength(0);
+    expect(getState()?.poolIds).toEqual([]);
+  });
+
+  it('refuses a Mega quota the post-ban roster cannot fill rather than throwing', () => {
+    revealedBlindStage({ megasRequiredPerTeam: 100 });
+
+    expect(() => drawPoolForBanStage(ENTRIES)).not.toThrow();
+    expect(drawPoolForBanStage(ENTRIES)).toBe(false);
+    expect(poolBuiltEntries()).toHaveLength(0);
+  });
+
+  it('refuses a second draw, so the pool the room watched cannot be replaced', () => {
+    revealedBlindStage();
+    expect(drawPoolForBanStage(ENTRIES)).toBe(true);
+
+    const first = getState()?.poolIds;
+
+    expect(drawPoolForBanStage(ENTRIES)).toBe(false);
+    expect(poolBuiltEntries()).toHaveLength(1);
+    expect(getState()?.poolIds).toEqual(first);
+  });
+
+  it('reports false rather than throwing when no tournament exists', () => {
+    abandonTournament();
+
+    expect(drawPoolForBanStage(ENTRIES)).toBe(false);
   });
 });

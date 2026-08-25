@@ -33,6 +33,8 @@ import {
   type Intent,
   type RoundSpec,
 } from './core/actions';
+import { drawPool } from './core/draw';
+import { choiceFor, isMegaEligible } from './core/mega';
 import { migrate } from './core/migrate';
 import {
   initialState,
@@ -42,6 +44,8 @@ import {
   type TournamentDoc,
 } from './core/model';
 import { apply, canApply, fold, type CanApplyResult } from './core/reduce';
+import type { RosterEntry } from './core/roster/types';
+import { selectAllBanIds } from './core/selectors';
 import { canUndo, undoLast, undoRemoval, type UndoRemoval } from './core/undo';
 import { announce } from './ui/components/LiveRegion';
 
@@ -372,6 +376,100 @@ export function createBanStage(input: CreateBanStageInput): TournamentDoc | null
   }
 
   return docSignal.peek();
+}
+
+/**
+ * The tournament's first and only `pool/built`, drawn AFTER the reveal — D-23.
+ *
+ * A sibling of `createBanStage`, and the third and last place in this file that stamps an
+ * ambient value into the document. The seed is rolled HERE with `newSeed()` rather than at
+ * the call site, matching `createTournament`'s posture that ambient values are captured at
+ * the impure edge: `check:pure` enforces the half of that rule which lives in `src/core`,
+ * and a component rolling a seed would be the half nothing mechanical can see.
+ *
+ * ## Why the draw is separate from the reveal
+ *
+ * D-23 gives the group a second, deliberate tap. They read the reveal before the screen
+ * changes under them, and a RULE-08 re-check that fails never has to un-draw anything —
+ * which is what makes undoing the reveal clean enough to offer at all.
+ *
+ * The resolved ids are MATERIALIZED into the log along with `rosterVersion` and `checksum`,
+ * never an instruction to rebuild (ARCHITECTURE Pattern 5, and `pool/built`'s own argument).
+ * Champions regulations rotate roughly every 2.5 months; a document recording only "build a
+ * pool from these bans" would reopen next regulation as a different tournament.
+ *
+ * ## THERE IS NO SECOND DRAW, and that is a decision rather than an omission
+ *
+ * A control offering to draw again was considered and rejected. D-23 gives exactly one draw,
+ * after the room has already read the arithmetic, and offering another would mean loosening
+ * `canApply(POOL_BUILT)`'s `poolAlreadyBuilt` rejection — which is the guard that stops a
+ * hand-edited document replacing the pool a room watched appear. That is a Phase 5
+ * conversation, not a convenience to add here.
+ *
+ * ## It returns `false`; it never throws
+ *
+ * `drawPool` deliberately does not clamp: an oversized request reaches `nextInt` with an
+ * empty range and surfaces a `RangeError` (`draw.ts:108-112`), because a caller asking for
+ * more entries than exist has a bug and a quietly smaller pool would hide it. 04-02's
+ * three-term pessimistic gate makes that unreachable from the config flow, but an imported
+ * or hand-edited document can still arrive here — `import-guard` runs no referential
+ * integrity check by design — and an uncaught throw on a shared screen mid-ritual has no
+ * recovery path.
+ *
+ * The three guards below are exactly `drawPool`'s two `selectInPlace` calls read backwards,
+ * so they are complete rather than defensive: the quota needs `megasRequired` entries out of
+ * the Mega-eligible candidates, the fill needs `size − megasRequired` out of what is left,
+ * and a negative fill count means a pool that would come back larger than the host asked
+ * for. A `try`/`catch` would cover the same ground and would also swallow a real defect.
+ *
+ * `entries` is a parameter because the roster is not in the document: species names, stats
+ * and Mega formes belong to the snapshot the UI already holds, and caching a copy here would
+ * be a second piece of state living outside the tournament.
+ */
+export function drawPoolForBanStage(entries: readonly RosterEntry[]): boolean {
+  const current = stateSignal.peek();
+  if (current === null) return false;
+
+  const { config } = current;
+
+  // The FOLD's union — the host banlist plus every ban the ritual produced — never
+  // `config.bans`, which D-14 freezes at creation and which no ban stage ever writes to.
+  const banned = new Set(selectAllBanIds(current));
+  const candidates = entries.filter((entry) => !banned.has(entry.id));
+
+  const size = config.poolSize;
+  const megasRequired = config.players.length * config.megasRequiredPerTeam;
+
+  // Measured over the CANDIDATE set, on ELIGIBILITY rather than on the `megaCapable` flag —
+  // `draw.ts`'s Pitfall 7 paragraph, and the same expression the config screen's draw uses.
+  // A species can carry the flag and have no legal forme left after D-09's forme bans and
+  // D-10's X/Y pin, and a quota filled from those opens a Mega round with nothing in it.
+  const megaFormeBans = new Set(config.megaFormeBans);
+  const megaEligibleIds = candidates
+    .filter((entry) =>
+      isMegaEligible(entry, megaFormeBans, choiceFor(config.dualMegaChoices, entry.id)),
+    )
+    .map((entry) => entry.id);
+
+  if (!Number.isSafeInteger(size) || size <= 0) return false;
+  if (size > candidates.length) return false;
+  if (megasRequired > size) return false;
+  if (megasRequired > megaEligibleIds.length) return false;
+
+  const seed = newSeed();
+  const result = drawPool({ candidates, size, megasRequired, megaEligibleIds, seed });
+
+  // `canApply`'s own refusals ride back out on this — `poolAlreadyBuilt` above all, which is
+  // what makes a second call a no-op rather than a replacement.
+  return dispatch(
+    poolBuilt(
+      result.ids,
+      config.rosterVersion,
+      config.rosterChecksum,
+      seed,
+      result.megaCapableCount,
+    ),
+  ).ok;
 }
 
 /**
