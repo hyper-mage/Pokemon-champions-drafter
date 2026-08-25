@@ -78,10 +78,13 @@ import {
   undo,
 } from './store';
 import {
+  ABANDON_BAN_STAGE_CONFIRM,
   ABANDON_CONFIRM,
   SWAP_CONFIRM,
+  UNDO_BAN_SUBMISSION_CONFIRM,
   UNDO_BOUNDARY_CONFIRM,
   UNDO_RESOLVED_ORDER_CONFIRM,
+  UNDO_REVEAL_CONFIRM,
 } from './ui/confirm-copy';
 import { BoardGrid } from './ui/components/BoardGrid';
 import { CardPanel, type PlayedCard } from './ui/components/CardPanel';
@@ -195,7 +198,19 @@ type ImportFlow =
 type Confirm =
   | { kind: 'idle' }
   | { kind: 'abandon'; picks: number; players: number }
-  | { kind: 'undo'; crossing: RoundBoundaryCrossing; playerName: string }
+  /**
+   * An undo, with everything its four possible copy sets between them need.
+   *
+   * `playerCount` is here for the reveal set, whose body names how many players' bans stay
+   * recorded. Resolved when the host asked, like every other field on this union — the
+   * dialog states the world it was opened against and cannot drift while it is on screen.
+   */
+  | {
+      kind: 'undo';
+      crossing: RoundBoundaryCrossing;
+      playerName: string;
+      playerCount: number;
+    }
   /**
    * A swap, resolved at the moment the pool cell was clicked.
    *
@@ -1621,6 +1636,11 @@ export function App() {
       // An undo changes whose turn it is without clearing anything, so a flag left over
       // from the pick being undone would ride the next turn announcement and claim
       // something that did not happen.
+      //
+      // A SNAKE BAN comes through here, and by construction rather than by a new branch:
+      // `undoCrossesRoundBoundary` reports `crosses: false` for `'banPlaced'` because the
+      // ban is on the board and reversing it is visible — the same category as a pick,
+      // where D-08's no-confirm posture already holds.
       setFiltersCleared(false);
       undo(resolveSpeciesName);
       return;
@@ -1633,6 +1653,7 @@ export function App() {
       // sentence honest rather than empty for a document referencing a player the
       // config no longer lists.
       playerName: selectPlayerName(currentState, crossing.playerId) ?? crossing.playerId,
+      playerCount: currentState.config.players.length,
     });
   }, [resolveSpeciesName]);
 
@@ -2299,8 +2320,27 @@ export function App() {
         />
       )}
 
-      {/* Same placement, same reason. See the note above the import confirm. */}
-      {confirm.kind === 'abandon' && (
+      {/*
+        Same placement, same reason. See the note above the import confirm.
+
+        Routed BY SCREEN rather than by a field on `confirm`, because the screen is what
+        makes the two sets differ: on the ban stage no pick has been made and the bans are
+        what is at stake, so `This discards 0 picks` would be a plain untruth and
+        `Keep the bans` is the label that names the thing being kept.
+      */}
+      {confirm.kind === 'abandon' && screen.name === 'bans' && (
+        <ConfirmDialog
+          heading={ABANDON_BAN_STAGE_CONFIRM.heading}
+          body={ABANDON_BAN_STAGE_CONFIRM.body(confirm.players)}
+          confirmLabel={ABANDON_BAN_STAGE_CONFIRM.confirmLabel}
+          safeLabel={ABANDON_BAN_STAGE_CONFIRM.safeLabel}
+          tone={ABANDON_BAN_STAGE_CONFIRM.tone}
+          onConfirm={confirmAbandon}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {confirm.kind === 'abandon' && screen.name !== 'bans' && (
         <ConfirmDialog
           heading={ABANDON_CONFIRM.heading}
           body={ABANDON_CONFIRM.body(confirm.picks, confirm.players)}
@@ -2313,10 +2353,12 @@ export function App() {
       )}
 
       {/*
-        Two copy sets, one dialog, and no new mechanism — the variant is chosen by what the
+        FOUR copy sets, one dialog, and no new mechanism — the variant is chosen by what the
         undo would REMOVE, which core already reported in `crossing.kind`. Un-resolving a
         pick order is a different event from reaching back into an earlier round, and
-        03-UI-SPEC states them as two rows of the copy table.
+        03-UI-SPEC states them as two rows of the copy table; 04-UI-SPEC §8 adds two more
+        for the ban stage. The discriminant already flowed end to end, which is why the two
+        new rows cost two more branches and nothing else.
       */}
       {confirm.kind === 'undo' && confirm.crossing.kind === 'order' && (
         <ConfirmDialog
@@ -2365,22 +2407,67 @@ export function App() {
         />
       )}
 
-      {confirm.kind === 'undo' && confirm.crossing.kind !== 'order' && (
+      {/*
+        Removing a blind submission — 04-UI-SPEC §8, D-05. Every string names the player
+        and none names a species, which is what makes this dialog safe to show in a room
+        where the bans are still sealed. The set's own doc block carries the argument for
+        why this undo confirms at all when undoing a pick in the current round does not.
+      */}
+      {confirm.kind === 'undo' && confirm.crossing.kind === 'banSubmission' && (
         <ConfirmDialog
-          heading={UNDO_BOUNDARY_CONFIRM.heading}
-          body={UNDO_BOUNDARY_CONFIRM.body(
-            confirm.playerName,
-            confirm.crossing.removedRound,
-            confirm.crossing.currentRound,
-            confirm.crossing.removedCount,
-          )}
-          confirmLabel={UNDO_BOUNDARY_CONFIRM.confirmLabel}
-          safeLabel={UNDO_BOUNDARY_CONFIRM.safeLabel}
-          tone={UNDO_BOUNDARY_CONFIRM.tone}
+          heading={UNDO_BAN_SUBMISSION_CONFIRM.heading(confirm.playerName)}
+          body={UNDO_BAN_SUBMISSION_CONFIRM.body(confirm.playerName)}
+          confirmLabel={UNDO_BAN_SUBMISSION_CONFIRM.confirmLabel(confirm.playerName)}
+          safeLabel={UNDO_BAN_SUBMISSION_CONFIRM.safeLabel(confirm.playerName)}
+          tone={UNDO_BAN_SUBMISSION_CONFIRM.tone}
           onConfirm={confirmUndo}
           onSafe={closeConfirm}
         />
       )}
+
+      {/*
+        Taking the reveal back — 04-UI-SPEC §8, D-23. `playerCount` comes off `confirm`
+        rather than off `state`, like every other value in these dialogs, so the sentence
+        describes the world the host asked about.
+      */}
+      {confirm.kind === 'undo' && confirm.crossing.kind === 'banReveal' && (
+        <ConfirmDialog
+          heading={UNDO_REVEAL_CONFIRM.heading}
+          body={UNDO_REVEAL_CONFIRM.body(confirm.playerCount)}
+          confirmLabel={UNDO_REVEAL_CONFIRM.confirmLabel}
+          safeLabel={UNDO_REVEAL_CONFIRM.safeLabel}
+          tone={UNDO_REVEAL_CONFIRM.tone}
+          onConfirm={confirmUndo}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {/*
+        The boundary set is now the LAST arm rather than the catch-all, and the three
+        exclusions are written out rather than folded into a `!== 'order'`. Its copy reads
+        "This undoes {name}'s pick from round {r}" — pick-specific prose that would be a
+        plain untruth over a removed blind submission, on the one surface whose whole job
+        is telling the host what is about to change.
+      */}
+      {confirm.kind === 'undo' &&
+        confirm.crossing.kind !== 'order' &&
+        confirm.crossing.kind !== 'banSubmission' &&
+        confirm.crossing.kind !== 'banReveal' && (
+          <ConfirmDialog
+            heading={UNDO_BOUNDARY_CONFIRM.heading}
+            body={UNDO_BOUNDARY_CONFIRM.body(
+              confirm.playerName,
+              confirm.crossing.removedRound,
+              confirm.crossing.currentRound,
+              confirm.crossing.removedCount,
+            )}
+            confirmLabel={UNDO_BOUNDARY_CONFIRM.confirmLabel}
+            safeLabel={UNDO_BOUNDARY_CONFIRM.safeLabel}
+            tone={UNDO_BOUNDARY_CONFIRM.tone}
+            onConfirm={confirmUndo}
+            onSafe={closeConfirm}
+          />
+        )}
     </>
   );
 }
