@@ -38,30 +38,38 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installBanShield } from '../../src/adapters/ban-shield';
 
 // ---------------------------------------------------------------------------
-// The measured event forms, each named once so no case reinvents one
+// The measured event forms
 // ---------------------------------------------------------------------------
 
+/*
+  These BUILD an event; they never dispatch one. The construction is named once so the
+  measured form cannot drift between cases, and the dispatch stays written out at every
+  call site for two reasons: the `window` / `document` asymmetry the adapter copies is only
+  visible where the event is actually delivered, and a suite whose dispatches are all
+  hidden behind one helper is indistinguishable from one that fires a single event —
+  which is Pitfall 3's warning sign exactly.
+*/
+
 /** A restore from the back/forward cache. The init dictionary is NOT honoured; assign it. */
-function firePersistedPageShow(): void {
-  window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+function persistedPageShow(): Event {
+  return Object.assign(new Event('pageshow'), { persisted: true });
 }
 
 /** An ordinary load. `persisted` is absent, which is the falsy the guard must respect. */
-function fireNormalPageShow(): void {
-  window.dispatchEvent(new Event('pageshow'));
+function normalPageShow(): Event {
+  return new Event('pageshow');
 }
 
-function firePageHide(): void {
-  window.dispatchEvent(new Event('pagehide'));
-}
-
-/** `visibilityState` is a getter on `document`, so it is redefined rather than assigned. */
-function fireVisibilityChange(visibilityState: 'hidden' | 'visible'): void {
+/**
+ * `visibilityState` is a getter on `document`, so it is redefined rather than assigned.
+ * Returns the event so the dispatch itself stays at the call site.
+ */
+function visibilityChange(visibilityState: 'hidden' | 'visible'): Event {
   Object.defineProperty(document, 'visibilityState', {
     value: visibilityState,
     configurable: true,
   });
-  document.dispatchEvent(new Event('visibilitychange'));
+  return new Event('visibilitychange');
 }
 
 afterEach(() => {
@@ -102,7 +110,7 @@ describe('installBanShield', () => {
     let locks = 0;
     const teardown = installBanShield(() => (locks += 1));
 
-    firePersistedPageShow();
+    window.dispatchEvent(persistedPageShow());
 
     expect(locks).toBe(1);
 
@@ -120,7 +128,7 @@ describe('installBanShield', () => {
     let locks = 0;
     const teardown = installBanShield(() => (locks += 1));
 
-    fireNormalPageShow();
+    window.dispatchEvent(normalPageShow());
 
     expect(locks).toBe(0);
 
@@ -135,7 +143,7 @@ describe('installBanShield', () => {
     let locks = 0;
     const teardown = installBanShield(() => (locks += 1));
 
-    fireVisibilityChange('hidden');
+    document.dispatchEvent(visibilityChange('hidden'));
 
     expect(locks).toBe(1);
 
@@ -146,7 +154,7 @@ describe('installBanShield', () => {
     let locks = 0;
     const teardown = installBanShield(() => (locks += 1));
 
-    fireVisibilityChange('visible');
+    document.dispatchEvent(visibilityChange('visible'));
 
     expect(locks).toBe(0);
 
@@ -167,7 +175,7 @@ describe('installBanShield', () => {
     let locks = 0;
     const teardown = installBanShield(() => (locks += 1));
 
-    firePageHide();
+    window.dispatchEvent(new Event('pagehide'));
 
     expect(locks).toBe(1);
 
@@ -184,9 +192,9 @@ describe('installBanShield', () => {
 
     teardown();
 
-    firePersistedPageShow();
-    firePageHide();
-    fireVisibilityChange('hidden');
+    window.dispatchEvent(persistedPageShow());
+    window.dispatchEvent(new Event('pagehide'));
+    document.dispatchEvent(visibilityChange('hidden'));
 
     expect(locks).toBe(0);
   });
@@ -210,7 +218,7 @@ describe('installBanShield', () => {
     window.addEventListener('pageshow', other);
     const teardown = installBanShield(() => (locks += 1));
 
-    firePersistedPageShow();
+    window.dispatchEvent(persistedPageShow());
 
     expect(locks).toBe(1);
     expect(others).toBe(1);
@@ -218,7 +226,7 @@ describe('installBanShield', () => {
     // The shield's teardown removes ITS listener only. A teardown that reached for the
     // other consumer's would be the coupling this adapter exists to avoid.
     teardown();
-    firePersistedPageShow();
+    window.dispatchEvent(persistedPageShow());
 
     expect(locks).toBe(1);
     expect(others).toBe(2);
