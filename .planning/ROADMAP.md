@@ -267,7 +267,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 04-09-PLAN.md — the blind locked state, the narrowed `Bans (N)` disclosure, and `Blind` enabled (BAN-04, BAN-05)
+- [x] 04-09-PLAN.md — the blind locked state, the narrowed `Bans (N)` disclosure, and `Blind` enabled (BAN-04, BAN-05)
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
@@ -308,7 +308,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
-| 4. Blind and Snake Bans | 8/11 | In Progress|  |
+| 4. Blind and Snake Bans | 9/11 | In Progress|  |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
 ## Requirement Coverage
