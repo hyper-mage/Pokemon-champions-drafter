@@ -103,11 +103,49 @@ export interface TypeaheadFieldProps<T extends PoolSubject> {
    */
   subject?: string;
   /**
+   * Whether an option may still be chosen, and when it may not, why — 04-UI-SPEC §6.
+   *
+   * OPTIONAL, with the default applied ONCE inside the component, exactly as {@link subject}
+   * and `PoolGrid.megaInertReason` are. The default is a function rather than a null, so the
+   * two places below call it unconditionally: a nullable callback would need an optional
+   * call at each of them, which is two places to forget rather than one place to get right.
+   *
+   * `{ inert: true; reason: string }` rather than a bare string, so "inert with no reason"
+   * is not expressible. That pair is the exact defect `PaneAvailability` was introduced to
+   * close (WR-07), and it matters more here than there: the reason is the only thing that
+   * distinguishes a species the host banned themselves from one another player just spent.
+   *
+   * RESULTS ARE NEVER SILENTLY FILTERED, and marking is not a slower way of removing.
+   * Dropping an inert option from the list would make the no-match line false about a
+   * species that plainly does match and is simply already gone — the failure
+   * `ConfigScreen`'s `candidates` comment prevents by passing the full entry list, and the
+   * one 03-UI-SPEC §9 spends a sentence on for the Mega-round pool. A name the host typed
+   * that does not appear reads as a broken search, not as an answer.
+   */
+  optionState?: (entry: T) => { inert: true; reason: string } | null;
+  /**
    * Unique prefix for the input, the listbox and every option id. Required, because the
    * input addresses an option by id and two fields on one page that shared a prefix would
    * address each other's options.
    */
   id: string;
+}
+
+/**
+ * An inert option's whole label — 04-UI-SPEC §6.
+ *
+ * VISIBLE rather than an `aria-label`, and the separator is part of the string rather than an
+ * `aria-hidden` sibling. Both follow from the option's accessible name being its own text
+ * content: there is no sibling here for anything to be hidden from, which is the second half
+ * of the rule `SplitPanes.tsx`'s `POOL_EXPAND_REASON` block records.
+ *
+ * The grid answers the same question with one rule line above the whole roster, and that is
+ * the right trade there — a couple of hundred reason lines is noise. This list is at most
+ * `MAX_RESULTS` long and carries no such line, so the per-option reason is the only thing
+ * standing between a host and an option that refuses to be chosen for no stated cause.
+ */
+function inertOptionLabel(name: string, reason: string): string {
+  return `${name} — ${reason}`;
 }
 
 export function TypeaheadField<T extends PoolSubject>({
@@ -117,6 +155,7 @@ export function TypeaheadField<T extends PoolSubject>({
   onSelect,
   id,
   subject = DEFAULT_SUBJECT,
+  optionState = () => null,
 }: TypeaheadFieldProps<T>) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -154,6 +193,21 @@ export function TypeaheadField<T extends PoolSubject>({
   }
 
   function select(entry: T): void {
+    /*
+      The early return IS the refusal, and it lives in the ONE function both the press and
+      the Enter key route through. A guard at either call site would be a guard the other
+      path could be added without, and this component's own doc block records that the click
+      path is the one that silently does nothing when it is wrong.
+
+      `CardFace` and `SplitPanes` set the precedent and state the reason: an `aria-disabled`
+      control that still fires is worse than one that was never marked.
+
+      `reset()` is deliberately NOT reached. A refused choice leaves the query and the list
+      exactly as they were, so the host can walk to a neighbouring result rather than retype
+      a name the field just rejected.
+    */
+    if (optionState(entry) !== null) return;
+
     onSelect(entry);
     reset();
   }
@@ -229,25 +283,49 @@ export function TypeaheadField<T extends PoolSubject>({
 
       {open && (
         <ul class="typeahead__list" id={listId} role="listbox">
-          {results.map((entry, index) => (
-            <li
-              key={entry.id}
-              class={['typeahead__option', index === activeIndex ? 'typeahead__option--active' : '']
-                .filter((token) => token !== '')
-                .join(' ')}
-              id={optionId(entry)}
-              role="option"
-              aria-selected={index === activeIndex ? 'true' : 'false'}
-              onMouseDown={(event) => {
-                // See the doc block: preventing the default keeps focus on the input, so
-                // this handler runs at all.
-                event.preventDefault();
-                select(entry);
-              }}
-            >
-              {entry.name}
-            </li>
-          ))}
+          {results.map((entry, index) => {
+            /*
+              Asked per render, never remembered between them, so the option goes back to
+              selectable in the same render that returns the species to the pool (WR-04).
+
+              The attribute below is spread present-or-absent rather than assigned, for the
+              reason `CardFace` records: a live option then carries no such prop at all,
+              which is what makes Preact remove the attribute outright instead of rewriting
+              it to a negative — and absent and negative are not the same thing to assistive
+              technology.
+
+              An inert option keeps its place in the walk. It is still a `role="option"`,
+              still addressable by `aria-activedescendant`, and still reachable by the arrow
+              keys, because the reason lives in its label and a label nobody can reach
+              explains nothing.
+            */
+            const state = optionState(entry);
+
+            return (
+              <li
+                key={entry.id}
+                class={[
+                  'typeahead__option',
+                  index === activeIndex ? 'typeahead__option--active' : '',
+                ]
+                  .filter((token) => token !== '')
+                  .join(' ')}
+                id={optionId(entry)}
+                role="option"
+                aria-selected={index === activeIndex ? 'true' : 'false'}
+                {...(state === null ? {} : { 'aria-disabled': 'true' as const })}
+                onMouseDown={(event) => {
+                  // See the doc block: preventing the default keeps focus on the input, so
+                  // this handler runs at all. It runs for an inert option too — `select`
+                  // refuses it there, rather than the list quietly not responding.
+                  event.preventDefault();
+                  select(entry);
+                }}
+              >
+                {state === null ? entry.name : inertOptionLabel(entry.name, state.reason)}
+              </li>
+            );
+          })}
         </ul>
       )}
 

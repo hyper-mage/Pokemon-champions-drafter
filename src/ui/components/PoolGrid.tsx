@@ -90,6 +90,33 @@ export interface PoolGridProps<T extends PoolSubject> {
    */
   banSubject?: string;
   /**
+   * Which species may NOT be banned again, why each, and the one line that names the
+   * signal — BAN-03, 04-UI-SPEC §6.
+   *
+   * ONE prop carrying the ids, a per-id reason and the rule line, for
+   * {@link roundRestriction}'s reason: a caller that could supply the ids without the copy
+   * would be a caller that could render `undefined — banned by`, and the whole point of the
+   * shape is to make that unrepresentable rather than reviewable.
+   *
+   * OPTIONAL, defaulting to `null` once inside the component, and the default is
+   * load-bearing exactly as {@link megaInertReason}'s is rather than a convenience: any
+   * non-null value here is a set of cells to close, so an omitted prop arriving as
+   * `undefined` must never reach the branch that reads `.ids` off it. The default is applied
+   * here, once, so that value cannot get there.
+   *
+   * A closed cell carries `aria-disabled` and never a native `disabled` attribute —
+   * 04-UI-SPEC §Interaction gives the reason, which is that a natively disabled control is
+   * not focusable and its reason lives in its accessible name. The attribute is derived from
+   * this prop on every render and never latched, so an undo that returns a species to the
+   * pool sheds it (WR-04); it is present or absent, never the negative string, because those
+   * are not the same thing to assistive technology.
+   *
+   * DISTINCT FROM {@link bannedIds}, which is a pressed state the host may press again. The
+   * two sets coincide on the snake ban stage and do not on the blind entry surface, where a
+   * player's own selection is pressed while another player's ban is closed.
+   */
+  banInert?: BanInertState | null;
+  /**
    * Prefix for this grid's own control ids and radio-group names. Defaults to `pool`.
    *
    * 03-04 mounts a SECOND grid on the config screen, directly above the species ban grid, so
@@ -198,6 +225,37 @@ export interface MegaRoundRestriction {
   round: number;
   /** Pool ids this round admits, already minus picked ids. */
   ids: ReadonlySet<string>;
+}
+
+/**
+ * Why a species may not be banned again, as the pool surface needs it — BAN-03.
+ *
+ * The component decides nothing here either. WHICH ids are closed is
+ * `selectPublicBanIds`' answer, because a UI component may not own a rule and this
+ * particular rule is a secrecy control besides; the copy that explains each one belongs to
+ * the screen, which is the only place that knows a player's display name.
+ */
+export interface BanInertState {
+  /** Ids that may not be banned again. */
+  ids: ReadonlySet<string>;
+  /**
+   * The suffix for a cell's accessible name, keyed by id. Every id in {@link ids} has one.
+   *
+   * A function rather than a second map, so the caller answers at the moment it is asked
+   * rather than building an index of the fold to hand over — and so it is asked only about
+   * the cells that are actually closed.
+   */
+  reasonFor: (monId: string) => string;
+  /**
+   * The one visible line above the grid, naming the signal.
+   *
+   * PER-CELL VISIBLE REASONS WERE CONSIDERED AND REJECTED (04-UI-SPEC §6). The ban stage
+   * renders the whole roster, so per-cell prose is a reason line beside every cell in a
+   * grid of a couple of hundred — noise that would bury the count line and the rule
+   * together. The accessible name already carries the per-cell answer for anyone who needs
+   * it, and this line carries the shape for everyone else. Do not add them back.
+   */
+  ruleLine: string;
 }
 
 /**
@@ -388,6 +446,7 @@ export function PoolGrid<T extends PoolSubject>({
   onPick,
   bannedIds,
   banSubject,
+  banInert = null,
   idPrefix = 'pool',
   megaInertReason = null,
   roundRestriction = null,
@@ -800,6 +859,24 @@ export function PoolGrid<T extends PoolSubject>({
         )}
 
         {/*
+          ONE line for the whole grid, and it names a SHAPE rather than a colour — the
+          struck-through cell is what carries the signal, and a sentence that named a hue
+          would be a sentence half the room cannot check.
+
+          Keyed on the SET rather than on how many closed cells survived the filter, and
+          that is deliberate. Deriving it from `visible` would make the line appear and
+          disappear as the host typed, which is the one thing a rule statement must not do:
+          it explains a shape the host is about to scroll to as much as one they can see.
+
+          The copy is the CALLER's, like every other reason on this component, because only
+          the screen knows which stage's rule it is stating. The shape of the sentence is
+          fixed by 04-UI-SPEC §6 and asserted in full by the suite rather than by this file.
+        */}
+        {banInert !== null && banInert.ids.size > 0 && (
+          <p class="pool__ban-rule">{banInert.ruleLine}</p>
+        )}
+
+        {/*
           Disarm. Secondary — no accent — because 03-UI-SPEC keeps accent at exactly three
           uses and this is none of them. It dispatches NOTHING: arming is view state, so
           giving it up is too.
@@ -869,16 +946,35 @@ export function PoolGrid<T extends PoolSubject>({
             with 02-03's height → min-height change and needs `contain-intrinsic-size` to
             avoid scrollbar jitter on the density that scrolls most.
           */}
-          {visible.map((entry) => (
-            <MonCard
-              key={entry.id}
-              entry={entry}
-              spriteMeta={spriteMeta}
-              density={density}
-              onPick={handleActivate}
-              banned={bannedIds === null ? null : bannedIds.has(entry.id)}
-            />
-          ))}
+          {visible.map((entry) => {
+            /*
+              Resolved per cell, from the prop, on every render — never latched into state
+              and never remembered between them. That is what makes WR-04's shedding
+              structural rather than something to remember: the render that drops the id
+              from the set is the render that drops the attribute from the cell, and there
+              is no second place holding the old answer.
+
+              `reasonFor` is called only for the ids that are actually closed, which is why
+              the contract can promise every id in `ids` has a reason without the caller
+              having to produce one for the whole roster.
+            */
+            const inertReason =
+              banInert !== null && banInert.ids.has(entry.id)
+                ? banInert.reasonFor(entry.id)
+                : null;
+
+            return (
+              <MonCard
+                key={entry.id}
+                entry={entry}
+                spriteMeta={spriteMeta}
+                density={density}
+                onPick={handleActivate}
+                banned={bannedIds === null ? null : bannedIds.has(entry.id)}
+                inert={inertReason === null ? null : { reason: inertReason }}
+              />
+            );
+          })}
         </div>
       )}
     </>

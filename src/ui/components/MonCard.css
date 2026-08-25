@@ -49,25 +49,49 @@
  */
 
 /*
- * --- The banned cell, on the config screen's ban grid only ---
+ * --- The banned cell, and the closed one (02-UI-SPEC section Color; 04-UI-SPEC section 6) ---
  *
- * TWO signals, and neither of them is hue (02-UI-SPEC §Color, "colour is never the only
- * signal"). Dimming alone would be indistinguishable from the disabled convention this
- * project already uses at the same opacity, and a banned cell is the opposite of disabled:
- * it is pressed, it is the host's own choice, and clicking it again undoes it. A struck name
- * says "excluded" where a dim cell alone says "unavailable".
+ * "on the config screen's ban grid only" is what this heading used to say, and 04-06 made it
+ * false: the snake ban stage renders the same grid, and a species already spent there is
+ * CLOSED rather than pressed.
  *
- * The pressed state is also on the button itself, so the two visual signals are a rendering
- * of something assistive technology reads directly rather than the only way to know.
+ * TWO signals, and neither of them is hue ("colour is never the only signal"). Dimming alone
+ * would be indistinguishable from the disabled convention this project already uses at the
+ * same opacity; the struck name says "excluded" where a dim cell alone says "unavailable".
+ *
+ * ONE treatment for the two states rather than two that can drift apart. They are different
+ * facts — a banned cell is pressed, is the host's own choice, and clicking it again undoes
+ * it; a closed cell is one nobody may activate at all — but they read as the same thing to
+ * the eye, "this one is gone". The difference is carried by the pressed state and the
+ * accessible name, both of which assistive technology reads directly, rather than by a
+ * second colour nobody would decode.
  *
  * Nothing here for :focus or :active, for the reason above.
  */
-.mon-card--banned {
+.mon-card--banned,
+.mon-card--inert {
   opacity: 0.45;
 }
 
-.mon-card__name--banned {
+.mon-card__name--banned,
+.mon-card__name--inert {
   text-decoration: line-through;
+}
+
+/*
+ * A closed cell promises nothing, so it offers neither the pointer nor the hover lift. Same
+ * call CardFace makes by withholding its --playable class from an unplayable card: both
+ * would advertise an action that the click handler returns early from.
+ *
+ * The hover rule is overridden rather than removed, because .mon-card:hover above matches
+ * every cell and this file has no more specific base to hang the exception on.
+ */
+.mon-card--inert {
+  cursor: default;
+}
+
+.mon-card--inert:hover {
+  background: var(--color-surface);
 }
 
 .mon-card__sprite {

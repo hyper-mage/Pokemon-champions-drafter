@@ -74,6 +74,27 @@ export interface MonCardProps<T extends PoolSubject> {
    * be a toggle it is not.
    */
   banned: boolean | null;
+  /**
+   * Why this cell may not be activated at all, or `null` when it may — BAN-03, 04-UI-SPEC §6.
+   *
+   * ONE object carrying the reason rather than a boolean beside a string. The pair
+   * `(true, null)` would compile and would render an inert cell with nothing to explain it,
+   * which is the exact defect `PaneAvailability` was introduced to make unrepresentable
+   * (WR-07) — and here the reason is the whole point, because it is the only thing that
+   * tells a host `banned by the host` from `already banned by Ada`.
+   *
+   * OPTIONAL, defaulting to `null` once below. `PoolGrid.megaInertReason` records the reason
+   * a default is applied inside the component rather than left to the caller: an omitted
+   * prop arriving as `undefined` must never be able to reach the branch that reads a reason
+   * off it.
+   *
+   * DISTINCT FROM {@link banned}, and the two must not be merged into one value. `banned` is
+   * a pressed toggle the host may press again; this is a cell nobody may press at all. They
+   * happen to coincide on the snake ban stage, where every public ban is also closed, and
+   * they do not coincide on the blind entry surface, where a player's own selection is
+   * pressed while another player's ban is closed.
+   */
+  inert?: { reason: string } | null;
 }
 
 /*
@@ -127,32 +148,80 @@ function accessibleName(entry: PoolSubject): string {
   return types.length > 0 ? `${entry.name}, ${types.join(' ')}` : entry.name;
 }
 
+/**
+ * An inert cell's accessible name — the name it already had, plus why it is closed.
+ *
+ * COMPOSED onto the shipped name rather than replacing it. 04-UI-SPEC §6's third row gives
+ * the live cell `{name}` (unchanged), which fixes what `{name}` means in the two rows above
+ * it: whatever this cell already announced. A suffixed form that dropped the typing would
+ * make a closed cell announce strictly less than a live one, at the moment a host is trying
+ * to work out what happened to it.
+ *
+ * The separator is part of THIS STRING rather than an `aria-hidden` sibling span, and that is
+ * the rule rather than a shortcut. `SplitPanes.tsx`'s `POOL_EXPAND_REASON` block states both
+ * halves: a separator between two sibling elements is markup, and a separator inside one
+ * control's own accessible name is part of the string. There is no sibling here, so there is
+ * nothing for anything to be hidden from.
+ */
+function inertAccessibleName(entry: PoolSubject, reason: string): string {
+  return `${accessibleName(entry)} — ${reason}`;
+}
+
 export function MonCard<T extends PoolSubject>({
   entry,
   spriteMeta,
   density,
   onPick,
   banned,
+  inert = null,
 }: MonCardProps<T>) {
   const showDetail = density !== 'minimal';
 
   // The array-join conditional-class pattern, not template-literal concatenation: a
   // template leaves a trailing space when the condition is false, and a class list with a
   // stray token in it is a selector that silently stops matching.
-  const cardClass = ['mon-card', banned === true ? 'mon-card--banned' : '']
+  const cardClass = [
+    'mon-card',
+    banned === true ? 'mon-card--banned' : '',
+    inert !== null ? 'mon-card--inert' : '',
+  ]
     .filter((token) => token !== '')
     .join(' ');
-  const nameClass = ['mon-card__name', banned === true ? 'mon-card__name--banned' : '']
+  const nameClass = [
+    'mon-card__name',
+    banned === true ? 'mon-card__name--banned' : '',
+    inert !== null ? 'mon-card__name--inert' : '',
+  ]
     .filter((token) => token !== '')
     .join(' ');
+
+  /*
+    Present or absent, never the negative string — WR-04. Spread rather than assigned so the
+    live render carries no such prop at all, which is what makes Preact remove the attribute
+    outright the moment the condition lifts rather than rewrite it. `CardFace` records the
+    same construction and the same reason, and an undo returning a species to the pool is
+    exactly the render this shape exists for.
+
+    `aria-disabled` and deliberately never native `disabled`: a natively disabled button is
+    not focusable, so the reason above — which lives in the accessible name — would be
+    unreachable by keyboard, and the reason is the whole point of marking the cell at all.
+  */
+  const inertProps = inert === null ? {} : { 'aria-disabled': 'true' as const };
 
   return (
     <button
       type="button"
       class={cardClass}
-      aria-label={accessibleName(entry)}
+      aria-label={inert === null ? accessibleName(entry) : inertAccessibleName(entry, inert.reason)}
       aria-pressed={banned === null ? undefined : banned}
-      onClick={() => onPick(entry)}
+      {...inertProps}
+      onClick={() => {
+        // The early return IS the refusal, so the attribute does not lie — `CardFace` and
+        // `SplitPanes` both set the precedent. An `aria-disabled` control that still fires
+        // is worse than one that was never marked.
+        if (inert !== null) return;
+        onPick(entry);
+      }}
     >
       <img
         class="mon-card__sprite"
