@@ -468,6 +468,154 @@ Created files present on disk:
 All eight commits reachable from `HEAD`: `3d581ad`, `be1ec15`, `8d810a9`, `7628dc4`, `fddc227`,
 `6b93a13`, `4a9c620`, `d399cdf`.
 
+## The browser Back gap, and how it was closed
+
+Added 2026-08-25, after the host ran task 3's blocking checkpoint. This section is a
+post-checkpoint amendment to this plan's record rather than part of what the plan built.
+
+### What the host found
+
+`04-HUMAN-UAT.md` item (b) tests three ways of discarding a half-finished blind entry. Paths 1
+(`Hide these bans`) and 2 (alt-tab) passed in full. Path 3, the browser Back button, failed:
+
+> "when using the browser back button the tab completely goes away. That's way too much. I can
+> still open the url and go back to draft and all else passes, but the back button needs to just
+> go back."
+
+The **discard** half was already correct. `pagehide` fired, nothing was retained, and reopening the
+URL found the draft intact. The **destination** half was wrong: the host was taken out of the
+application.
+
+### Why, and why it was not a regression
+
+Not a defect in `installBanShield`. A repo-wide grep found no `pushState`, no `replaceState` and no
+`popstate` anywhere under `src/` — the only two hits were the word "history" inside unrelated
+comments. The application had never pushed a history entry, so the back/forward stack held exactly
+one entry, its own document, and Back popped that.
+
+`04-11-PLAN.md` item (b) and `04-UI-SPEC` D-17 both name Back as landing on the locked state. Both
+silently assumed somewhere to go back TO. It had never existed, in this phase or any earlier one —
+a gap in the specification as built, not something that stopped working.
+
+### What was built
+
+One sentinel history entry with one listener, alive only while the blind entry surface is mounted,
+inside `src/adapters/ban-shield.ts`.
+
+**It is not routing and must not become it.** `pushState` is called with no url argument, so the
+address bar never changes; nothing writes a URL and nothing reads one. The app remains the single
+document with no URL state that eight prior plans are built on.
+
+**It extends the shield rather than sitting beside it**, which was the choice the gap left open.
+The sentinel's lifetime must equal the listener set's exactly; one install/teardown pair makes that
+true by construction, where two adapters would make it true only for as long as two call sites kept
+agreeing.
+
+The whole behaviour is one invariant and its mirror:
+
+> **While the shield is installed the current history entry is the sentinel; once it is torn down,
+> it is not.**
+
+Install pushes *unless the sentinel is already current*. Teardown consumes it *if it still is*.
+Nothing is passed between them, and every exit falls out of the pair without being special-cased:
+
+| Exit | What happens |
+|------|--------------|
+| Browser Back | The traversal lands on the entry below, `popstate` discards and returns to the locked state, and by the time the unmount runs the sentinel is already gone — so teardown consumes nothing |
+| Lock in · `Hide these bans` · alt-tab · bfcache restore | The sentinel is still current, so teardown spends it and the entry count returns to where it started |
+| Forward, after a Back | The listener died with the surface, so nothing hears it and the host stays on the locked state — D-17's point exactly, since a browser gesture must never put an unlocked player's bans back on a shared screen |
+| Entering the next player after that Forward | The orphaned sentinel is ADOPTED rather than stacked on, which is the only route by which one could have survived |
+
+Two details are load-bearing and easy to get backwards:
+
+1. **Teardown removes every listener BEFORE it consumes.** Consuming is itself a traversal. The
+   other order fires `popstate` into a live listener and announces a discard on the way out of a
+   surface that was already left — including on the lock-in path, where nothing was discarded.
+2. **The `pushState` is wrapped in `try`.** Browsers rate-limit `pushState` and a sandboxed frame
+   can refuse it. An escaping throw would take the entry surface down with it, so the failure is
+   swallowed on purpose: with no sentinel pushed, Back leaves the document exactly as it did
+   before, `pagehide` still fires, and the entry is still discarded. The degradation is the
+   previously shipped behaviour rather than a broken screen.
+
+`leaveEntry` on `BanStageScreen` gained the fifth exit **without gaining a branch**, which is the
+payoff of 04-10's one-transition shape. Comments that counted four exits and three discard paths
+now count five and four.
+
+### How the tests were proved able to fail
+
+**The Back cases drive `history.back()`. They never dispatch a synthetic `popstate`.** This is the
+single most important sentence in this section. A dispatched event reaches the listener whether or
+not an entry was ever pushed — so a suite written the obvious way passes against *the exact defect
+the host reported*. Driving the real traversal couples the two halves: with nothing pushed, the
+call is a measured no-op that fires nothing, and the assertion fails.
+
+Eleven cases were added — seven in `tests/adapters/ban-shield.test.ts`, four in
+`tests/ui/ban-stage.test.tsx` — plus Back added to the existing one-message and focus-handoff
+roll-calls. Five ran RED against the unfixed adapter before a line of the fix was written.
+
+Then, holding 04-10's standard, **five mutations of the shipped fix were each run against the suite
+and reverted**:
+
+| Mutation | Cases broken |
+|----------|--------------|
+| `pushState` removed — *the shipped defect, reconstructed exactly* | 5 adapter, 5 screen |
+| Teardown consumes before removing its listeners | 3 adapter |
+| Teardown never consumes | 4 adapter |
+| Install always pushes, never adopts | 1 adapter |
+| `popstate` discards twice | 3 adapter |
+
+Every new case is broken by at least one mutation. None of them is a test that passes whether or
+not the fix is present.
+
+The double-discard mutation is worth reading twice: it is caught **only at the adapter**, on the
+exact-count assertions. At the screen it is invisible, because `leaveEntry` returns early on an
+empty seat and `@preact/signals` does not notify on an unchanged value — so a second discard has
+nothing left to say. That is the right place for the defence to live, but it does mean the
+screen-level suite is not what proves it.
+
+### What the automated tests do NOT establish
+
+Stated plainly, because the host is about to re-test by hand.
+
+- **No real Back button is ever pressed.** These are happy-dom's `History` methods. happy-dom's
+  traversal is also synchronous, where a real browser queues a task.
+- **The bfcache is not real either.** `pageshow` and `pagehide` are synthetic events, as they have
+  been since 04-10.
+- **`pagehide` staying silent on a same-document traversal is measured in happy-dom and reasoned
+  from the spec for real browsers.** It is not observed in one.
+- **Nothing here proves the browser's own Back gesture reaches the listener** — only that the
+  listener and the pushed entry are wired to each other.
+
+### What the host must re-test — UAT item (b), path 3 only
+
+Paths 1 and 2 already passed in full and do not need repeating. In a blind tournament, tap
+`Enter {player}'s bans`, choose ONE Pokémon and do not lock in. Then:
+
+1. Press the browser **Back** button. You should land on the **locked state, still inside the
+   app** — the same screen `Hide these bans` reaches, showing
+   `{player}'s entry was discarded. Nothing was recorded.` The tab must not navigate away.
+2. Press **Forward**. You must still be on the locked state. If the entry surface comes back, that
+   is a failure, and a secrecy one.
+3. Re-enter that player's bans and confirm **no chip is pre-selected**.
+4. Enter and leave two or three players, then press Back once from the locked state. It may leave
+   the app — that is the baseline behaviour everywhere else and is deliberately unchanged. What
+   must NOT happen is having to press Back several times to get out, which would mean entries are
+   accumulating.
+
+`04-HUMAN-UAT.md` item (b) is left at `pending` for that re-test. Only the host marks it passed.
+
+### Commits
+
+| Commit | What |
+|--------|------|
+| `87705fe` | RED — nine adapter cases driving a real Back, five of them failing |
+| `ec75b4b` | The fix — sentinel entry, `popstate` exit, consume on teardown |
+| `1082f86` | The screen cases, the history drain, and the exit-count comments |
+| `b9dc3b2` | `04-HUMAN-UAT.md` — gap resolved, item (b) back to pending |
+
+`npm run verify` exits 0: 61 files, **2036 tests** (2025 before), clean build.
+
 ---
 *Phase: 04-blind-and-snake-bans*
 *Paused at task 3's blocking checkpoint: 2026-08-25*
+*Amended 2026-08-25 with the browser Back gap closure*
