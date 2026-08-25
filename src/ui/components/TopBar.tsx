@@ -60,6 +60,20 @@ export interface TopBarProps {
    * Names of the banned species, already name-sorted and roster-resolved by
    * `bannedEntries`. Its length is the set cardinality by construction, so the disclosure
    * needs no second count. Empty means the disclosure is not rendered at all.
+   *
+   * ## WHAT THIS IS HANDED IS WHAT THE ROOM MAY SEE RIGHT NOW — 04-UI-SPEC Amendment 1
+   *
+   * These are not "the bans". They are whatever the caller decided the room is allowed to
+   * see at this moment, and the caller decides it with `selectPublicBanIds` — which in
+   * blind mode before `bans/revealed` is the host's banlist ONLY, and never a submission.
+   *
+   * The reason is this element: the list below is a native disclosure any person standing
+   * in the room can open with one click, so its content is one click from readable by
+   * everyone present, and the blind stage's full-screen shield does not cover the chrome.
+   *
+   * This component holds no opinion about any of that and must not grow one. A branch here
+   * would be a second authority on secrecy, free to disagree with the selector at exactly
+   * the moment it matters.
    */
   bannedNames: readonly string[];
 }
