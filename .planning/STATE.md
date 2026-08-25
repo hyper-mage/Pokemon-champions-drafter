@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 UI-SPEC approved
-last_updated: "2026-08-21T17:53:17.792Z"
-last_activity: 2026-08-21 -- Phase 04 execution started
+stopped_at: Phase 04 plan 11 — blocking human-verify checkpoint (the three-metre pass)
+last_updated: "2026-08-25T00:00:00.000Z"
+last_activity: 2026-08-25 -- Phase 04 plan 11 built; paused at its blocking human pass
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 47
-  completed_plans: 36
-  percent: 60
+  completed_plans: 46
+  percent: 87
 ---
 
 # Project State
@@ -25,13 +25,15 @@ See: .planning/PROJECT.md (updated 2026-08-03)
 
 ## Current Position
 
-Phase: 04 (blind-and-snake-bans) — EXECUTING
-Plan: 1 of 11
-Next: Phase 04 (blind-and-snake-bans) — not started, no directory, 0 plans
-Status: Executing Phase 04
-Last activity: 2026-08-21 -- Phase 04 execution started
+Phase: 04 (blind-and-snake-bans) — EXECUTING, PAUSED AT A CHECKPOINT
+Plan: 11 of 11
+Next: 04-11 task 3 — the blocking three-metre human pass. Nothing else in the phase is
+      outstanding; every other plan is complete and `npm run verify` exits 0.
+Status: Awaiting the developer's physical pass. Record the verdict per item in
+        `.planning/phases/04-blind-and-snake-bans/04-HUMAN-UAT.md`, which is pre-filled.
+Last activity: 2026-08-25 -- Phase 04 plan 11 built; paused at its blocking human pass
 
-Progress: [████████████░░░░░░░░] 36/36 plans in phases 1–3 (3 of 5 phases)
+Progress: [█████████████████░░░] 46/47 plans (4 of 5 phases, phase 4 one human pass short)
 
 **Sequencing note (2026-08-20).** ROADMAP's execution order is 1→5, but Phase 5 depends only on
 Phase 3 and its own entry says it is "independent of Phase 4 and buildable before it." Phase 5
@@ -75,6 +77,7 @@ session the one outstanding UAT item needs. Not decided; recorded so the choice 
 | Phase 03 P04 | 35min | 3 tasks | 22 files |
 | Phase 03 P05 | 27min | 3 tasks | 10 files |
 | Phase 03 P06 | 28min | 3 tasks | 11 files |
+| Phase 04 P11 | ~35min | 2 of 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -109,6 +112,11 @@ Recent decisions affecting current work:
 - [Phase 03]: The round restriction is applied from the prop on every compile and never held in filter state, so Clear filters, the empty-state resets and clear-on-pick cannot widen a round's offer
 - [Phase 03]: An empty Mega-round offer is explained and never widened — a fallback allowing a non-Mega pick is the removed post-pick validator wearing a friendlier name
 - [Phase 03]: The SLOT decides the export stone, never the species — CompletedDraft takes the fold rather than a teams record so a species and its stone cannot come from two copies
+- [Phase 04]: The post-reveal re-check passes `banMode: 'hostBanlist'` as well as `bansPerPlayer: 0` — both fields mean "player bans not yet in the banlist", and at the reveal there are none
+- [Phase 04]: The blocked reveal quotes the gate's sentence unedited and adds D-22's exit as its own element — a UI-composed rival sentence would be a second author, and appending to a remedy that has expired would offer an action the host cannot take
+- [Phase 04]: `selectAttributedBans` branches on `banMode` in `selectPublicBanIds`' shape, so what the room may see and whose name sits above it cannot disagree about the authoritative source
+- [Phase 04]: `drawPoolForBanStage` returns false rather than throwing, guarded by three conditions read backwards off `drawPool`'s own selection calls rather than by a catch
+- [Phase 04]: `CheckpointPrompt.heading` is a required prop with no default, so a new milestone must name the moment it is standing at rather than inherit `Draft complete` on a screen where the draft has not started
 
 ### Pending Todos
 
@@ -126,6 +134,16 @@ None yet.
 - **Phase 3 priority cards / Phase 4 blind bans:** MEDIUM research need each; both are novel hot-seat UX with only party-app and tabletop precedent. Both want a real playtest with the 4–8 friend group.
 - **Roster rotation timing:** Champions regulation M-C is expected around 2026-09-02. Snapshot regulation-labeling must land in Phase 1, not later.
 - Phase 3 verify gate: tests/ui/ban-list.test.tsx times out under full-suite parallel load. Pre-existing — reproduced with pre-plan src at e663518. Logged in 03/deferred-items.md; not this plan's to fix.
+- **Phase 4 is one human pass short of complete (BLOCKING).** 04-11 task 3 is `04-UI-SPEC`
+  §DRFT-14 item 4: 8 players, `blind`, 2 bans each, `standard` density, a 1080p screen and 3
+  metres of floor. 04-RESEARCH §Environment Availability records it as human-dependent with **no
+  automated fallback**, and it doubles as the phase's secrecy check, so it gates BAN-05 and BAN-06
+  acceptance as well as DRFT-14. All code is built, committed and green. If an item fails, that is
+  a finding about a `--text-*` token — the remedies are the existing four-size scale and the
+  existing pane states, and introducing a fifth font size is explicitly out of bounds.
+- **BAN-07 is PARTIALLY satisfied by owner-approved decision D-19.** Only the `bothApply` branch
+  is built; `Re-ban — Not yet available` ships disabled. The verifier must not score ROADMAP Phase
+  4 success criterion 4 green on the re-ban clause.
 
 ### Quick Tasks Completed
 
