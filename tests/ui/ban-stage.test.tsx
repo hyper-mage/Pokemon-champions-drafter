@@ -23,12 +23,14 @@
  */
 
 import { render } from 'preact';
+import { useState } from 'preact/hooks';
 import { act } from 'preact/test-utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import committedSnapshot from '../../public/data/roster.mb.json';
 import type { SpriteMeta } from '../../src/adapters/roster-source';
 import { disposeTabLock } from '../../src/adapters/tab-lock';
+import type { PaneState } from '../../src/adapters/view-prefs';
 import type { RoundSpec } from '../../src/core/actions';
 import { bansPlaced } from '../../src/core/actions';
 import type { TournamentConfig } from '../../src/core/model';
@@ -353,8 +355,15 @@ function mountStage(): { calls: { playerId: string; monId: string; pass: number 
   return { calls };
 }
 
-function startSnakeStage(bansPerPlayer = 2): TournamentConfig {
-  const config = configFor('snake', bansPerPlayer);
+/**
+ * `hostBans` is the HOST's own banlist, and it is deliberately available at snake.
+ *
+ * D-15: the host banlist coexists with player bans in every mode, so the two reasons an
+ * inert cell can carry are both reachable in one tournament — which is the case the copy
+ * exists to tell apart.
+ */
+function startSnakeStage(bansPerPlayer = 2, hostBans: readonly string[] = []): TournamentConfig {
+  const config = { ...configFor('snake', bansPerPlayer), bans: [...hostBans] };
   createBanStage({ config, order: order(config), orderSeed: 11, schedule: schedule() });
   return config;
 }
@@ -465,6 +474,282 @@ describe('BanStageScreen at the snake stage', () => {
 
     mountStage();
     expect(host.querySelector('.turn-banner')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 04-06 — what is already gone, and who spent it
+// ---------------------------------------------------------------------------
+
+/**
+ * The constraint upstream of the click.
+ *
+ * `selectCardOffer`'s doc block is the governing pattern for this whole phase and this is
+ * its clearest instance: the constraint belongs upstream of the click, not in a rejection
+ * after it. `canApply`'s `banAlreadyPlaced` arm sits behind it as a backstop, so the
+ * load-bearing assertion below is the one that watches the LOG rather than the screen — if
+ * a click on a closed cell ever lengthens it, the surface and the rule have disagreed.
+ */
+
+const RULE_LINE = 'A struck-through Pokémon is already banned and cannot be banned again.';
+const VIEW_KEY = 'champions-drafter:view';
+
+/**
+ * The stage, re-rendered against the fold each time a ban lands.
+ *
+ * `app.tsx` re-renders from the store signal; this is the same shape with the smallest
+ * mechanism that produces it, so the assertions below are about what a host sees after
+ * their own click rather than about a snapshot taken before it.
+ */
+function LiveStage({
+  storedPane = 'split',
+  onPaneChange = () => undefined,
+}: {
+  storedPane?: PaneState;
+  onPaneChange?: (pane: PaneState) => void;
+}) {
+  const [, bump] = useState(0);
+  const state = getState();
+  if (state === null) return null;
+
+  return (
+    <BanStageScreen
+      state={state}
+      entries={ENTRIES}
+      spriteMeta={SPRITE_META}
+      topBar={TOP_BAR}
+      storedPane={storedPane}
+      onPaneChange={onPaneChange}
+      onPlaceBan={(playerId, monId, pass) => {
+        dispatch(bansPlaced(playerId, monId, pass));
+        bump((count) => count + 1);
+      }}
+    />
+  );
+}
+
+function mountLiveStage(
+  storedPane: PaneState = 'split',
+  onPaneChange: (pane: PaneState) => void = () => undefined,
+): void {
+  act(() => {
+    render(<LiveStage storedPane={storedPane} onPaneChange={onPaneChange} />, host);
+  });
+}
+
+function logLength(): number {
+  return getDoc()?.log.length ?? -1;
+}
+
+function banFieldInput(): HTMLInputElement {
+  const input = host.querySelector<HTMLInputElement>('#ban-stage-ban-input');
+  if (input === null) throw new Error('the ban field is not on the ban stage');
+  return input;
+}
+
+function typeBanQuery(text: string): void {
+  act(() => {
+    const input = banFieldInput();
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+function banOptions(): HTMLLIElement[] {
+  return [...host.querySelectorAll<HTMLLIElement>('.typeahead__option')];
+}
+
+function pressBanOption(option: HTMLLIElement | undefined): void {
+  if (option === undefined) throw new Error('no such option');
+  act(() => {
+    option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+  });
+}
+
+describe('the snake pool pane knows what is already gone', () => {
+  it('closes a species the host banned, and says who by', () => {
+    startSnakeStage(2, ['venusaur']);
+    mountLiveStage();
+
+    const cell = cardNamed('Venusaur');
+    expect(cell?.getAttribute('aria-disabled')).toBe('true');
+    expect(cell?.getAttribute('aria-label')).toBe(
+      'Venusaur, Grass Poison — banned by the host',
+    );
+  });
+
+  it('closes a species a player spent, and names the player', () => {
+    startSnakeStage(2);
+    dispatch(bansPlaced('p1', 'rotomwash', 1));
+    mountLiveStage();
+
+    const cell = cardNamed('Rotom-Wash');
+    expect(cell?.getAttribute('aria-disabled')).toBe('true');
+    expect(cell?.getAttribute('aria-label')).toBe(
+      'Rotom-Wash, Electric Water — already banned by Ada',
+    );
+  });
+
+  it('leaves an unbanned species open and unsuffixed', () => {
+    startSnakeStage(2, ['venusaur']);
+    mountLiveStage();
+
+    const cell = cardNamed('Garchomp');
+    expect(cell?.hasAttribute('aria-disabled')).toBe(false);
+    expect(cell?.getAttribute('aria-label')).toBe('Garchomp, Dragon Ground');
+  });
+
+  it('names the rule once, above the grid', () => {
+    startSnakeStage(2, ['venusaur']);
+    mountLiveStage();
+
+    expect(host.querySelectorAll('.pool__ban-rule')).toHaveLength(1);
+    expect(host.querySelector('.pool__ban-rule')?.textContent).toBe(RULE_LINE);
+  });
+
+  it('records the ban and passes the turn on one click, with no confirm', () => {
+    startSnakeStage(2);
+    mountLiveStage();
+
+    const before = logLength();
+    act(() => {
+      cardNamed('Garchomp')?.click();
+    });
+
+    expect(logLength()).toBe(before + 1);
+    expect(host.querySelector('.dialog')).toBeNull();
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Bo bans');
+    expect(cardNamed('Garchomp')?.getAttribute('aria-label')).toBe(
+      'Garchomp, Dragon Ground — already banned by Ada',
+    );
+  });
+
+  /**
+   * THE LOAD-BEARING ONE. A closed cell that still dispatched would be a constraint applied
+   * after the click rather than before it, and `canApply` would be the only thing between a
+   * host and a wasted turn.
+   */
+  it('records nothing at all when a closed cell is clicked', () => {
+    startSnakeStage(2, ['venusaur']);
+    mountLiveStage();
+
+    // Asserted TOGETHER, because the log alone cannot tell the two apart: `canApply`'s
+    // `banAlreadyPlaced` backstop also leaves it unchanged. The attribute is what says the
+    // click was refused BEFORE it was made rather than after.
+    expect(cardNamed('Venusaur')?.getAttribute('aria-disabled')).toBe('true');
+
+    const before = logLength();
+    act(() => {
+      cardNamed('Venusaur')?.click();
+    });
+
+    expect(logLength()).toBe(before);
+    expect(host.querySelector('.turn-banner')?.textContent).toBe('Pass 1 of 2 — Ada bans');
+  });
+
+  /**
+   * A snake ban does not REMOVE the cell — the stage renders the whole roster and closes
+   * what is gone — so the node the host was standing on is still in the document afterwards
+   * and there is nothing to hand focus on to.
+   */
+  it('keeps the banned cell in place, so focus survives the ban', () => {
+    startSnakeStage(2);
+    mountLiveStage();
+
+    const cell = cardNamed('Garchomp');
+    act(() => {
+      cell?.focus();
+      cell?.click();
+    });
+
+    expect(document.activeElement).toBe(cardNamed('Garchomp'));
+    expect(cardNamed('Garchomp')?.getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
+describe('the ban field gives the same answer as the grid', () => {
+  it('keeps a closed species in the results, with the same reason', () => {
+    startSnakeStage(2);
+    dispatch(bansPlaced('p1', 'rotomwash', 1));
+    mountLiveStage();
+
+    typeBanQuery('rotom-wash');
+
+    const option = banOptions()[0];
+    expect(option?.getAttribute('aria-disabled')).toBe('true');
+    expect(option?.textContent).toBe('Rotom-Wash — already banned by Ada');
+  });
+
+  it('records nothing when a closed option is pressed', () => {
+    startSnakeStage(2, ['venusaur']);
+    mountLiveStage();
+
+    typeBanQuery('venusaur');
+    const before = logLength();
+    pressBanOption(banOptions()[0]);
+
+    expect(logLength()).toBe(before);
+  });
+
+  it('records a ban when an open option is pressed', () => {
+    startSnakeStage(2);
+    mountLiveStage();
+
+    typeBanQuery('garchomp');
+    const before = logLength();
+    pressBanOption(banOptions()[0]);
+
+    expect(logLength()).toBe(before + 1);
+    expect(cardNamed('Garchomp')?.getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
+describe('the stored pane preference across the ban stage', () => {
+  it('coerces a stored pool-full to split at snake, and writes nothing back', () => {
+    const changed: PaneState[] = [];
+    startSnakeStage(2);
+    mountLiveStage('pool', (pane) => changed.push(pane));
+
+    expect(host.querySelector('.draft-panes')?.getAttribute('data-pane')).toBe('split');
+
+    // Silently — the host's stored choice is honoured again the moment a screen offers
+    // it, so a coercion that reported itself would overwrite a preference the host still
+    // holds. The pool expand is refused for this stage, not forgotten.
+    expect(changed).toEqual([]);
+  });
+
+  /**
+   * Amendment 2's blind row, and it is a NEGATIVE requirement: blind mounts no panes, so the
+   * preference must survive the ban stage untouched and the draft must open in the state the
+   * host chose. "We do not touch it" is invisible in code, so it is asserted here instead.
+   */
+  it('is left untouched while the blind stage is on screen', () => {
+    const stored = JSON.stringify({ density: 'full', pane: 'board' });
+    localStorage.setItem(VIEW_KEY, stored);
+
+    const config = configFor('blind', 2);
+    createBanStage({ config, order: order(config), orderSeed: 11, schedule: schedule() });
+
+    /*
+      The handler PERSISTS, exactly as `app.tsx`'s does. A handler that only recorded the
+      call would leave the storage assertion below true whatever the screen did — and a
+      negative requirement asserted by something that cannot fail is worse than one that is
+      not asserted at all, because it reads as covered.
+    */
+    const changed: PaneState[] = [];
+    mountLiveStage('board', (pane) => {
+      changed.push(pane);
+      localStorage.setItem(VIEW_KEY, JSON.stringify({ density: 'full', pane }));
+    });
+
+    expect(host.querySelector('.draft-panes')).toBeNull();
+
+    act(() => {
+      render(null, host);
+    });
+
+    expect(changed).toEqual([]);
+    expect(localStorage.getItem(VIEW_KEY)).toBe(stored);
   });
 });
 
