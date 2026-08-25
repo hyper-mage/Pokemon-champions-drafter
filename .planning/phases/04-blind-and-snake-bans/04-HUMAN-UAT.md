@@ -3,7 +3,7 @@ status: partial
 phase: 04-blind-and-snake-bans
 source: [04-UI-SPEC.md §DRFT-14 item 4, 04-RESEARCH.md §Environment Availability, 04-11-PLAN.md task 3]
 started: 2026-08-25T00:00:00Z
-updated: 2026-08-25T20:30:00Z
+updated: 2026-08-25T21:45:00Z
 ---
 
 ## Screen used
@@ -61,8 +61,8 @@ expected: |
   - it lands on the locked state;
   - it shows the **same** discard notice;
   - it retains **nothing** — re-enter that player's bans and confirm no chip is pre-selected.
-result: issues
-note: "Host verdict 2026-08-25. Paths 1 (`Hide these bans`) and 2 (alt-tab) PASS in full — correct destination, same notice, nothing retained. Path 3 FAILS: the browser Back button leaves the document entirely rather than returning to the locked state. The discard itself is correct (`pagehide` fires and nothing is retained, confirmed by reopening the URL and finding the draft intact), but the host is taken out of the app. Root cause is not in the shield: there is no `pushState`/`popstate` handling anywhere in `src/`, so no history entry exists to go back to. See the `browser-back-exits-the-app` gap below."
+result: pending
+note: "Host verdict 2026-08-25: paths 1 (`Hide these bans`) and 2 (alt-tab) PASSED in full — correct destination, same notice, nothing retained. Neither needs repeating. Path 3 FAILED (Back left the document) and has since been fixed in `ec75b4b`, so this item is back to pending on ONE re-test: press Back from the entry surface and confirm it lands on the locked state INSIDE the app, showing the same discard notice, with nothing retained when that player enters again; then press Forward and confirm you are still on the locked state and the entry surface has not come back. Only the host can mark this passed."
 
 ### (c) The reveal
 setup: |
@@ -100,8 +100,8 @@ note: "Host verdict 2026-08-25. Snake surfaces — turn banner, pass column head
 
 total: 4
 passed: 3
-issues: 1
-pending: 0
+issues: 0
+pending: 1
 skipped: 0
 blocked: 0
 descoped: 0
@@ -117,9 +117,10 @@ descoped: 0
   disposition: "Blocking checkpoint at 04-11 task 3. The phase is not complete until this file records a verdict per item."
 
 - truth: "Pressing the browser Back button from the blind entry surface returns the host to the locked state inside the app"
-  status: failed
+  status: resolved
+  resolution: "Fixed in `ec75b4b` — `installBanShield` now pushes one sentinel history entry on install, treats `popstate` as discard-and-return-to-locked, and spends the entry on teardown so eight players leave none behind; item (b) path 3 awaits one host re-test."
   reason: "Host verdict 2026-08-25, UAT item (b) path 3. Back leaves the document entirely — the tab navigates away from the app. Reopening the URL restores the draft and nothing was retained, so the discard half of D-17 is correct; the destination half is not."
   severity: blocking
   test: [b]
   root_cause: "Not a defect in `installBanShield`. A repo-wide grep finds no `pushState`, no `replaceState` and no `popstate` anywhere under `src/` — the app has never pushed a history entry, so Back pops the app's own document off the stack. `04-11-PLAN.md` item (b) and `04-UI-SPEC` D-17 both specify Back as landing on the locked state, which silently assumed a history entry that was never built. The `pagehide` listener still fires on the way out, which is why the discard is correct even though the destination is wrong."
-  disposition: "Gap closure. The fix belongs in the adapters layer beside `ban-shield.ts`: push a sentinel history entry when the entry surface mounts, handle `popstate` as discard-and-return-to-locked without leaving the document, and consume the sentinel on unmount so entries do not accumulate across eight players."
+  disposition: "Gap closure, done. Built exactly as scoped, and inside `src/adapters/ban-shield.ts` rather than a sibling file so the sentinel’s lifetime cannot drift from the listener set’s: install pushes unless the sentinel is already current, teardown removes every listener and only then spends it, and those two conditions are each other’s mirror. No router, and no URL is written or read — `pushState` takes no url argument. Eleven new tests across `tests/adapters/ban-shield.test.ts` and `tests/ui/ban-stage.test.tsx`, every Back case driving `history.back()` rather than dispatching a synthetic `popstate`, and all of them proved able to fail by five mutations of the shipped fix. See `04-11-SUMMARY.md` §‘The browser Back gap, and how it was closed’ for what the automated tests do and do not establish."
