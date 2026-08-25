@@ -100,6 +100,24 @@ export interface BlindLockedProps {
   total: number;
   /** Set after a discard; cleared on the next transition into entry. `null` renders no notice. */
   discardedPlayerName: string | null;
+  /**
+   * The player whose allotment just landed, when THIS MOUNT is the result of one — `null`
+   * otherwise, including on every fresh page load.
+   *
+   * It exists because the entry surface swaps this component out and back, so a submission
+   * lands across a REMOUNT and the increase this component watches for never happens. The
+   * screen above knows exactly what the departure from entry was, so it says so rather than
+   * leaving the room with no spoken confirmation that a submission registered.
+   *
+   * **This is not "announce on mount", which is the change that would make a resume lie.**
+   * The distinction is that this is the SCREEN'S MEMORY OF A TRANSITION, and that memory is
+   * component state one level up: a reload starts with `null`, so arriving at a stage with
+   * three entries already in it stays silent. Never derive it from the fold.
+   *
+   * At most one of this and {@link discardedPlayerName} is ever set — a departure from entry
+   * is either a submission or a discard, and never both.
+   */
+  lockedPlayerName: string | null;
   onEnter: () => void;
   onReveal: () => void;
   /** The focus target every exit from the entry surface lands on — 04-10 wires it. */
@@ -112,6 +130,7 @@ export function BlindLocked({
   entered,
   total,
   discardedPlayerName,
+  lockedPlayerName,
   onEnter,
   onReveal,
   primaryActionRef,
@@ -144,9 +163,40 @@ export function BlindLocked({
     Mount only. An undo while this screen is up lowers `entered`, and `store.ts` announces
     `{playerName}'s bans were removed. {n} of {m} entered.` for it — a clear on that render
     would swallow the one sentence telling the room what just happened.
+
+    --- AND WHAT THE ARRIVAL ITSELF SAYS ---
+
+    The entry surface swaps this component out and back, so a submission and a discard both
+    land across a REMOUNT: the increase this component watches for below never fires on
+    either, and without this the screen would be correct and silent about the one thing the
+    room is waiting to hear. The screen above hands down which it was, so this speaks the
+    transition it actually arrived on.
+
+    It is still MOUNT-SCOPED, and the three branches are still one write, so S7 holds
+    exactly as before — every arrival replaces whatever the previous surface left in the
+    region rather than adding to it. What keeps a resume honest is that both props are the
+    screen's own component state one level up, so a page load starts with both `null` and
+    lands on the `announce('')` branch.
   */
   useEffect(() => {
+    if (discardedPlayerName !== null) {
+      announce(discardNotice(discardedPlayerName));
+      return;
+    }
+
+    if (lockedPlayerName !== null) {
+      announce(
+        entered >= total
+          ? completeAnnouncement(total)
+          : lockedAnnouncement(lockedPlayerName, entered, total),
+      );
+      return;
+    }
+
     announce('');
+    // Mount only, deliberately — see above. The props are read as they were on arrival,
+    // which is the only render on which they describe something that just happened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /*

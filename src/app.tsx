@@ -28,6 +28,7 @@ import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-pr
 import {
   bansPlaced,
   bansRevealed,
+  bansSubmitted,
   cardsPlayed,
   orderResolved,
   pickMade,
@@ -1580,6 +1581,27 @@ export function App() {
   }, []);
 
   /**
+   * Seal one player's allotment — BAN-04, BAN-05, D-06.
+   *
+   * The WHOLE allotment in one dispatch, because that is what `canApply` accepts: its
+   * `wrongBanCount` arm refuses anything that is not exactly `bansPerPlayer` long, so
+   * recording a blind ban one species at a time is not a slower version of this — it is a
+   * sequence of refusals.
+   *
+   * The ids arrive from `BanStageScreen`, which read them off the entry surface's own
+   * component state, and the `playerId` from the seat that surface was opened for. Neither
+   * is worked out here: a second answer to "whose allotment is this" would be a second
+   * authority on the one fact the blind ritual cannot get wrong.
+   *
+   * A refused dispatch is left refused, exactly as `handlePlaceBan` leaves one. The entry
+   * surface will not offer the lock control until the allotment is the right length, which
+   * is the constraint upstream of the click that the backstop exists behind.
+   */
+  const handleSubmitBans = useCallback((playerId: string, monIds: string[]) => {
+    dispatch(bansSubmitted(playerId, monIds));
+  }, []);
+
+  /**
    * The blind reveal — BAN-04, D-08, D-13.
    *
    * ## It is MATERIALIZED, not an instruction to re-derive
@@ -2133,6 +2155,7 @@ export function App() {
               bannedNames,
             }}
             onReveal={handleRevealBans}
+            onSubmitBans={handleSubmitBans}
             // The STORED preference, uncoerced. `pane` below coerces against the DRAFT's
             // availability, which tracks `selectPhase` — and `selectPhase` answers `'cards'`
             // at a ban stage. Amendment 2's coercion is the stage's own and lives there.

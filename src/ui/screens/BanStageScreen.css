@@ -47,6 +47,25 @@
  * eight passes and `board-full` to twenty-three (04-UI-SPEC §Layout Budget), and a scroll
  * container here would hide the overflow that DRFT-14 assertion 16 exists to catch rather
  * than fix it. `.pane__scroll` already handles the vertical axis for both panes.
+ *
+ * --- AND TWO PROHIBITIONS THIS FILE MUST KEEP, BOTH SECURITY PROPERTIES ---
+ *
+ * NOTHING MAY MOVE ON THE WAY FROM THE BLIND ENTRY SURFACE TO THE LOCKED STATE. 04-UI-SPEC
+ * S9 makes that change-over a hard prohibition at any duration — the project's first, and
+ * stated there as a security property rather than a taste. A fade, a slide or a
+ * cross-dissolve leaves the whole roster and the player's pending selection readable for
+ * the length of the effect, which is a leak measured in frames. So no rule here, or in
+ * BlindEntry.css or BlindLocked.css, declares motion of any kind.
+ *
+ * AND THE ENTRY SURFACE MAY NEVER BE MERELY MADE INVISIBLE. The screen mounts and unmounts
+ * it; no rule here may offer a way to keep it in the tree while taking it off the screen,
+ * because a component that is still mounted still holds the previous player's selection
+ * (D-18) and still holds `PoolGrid`'s pending live-region timers, which are cancelled only
+ * on unmount (assertion S7). The screen's own doc block carries the full reasoning.
+ *
+ * Both prohibitions are written to DESCRIBE what is banned rather than to name the
+ * properties. A comment quoting a forbidden pattern makes the mechanical check report its
+ * own documentation, which is a defect this phase has hit repeatedly.
  */
 
 .ban-stage__pool {
