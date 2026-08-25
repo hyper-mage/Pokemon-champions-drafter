@@ -31,9 +31,22 @@
  * one `dispatchEvent`". A suite that only fires the persisted event cannot tell a correct
  * guard from `if (true) onLock()`, so the non-persisted case below is not a completeness
  * exercise — it is the assertion that proves `persisted` is read at all.
+ *
+ * ## The Back-button cases DRIVE `history.back()`; they never dispatch a `popstate`
+ *
+ * This is the same rule one notch sharper, and it is the whole reason the last describe
+ * block below can fail. A synthetic `window.dispatchEvent(new Event('popstate'))` reaches
+ * the listener whether or not the adapter ever pushed a history entry, so a suite written
+ * that way passes against the exact defect the host reported — an app with a listener and
+ * no entry for Back to land on, which leaves the document. Calling `history.back()` is what
+ * couples the two halves: with no pushed entry the call is a measured no-op that fires
+ * nothing, so the assertion `locks === 1` fails.
+ *
+ * happy-dom's traversal is SYNCHRONOUS, unlike a real browser's queued task. That is a
+ * convenience for the assertions and nothing more — the adapter never reads the ordering.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installBanShield } from '../../src/adapters/ban-shield';
 
@@ -72,6 +85,44 @@ function visibilityChange(visibilityState: 'hidden' | 'visible'): Event {
   return new Event('visibilitychange');
 }
 
+/**
+ * Is the entry surface's own history entry the current one?
+ *
+ * The shape is written out here rather than imported, deliberately. The adapter exports one
+ * function and nothing else, and widening that surface so a test can read a private
+ * constant would make the constant part of the module's contract. Spelling it out instead
+ * pins the wire shape: a rename inside the adapter that forgot the teardown's read would
+ * still be caught, because both sides would have to agree with this literal.
+ */
+function currentEntryIsSentinel(): boolean {
+  const state: unknown = window.history.state;
+  return (
+    typeof state === 'object' &&
+    state !== null &&
+    (state as { blindBanEntry?: unknown }).blindBanEntry === true
+  );
+}
+
+/**
+ * happy-dom keeps ONE history for the whole file and there is no API that clears it.
+ *
+ * A case that ended sitting on a sentinel would arm the next case's `history.back()` before
+ * that case installed anything, which is exactly the false positive the drive-the-real-Back
+ * rule above exists to avoid. Draining leaves every case starting at the base entry, where
+ * `history.back()` is a no-op that fires nothing — measured, not assumed.
+ *
+ * The loop terminates because the base entry's state is `null` and this adapter is the only
+ * thing in the repository that ever calls `pushState`. The bound is there anyway, because a
+ * test suite that can hang is worse than one that fails.
+ */
+function drainSentinelEntries(): void {
+  for (let guard = 0; guard < 32 && currentEntryIsSentinel(); guard += 1) {
+    window.history.back();
+  }
+}
+
+beforeEach(drainSentinelEntries);
+
 afterEach(() => {
   // A `configurable: true` redefinition survives the test that made it, and a document
   // left `hidden` would make the next case's `visible` assertion pass for the wrong reason.
@@ -80,6 +131,7 @@ afterEach(() => {
     configurable: true,
   });
   vi.unstubAllGlobals();
+  drainSentinelEntries();
 });
 
 describe('installBanShield', () => {
@@ -186,7 +238,7 @@ describe('installBanShield', () => {
   // Teardown, and the coexistence invariant
   // -------------------------------------------------------------------------
 
-  it('removes all three listeners on teardown', () => {
+  it('removes every listener on teardown', () => {
     let locks = 0;
     const teardown = installBanShield(() => (locks += 1));
 
@@ -194,6 +246,7 @@ describe('installBanShield', () => {
 
     window.dispatchEvent(persistedPageShow());
     window.dispatchEvent(new Event('pagehide'));
+    window.dispatchEvent(new Event('popstate'));
     document.dispatchEvent(visibilityChange('hidden'));
 
     expect(locks).toBe(0);
@@ -232,5 +285,173 @@ describe('installBanShield', () => {
     expect(others).toBe(2);
 
     window.removeEventListener('pageshow', other);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The browser Back button — D-17's destination half
+// ---------------------------------------------------------------------------
+
+/**
+ * BACK MUST LAND ON THE LOCKED STATE, NOT LEAVE THE APPLICATION.
+ *
+ * The host found this at 04-11's verification checkpoint: Back discarded correctly —
+ * `pagehide` fired and nothing was retained — and then took the room out of the tool
+ * entirely. The cause was not in the listeners. The application had never pushed a history
+ * entry, so the back/forward stack held exactly one entry, its own document, and Back popped
+ * that. D-17 named the destination and silently assumed somewhere to go.
+ *
+ * The fix is one sentinel entry with one listener, alive only while the entry surface is
+ * mounted. It is NOT routing: nothing writes a URL, nothing reads one, and the sentinel is
+ * consumed on the way out so eight players do not leave eight entries behind them.
+ *
+ * ## The invariant these cases pin, in one sentence
+ *
+ * While the shield is installed the current history entry is the sentinel; once it is torn
+ * down, it is not. Install pushes unless the sentinel is already current, teardown consumes
+ * it if it still is, and those two conditions are each other's mirror rather than a flag
+ * passed between them.
+ */
+describe('installBanShield, the browser Back button', () => {
+  it('makes the entry surface its own history entry', () => {
+    const teardown = installBanShield(() => undefined);
+
+    expect(currentEntryIsSentinel()).toBe(true);
+
+    teardown();
+
+    expect(currentEntryIsSentinel()).toBe(false);
+  });
+
+  /**
+   * THE CASE THE HOST'S FINDING IS ABOUT, AND THE ONE THAT PROVES THE PUSH HAPPENED.
+   *
+   * `history.back()` rather than a synthetic `popstate`. With no entry pushed the call is a
+   * no-op that fires nothing, so this case cannot pass against an adapter that registers the
+   * listener and never pushes — which is precisely the shape the shipped defect had.
+   */
+  it('locks on a real browser Back rather than letting it leave the document', () => {
+    let locks = 0;
+    const teardown = installBanShield(() => (locks += 1));
+
+    window.history.back();
+
+    expect(locks).toBe(1);
+    // Still the same document: the traversal landed on the entry BELOW the sentinel.
+    expect(currentEntryIsSentinel()).toBe(false);
+
+    teardown();
+  });
+
+  /**
+   * ONE DISCARD, NOT TWO — and measured rather than reasoned about.
+   *
+   * A same-document traversal is not a document unload, so `pagehide` should stay silent
+   * and the two handlers cannot both fire. The observer is registered BEFORE the shield, so
+   * it hears anything the shield's own `pagehide` listener would have heard.
+   */
+  it('discards once on Back, with no pagehide alongside it', () => {
+    let locks = 0;
+    let pageHides = 0;
+    const observer = (): void => {
+      pageHides += 1;
+    };
+
+    window.addEventListener('pagehide', observer);
+    const teardown = installBanShield(() => (locks += 1));
+
+    window.history.back();
+
+    expect(locks).toBe(1);
+    expect(pageHides).toBe(0);
+
+    window.removeEventListener('pagehide', observer);
+    teardown();
+  });
+
+  /**
+   * THE ORDERING GATE INSIDE THE TEARDOWN.
+   *
+   * Consuming the sentinel is itself a traversal, so a teardown that called `back()` before
+   * removing its own listener would announce a discard on the way out of a surface that had
+   * just been left — including on the LOCK-IN path, where nothing was discarded at all.
+   */
+  it('does not lock while consuming the sentinel on teardown', () => {
+    let locks = 0;
+    const teardown = installBanShield(() => (locks += 1));
+
+    teardown();
+
+    expect(locks).toBe(0);
+    expect(currentEntryIsSentinel()).toBe(false);
+  });
+
+  /**
+   * D-17's other half: entering bans is a deliberate act, so a browser gesture must never
+   * put an unlocked player's selection back on a shared screen. After Back the surface is
+   * gone and its listener with it, so Forward re-enters the sentinel entry and nothing
+   * hears it.
+   */
+  it('leaves Forward with nothing listening, so a gesture cannot re-enter entry', () => {
+    let locks = 0;
+    const teardown = installBanShield(() => (locks += 1));
+
+    window.history.back();
+    expect(locks).toBe(1);
+
+    // The screen unmounts the surface on that lock, and the unmount is what tears this down.
+    teardown();
+
+    window.history.forward();
+
+    expect(locks).toBe(1);
+    expect(currentEntryIsSentinel()).toBe(true);
+  });
+
+  /**
+   * EIGHT PLAYERS, EIGHT MOUNTS, ZERO ENTRIES LEFT BEHIND.
+   *
+   * An orphan per mount would mean the host pressing Back nine times to leave the app.
+   *
+   * The baseline is taken AFTER one throwaway cycle, because a `pushState` truncates
+   * whatever a previous case left ahead of the current entry and `history.length` would
+   * otherwise be measured against a stale forward stack. Without the consume the count
+   * climbs by one per cycle, which is the failure this asserts against.
+   */
+  it('does not accumulate history entries across repeated mounts', () => {
+    installBanShield(() => undefined)();
+    const before = window.history.length;
+
+    for (let mount = 0; mount < 8; mount += 1) {
+      installBanShield(() => undefined)();
+    }
+
+    expect(window.history.length).toBe(before);
+    expect(currentEntryIsSentinel()).toBe(false);
+  });
+
+  /**
+   * The one way an orphan can appear, closed.
+   *
+   * Back then Forward leaves the sentinel current with no surface mounted. Entering the next
+   * player then ADOPTS that entry instead of stacking a second on top of it, which is why
+   * install's condition is the mirror of teardown's rather than an unconditional push.
+   */
+  it('adopts a sentinel that is already current rather than stacking a second', () => {
+    const first = installBanShield(() => undefined);
+    window.history.back();
+    first();
+    window.history.forward();
+
+    expect(currentEntryIsSentinel()).toBe(true);
+    const before = window.history.length;
+
+    const teardown = installBanShield(() => undefined);
+
+    expect(window.history.length).toBe(before);
+
+    teardown();
+
+    expect(currentEntryIsSentinel()).toBe(false);
   });
 });
