@@ -27,4 +27,21 @@
  * scale carries every gap. 04-UI-SPEC §Design System adds no token and sanctions no new raw
  * length. A plan-level grep asserts this file contains none of them, so it must stay clean
  * of the literal property names as well as of the values.
+ *
+ * --- ONE RULE HAS NOW ARRIVED, AND ONLY ONE ---
+ *
+ * The pool pane holds two children rather than one: the ban field and the grid beneath it
+ * (04-UI-SPEC §6, "the ban-mode `PoolGrid` over 235 entries plus the `TypeaheadField`").
+ * `.pane__scroll` is a plain scroll container with no gap of its own, so without this the
+ * field's input would sit flush against the grid's border and read as part of it.
+ *
+ * Still nothing about the head, the panes, the banner or the grid — every one of those is
+ * inherited from the stylesheets named above and restating any of them here is what the
+ * paragraph at the top of this file forbids.
  */
+
+.ban-stage__pool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}

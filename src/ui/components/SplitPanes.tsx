@@ -40,6 +40,26 @@ import './SplitPanes.css';
  * the screen that owns the preference decides what to persist. A component that both
  * reported a change and wrote it would give the caller two sources of truth about one
  * value, and the one it wrote would be the one nobody was rendering.
+ *
+ * ## Which screen states offer which panes — the scoping table, kept here for reading only
+ *
+ * This component decides none of it; the rows below say who does. They are recorded here
+ * because this is the file a reader opens when they want to know why an expand is inert,
+ * and a table split across four call sites is a table nobody checks.
+ *
+ * | Screen state          | States available   | Coercion                                    |
+ * |-----------------------|--------------------|---------------------------------------------|
+ * | Draft, picking        | all three          | none                                        |
+ * | Draft, cards in play  | `split`            | both expands inert, `CARD_PHASE_EXPAND_REASON` |
+ * | Swap round            | `split`            | both expands inert, `SWAP_ROUND_EXPAND_REASON` |
+ * | Draft complete        | all three          | none                                        |
+ * | **Snake ban stage**   | `split`, `board`   | a stored `pool` → `split`, SILENTLY — same as picking. `BanStageScreen` applies it, not `app.tsx`, because `app.tsx`'s coercion reads the DRAFT's availability and `selectPhase` answers `'cards'` at the ban stage. |
+ * | **Blind ban stage**   | **none — no panes are mounted at all** | **the stored preference is neither read nor written.** It must survive the stage untouched so the draft opens in the state the host chose. `BanStageScreen`'s blind arm states the same rule at the site, because a thing a file does NOT do is invisible in the file. |
+ *
+ * The two ban rows are 04-UI-SPEC Amendment 2, extending 03-UI-SPEC Amendment 3 above them.
+ * Blind's locked and reveal screens use `.app-shell`, not `.draft-shell`: they are
+ * read-and-act screens like the landing screen rather than two-pane working screens, so
+ * there is nothing here for them to scope.
  */
 
 // Verbatim from 02-UI-SPEC's copywriting contract. Held as constants, not written inline,

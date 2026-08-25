@@ -9,10 +9,11 @@ import {
   selectPublicBanIds,
   selectStillToBanThisPass,
 } from '../../core/selectors';
-import { PoolGrid } from '../components/PoolGrid';
+import { PoolGrid, type BanInertState } from '../components/PoolGrid';
 import { SplitPanes } from '../components/SplitPanes';
 import { TopBar, type TopBarProps } from '../components/TopBar';
 import { TurnBanner } from '../components/TurnBanner';
+import { TypeaheadField } from '../components/TypeaheadField';
 
 import './BanStageScreen.css';
 
@@ -89,6 +90,51 @@ const BOARD_EXPANDABLE = true;
  */
 const PANE_REASON = 'The ban roster is the only control on this screen';
 
+/**
+ * The one visible line naming the struck-through signal — 04-UI-SPEC §6, verbatim.
+ *
+ * A SHAPE and not a colour, which is what makes it checkable by everyone in the room
+ * (04-UI-SPEC §Colour is never the only signal). Per-cell visible reasons were considered
+ * and rejected: this stage renders the whole roster, so one line beside each closed cell
+ * would bury the count and the rule together. The per-cell answer lives in the accessible
+ * name, which is where somebody who needs it will already be looking.
+ */
+const BAN_RULE_LINE = 'A struck-through Pokémon is already banned and cannot be banned again.';
+
+/**
+ * The two reasons a cell can be closed, as `PoolGrid` and `TypeaheadField` take them.
+ *
+ * Each EXCLUDES the `— ` separator. Both surfaces compose the whole accessible name
+ * themselves, and WR-03's rule is that a separator inside one control's own name is part of
+ * that one string — so the component that owns the control owns the join, and this file
+ * would be a second place the dash could drift.
+ *
+ * TWO forms rather than one, because telling them apart is the point: a species the host
+ * removed before anyone sat down is a different fact from one a player spent their turn on,
+ * and a room that cannot tell them apart cannot tell how many bans are left.
+ */
+const HOST_BAN_REASON = 'banned by the host';
+
+function playerBanReason(playerName: string): string {
+  return `already banned by ${playerName}`;
+}
+
+/**
+ * The by-name half of the ban surface — 04-UI-SPEC §6, "plus the `TypeaheadField`".
+ *
+ * Byte-identical to the config screen's ban field, and DELIBERATELY not imported from it.
+ * `ConfigScreen` holds these as module constants of its own; a screen reaching into another
+ * screen for a string would couple two surfaces that are free to diverge, and the copy
+ * contract lists this label under two separate sections for exactly that reason. Both are
+ * asserted in full by their own suites, so a drift is a test failure rather than a review.
+ *
+ * The id carries this screen's own prefix, like the grid's. Two combobox fields on one page
+ * sharing a prefix would address each other's options — `TypeaheadField`'s own prop says so.
+ */
+const BAN_FIELD_LABEL = 'Ban a Pokémon by name';
+const BAN_FIELD_PLACEHOLDER = 'Name';
+const BAN_FIELD_ID = 'ban-stage-ban';
+
 export function BanStageScreen({
   state,
   entries,
@@ -120,6 +166,88 @@ export function BanStageScreen({
       rule, and caching a comparison of two strings would cost more than it saves.
     */
     const pane: PaneState = storedPane === 'pool' ? 'split' : storedPane;
+
+    /*
+      ONE call, feeding BOTH surfaces, and the ids come from it and from nothing else.
+
+      `selectCardOffer`'s doc block states the posture the whole phase is built on, and this
+      is its clearest instance: "The constraint belongs upstream of the click, not in a
+      rejection after it — a card the offer excludes renders inert with a reason, so the
+      deadlock CARD-04 otherwise creates is never entered rather than refused on entry.
+      `canApply`'s `cardNotPlayable` arm exists behind this as a backstop; if it ever fires
+      for a real host, the offer and the rule have disagreed and that is a bug." Read
+      `banAlreadyPlaced` for `cardNotPlayable` and it is this screen's contract unchanged.
+
+      A component that assembled the public banlist itself would be a second authority on
+      what the room may see, free to disagree at exactly the moment secrecy matters — which
+      in blind mode is the difference between a sealed ban and a leaked one (T-04-25). The
+      grid and the field are handed the same value rather than each asking, so the two
+      cannot answer differently about which species are gone.
+    */
+    const closedIds = new Set(selectPublicBanIds(state));
+
+    /*
+      The reasons are COPY, and copy belongs to the screen: this is the only layer that
+      knows a player's display name, and `src/core/` may not hold a rendered string.
+
+      A LOOKUP, not a fold. This file computes nothing — every rule on it is a selector's
+      answer — and finding which placement carries an id is neither a rule nor a derivation
+      over the log; it is the shape `selectPlayerName` itself uses to turn an id into a
+      name. It runs only for cells that are actually closed, because both surfaces call it
+      only for ids already in the set above.
+
+      The host's banlist is tested FIRST. A species can be on it and placed by a player only
+      in a hand-edited document, and the host's ban is the one that was in force before the
+      stage opened, so it is the honest answer there.
+    */
+    function reasonFor(monId: string): string {
+      if (state.config.bans.includes(monId)) return HOST_BAN_REASON;
+
+      const placement = state.banPlacements.find((ban) => ban.monId === monId);
+
+      // Unreachable: the set above is exactly the union of the host's banlist and the
+      // placements, so an id that reached here and matched neither does not exist. The host
+      // form is the fallback because it is the one that claims nothing about any player.
+      if (placement === undefined) return HOST_BAN_REASON;
+
+      // A hand-edited document can carry a placement by a player the config does not list.
+      // The raw id reads as "somebody who is not in this tournament", which is true; an
+      // empty name would read as a rendering bug and tell the room nothing.
+      return playerBanReason(selectPlayerName(state, placement.playerId) ?? placement.playerId);
+    }
+
+    const banInert: BanInertState = {
+      ids: closedIds,
+      reasonFor,
+      ruleLine: BAN_RULE_LINE,
+    };
+
+    /*
+      The same two values, in the shape the field takes. Built from `closedIds` and
+      `reasonFor` rather than from a second call, which is what makes "the typeahead matches
+      the grid" a property of the code instead of a thing to keep checking.
+
+      RESULTS ARE NEVER FILTERED. A closed species stays in the list and says why — the
+      field's own prop documents the failure mode, which is that a name the host typed and
+      cannot find reads as a broken search rather than as an answer.
+    */
+    function optionState(entry: RosterEntry): { inert: true; reason: string } | null {
+      return closedIds.has(entry.id) ? { inert: true, reason: reasonFor(entry.id) } : null;
+    }
+
+    /*
+      One handler for both surfaces, so the grid and the field cannot record different
+      things. ONE CLICK BANS AND THE TURN PASSES — no lock button and no confirm, exactly
+      like a pick (04-UI-SPEC §6). D-08's no-confirm posture holds because the ban is on
+      screen the instant it lands, and D-03's mandatory full undo is what makes reversing it
+      cheap; a dialog here would put a modal between a player and every one of their turns.
+
+      `turn` is narrowed to non-null by the guard at the top of this branch, and this closure
+      is only ever called from inside it.
+    */
+    const place = (monId: string): void => {
+      onPlaceBan(turn.playerId, monId, turn.pass);
+    };
 
     return (
       <>
@@ -163,22 +291,47 @@ export function BanStageScreen({
           boardExpandable={BOARD_EXPANDABLE}
           phaseReason={PANE_REASON}
           pool={
-            <PoolGrid
-              // The FULL roster. There is no pool to render — see the doc block.
-              entries={entries}
-              spriteMeta={spriteMeta}
-              // `selectPublicBanIds` rather than `config.bans`: at snake every ban already
-              // placed is public the instant it lands (BAN-03, Amendment 1), and the host's
-              // own banlist is in there too. `selectAllBanIds` is the one that must never
-              // reach a surface.
-              bannedIds={new Set(selectPublicBanIds(state))}
-              // Its own prefix, so the grid's cell ids cannot collide with any other grid's
-              // — the config screen already mounts two at once for this reason.
-              idPrefix="ban-stage"
-              onPick={(entry) => {
-                onPlaceBan(turn.playerId, entry.id, turn.pass);
-              }}
-            />
+            <div class="ban-stage__pool">
+              {/*
+                The by-name half, ABOVE the grid, in the order the config screen already
+                sets: a host who knows the name types it, a host who is browsing scrolls.
+                Both surfaces are handed the same `closedIds` and the same `reasonFor`, so
+                the answer a player gets from the field is the answer the grid is showing.
+              */}
+              <TypeaheadField
+                id={BAN_FIELD_ID}
+                label={BAN_FIELD_LABEL}
+                placeholder={BAN_FIELD_PLACEHOLDER}
+                candidates={entries}
+                optionState={optionState}
+                onSelect={(entry) => {
+                  place(entry.id);
+                }}
+              />
+
+              <PoolGrid
+                // The FULL roster. There is no pool to render — see the doc block.
+                entries={entries}
+                spriteMeta={spriteMeta}
+                // `selectPublicBanIds` rather than `config.bans`: at snake every ban already
+                // placed is public the instant it lands (BAN-03, Amendment 1), and the host's
+                // own banlist is in there too. `selectAllBanIds` is the one that must never
+                // reach a surface.
+                //
+                // The SAME set the cells are closed from, deliberately. `bannedIds` is a
+                // pressed state and `banInert` is a refusal; they coincide here because every
+                // public ban at snake is also already spent, and `MonCard`'s own prop block
+                // records that they do NOT coincide on 04-10's blind entry surface.
+                bannedIds={closedIds}
+                banInert={banInert}
+                // Its own prefix, so the grid's cell ids cannot collide with any other grid's
+                // — the config screen already mounts two at once for this reason.
+                idPrefix="ban-stage"
+                onPick={(entry) => {
+                  place(entry.id);
+                }}
+              />
+            </div>
           }
           /*
             Empty until 04-08, which owns `BanBoard` and the snake board pane. Rendering
@@ -194,6 +347,25 @@ export function BanStageScreen({
   }
 
   /*
+    --- AMENDMENT 2's BLIND ROW, WHICH IS A THING THIS FILE DOES NOT DO ---
+
+    Below this line the stage mounts NO panes, and the host's stored pane preference is
+    therefore neither read nor written. `storedPane` is not consulted and `onPaneChange` is
+    not called on any path that reaches here.
+
+    That is a requirement rather than an accident, and it is written down because "we do not
+    touch it" is invisible in code — a later reader sees only an unused prop and has every
+    reason to wire it up. The preference must survive the whole blind ban stage untouched so
+    the draft opens in the state the host actually chose; a value written here would outlive
+    the stage and silently change a screen the host has not seen yet. 04-09 and 04-11 build
+    the two blind screens and inherit this rule with them.
+
+    The snake row is the coercion above, and it is the opposite shape: the preference IS read
+    there, `pool` is silently forced to `split`, and nothing is written back — so the host
+    gets their own choice again the moment a screen can offer it.
+
+    ---
+
     Every other arm renders nothing, and each is unreachable TODAY for a stated reason. A
     `null` that outlives its plan is invisible otherwise.
 
