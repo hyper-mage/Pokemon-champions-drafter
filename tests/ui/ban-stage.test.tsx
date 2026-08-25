@@ -43,6 +43,7 @@ import {
   dispatch,
   getDoc,
   getState,
+  undo,
 } from '../../src/store';
 import { announce } from '../../src/ui/components/LiveRegion';
 import { BanStageScreen } from '../../src/ui/screens/BanStageScreen';
@@ -750,6 +751,193 @@ describe('the stored pane preference across the ban stage', () => {
 
     expect(changed).toEqual([]);
     expect(localStorage.getItem(VIEW_KEY)).toBe(stored);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 04-08 — the snake board pane
+// ---------------------------------------------------------------------------
+
+/**
+ * The board pane: who banned what, in which pass, with the next turn marked.
+ *
+ * Every assertion below is about the board being a FOLD rather than a record. The pane
+ * holds no state of its own — rows come from the starting order, cells from
+ * `state.banPlacements` and the marked cell from `selectBanTurn` — and the undo case is
+ * what proves it. A board that kept its own bookkeeping would pass every other test here
+ * and fail that one, which is exactly why it is the one that matters.
+ *
+ * What this file cannot prove: happy-dom performs no layout, so whether an eight-pass board
+ * fits the split pane without a horizontal scrollbar is DRFT-14 assertion 16 and belongs to
+ * a human-verify checkpoint. What IS asserted here is the mechanism that assertion depends
+ * on — that the screen wraps the board in no scroll container of its own, so a regression
+ * shows up as an overflow rather than being hidden by a scroller.
+ */
+
+/** Real ids from the committed snapshot, so the screen's id-to-entry lookup is exercised. */
+function rosterEntryAt(index: number): RosterEntry {
+  const entry = ENTRIES[index];
+  if (entry === undefined) throw new Error(`the committed roster has no entry ${index}`);
+  return entry;
+}
+
+function startSnakeStageNamed(
+  bansPerPlayer: number,
+  playerNames: readonly string[],
+): TournamentConfig {
+  const config = configFor('snake', bansPerPlayer, playerNames);
+  createBanStage({ config, order: order(config), orderSeed: 11, schedule: schedule() });
+  return config;
+}
+
+function boardCells(): HTMLElement[] {
+  return [...host.querySelectorAll<HTMLElement>('.board__cell')];
+}
+
+function passHeaders(): string[] {
+  return [...host.querySelectorAll<HTMLElement>('.ban-board__pass')].map(
+    (header) => header.textContent?.trim() ?? '',
+  );
+}
+
+/** The index of the one cell marked next, or -1 when none is. */
+function nextCellIndex(): number {
+  return boardCells().findIndex((cell) => cell.classList.contains('board__cell--next'));
+}
+
+describe('the snake board pane reads as the ban round so far', () => {
+  it('says nobody has banned yet, and names who bans first', () => {
+    startSnakeStageNamed(2, ['Sam', 'Ada', 'Bo', 'Cy']);
+    mountLiveStage();
+
+    // Asserted in FULL, on exact equality — the shape Phase 2 set with
+    // `No picks yet. {firstPlayerName} picks first.`
+    expect(host.querySelector('.ban-stage__board-empty')?.textContent).toBe(
+      'No bans yet. Sam bans first.',
+    );
+    expect(host.querySelector('.ban-board__grid')).toBeNull();
+  });
+
+  it('replaces the empty state with the board once a ban lands', () => {
+    startSnakeStage(2);
+    mountLiveStage();
+
+    act(() => {
+      cardNamed('Garchomp')?.click();
+    });
+
+    expect(host.querySelector('.ban-stage__board-empty')).toBeNull();
+    expect(host.querySelector('.ban-board__grid')).not.toBeNull();
+    expect(host.querySelectorAll('.board__cell--filled')).toHaveLength(1);
+  });
+
+  it('gives one row per player in starting order and one column per pass', () => {
+    startSnakeStage(3);
+    dispatch(bansPlaced('p1', rosterEntryAt(0).id, 1));
+    mountLiveStage();
+
+    expect(passHeaders()).toEqual(['Pass 1', 'Pass 2', 'Pass 3']);
+    expect(
+      [...host.querySelectorAll<HTMLElement>('.ban-board__label-name')].map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(['Ada', 'Bo', 'Cy', 'Sam']);
+    // Four players times three passes.
+    expect(boardCells()).toHaveLength(12);
+  });
+
+  /**
+   * The serpentine reverses on pass 2, so the player who bans first in pass 2 is the one who
+   * banned LAST in pass 1. A board that derived its own column would put this in the wrong
+   * one and look plausible doing it.
+   */
+  it('lands a pass-2 ban in the second column of the banning player row', () => {
+    startSnakeStage(2);
+    dispatch(bansPlaced('p1', rosterEntryAt(0).id, 1));
+    dispatch(bansPlaced('p2', rosterEntryAt(1).id, 1));
+    dispatch(bansPlaced('p3', rosterEntryAt(2).id, 1));
+    dispatch(bansPlaced('p4', rosterEntryAt(3).id, 1));
+    dispatch(bansPlaced('p4', rosterEntryAt(4).id, 2));
+    mountLiveStage();
+
+    // Sam is row 3 of a two-wide board, so their second column is the eighth cell.
+    const cell = boardCells()[7];
+    expect(cell?.classList.contains('board__cell--filled')).toBe(true);
+    expect(cell?.querySelector('img')?.getAttribute('alt')).toBe(rosterEntryAt(4).name);
+
+    // And pass 1 stayed where it was.
+    expect(boardCells()[6]?.querySelector('img')?.getAttribute('alt')).toBe(
+      rosterEntryAt(3).name,
+    );
+  });
+
+  it('marks the cell the serpentine says is next, and only that one', () => {
+    startSnakeStage(2);
+    dispatch(bansPlaced('p1', rosterEntryAt(0).id, 1));
+    mountLiveStage();
+
+    // Bo is next, in pass 1: row 1, column 0, of a two-wide board.
+    expect(host.querySelectorAll('.board__cell--next')).toHaveLength(1);
+    expect(nextCellIndex()).toBe(2);
+  });
+
+  /**
+   * THE LOAD-BEARING ONE. The board is a fold of the log, so an undo has to move the cursor
+   * back with no board-specific bookkeeping anywhere. If this passes while the others do,
+   * the pane genuinely holds no state.
+   */
+  it('moves the next cell back when the last ban is undone', () => {
+    startSnakeStage(2);
+    dispatch(bansPlaced('p1', rosterEntryAt(0).id, 1));
+    dispatch(bansPlaced('p2', rosterEntryAt(1).id, 1));
+    mountLiveStage();
+
+    // Cy is next: row 2, column 0.
+    expect(nextCellIndex()).toBe(4);
+    expect(host.querySelectorAll('.board__cell--filled')).toHaveLength(2);
+
+    act(() => {
+      undo();
+    });
+    mountLiveStage();
+
+    // Bo is next again, and Bo's cell is empty again.
+    expect(nextCellIndex()).toBe(2);
+    expect(host.querySelectorAll('.board__cell--filled')).toHaveLength(1);
+  });
+
+  it('renders eight columns at eight passes, in no scroll container of its own', () => {
+    startSnakeStageNamed(8, ['Ada', 'Bo', 'Cass', 'Dev', 'Eli', 'Fern', 'Gus', 'Hari']);
+    dispatch(bansPlaced('p1', rosterEntryAt(0).id, 1));
+    mountLiveStage();
+
+    const grid = host.querySelector<HTMLElement>('.ban-board__grid');
+    expect(grid?.style.gridTemplateColumns).toBe(
+      'var(--board-label-w) repeat(8, minmax(0, 1fr))',
+    );
+    expect(passHeaders()).toHaveLength(8);
+    expect(boardCells()).toHaveLength(64);
+
+    // The draft board's horizontal scroller is NOT reused here, and no second one is added:
+    // the board sits directly in the pane's own vertical scroll region. A scroller would
+    // hide the overflow that DRFT-14 assertion 16 exists to catch.
+    expect(host.querySelectorAll('.board__scroll')).toHaveLength(0);
+    expect(grid?.parentElement?.classList.contains('pane__scroll')).toBe(true);
+  });
+
+  /**
+   * `04-UI-SPEC` §Deferred: a `bansPerPlayer` above 8 fits at `board-full` up to 23, and the
+   * omission of any cap is deliberate — "no gate, no warning, no cap — recorded so nobody
+   * adds one reflexively". This test is that record, in executable form.
+   */
+  it('adds no cap, no warning and no gate for a large ban count', () => {
+    startSnakeStage(12);
+    dispatch(bansPlaced('p1', rosterEntryAt(0).id, 1));
+    mountLiveStage();
+
+    expect(passHeaders()).toHaveLength(12);
+    expect(passHeaders().at(-1)).toBe('Pass 12');
+    expect(boardCells()).toHaveLength(48);
   });
 });
 
