@@ -299,13 +299,18 @@ export function BanStageScreen({
   const focusPrimaryRef = useRef(false);
 
   /**
-   * ONE transition for all four exits — locking in, `Hide these bans`, a tab-hide and a
-   * restore from the back/forward cache.
+   * ONE transition for all FIVE exits — locking in, `Hide these bans`, a tab-hide, a restore
+   * from the back/forward cache, and the browser Back button.
    *
-   * `null` is a discard and an array is a submission. Writing four handlers would be
-   * writing four things that can disagree about what just happened: the notice, the focus
+   * `null` is a discard and an array is a submission. Writing five handlers would be
+   * writing five things that can disagree about what just happened: the notice, the focus
    * move and the unmount would each be free to drift on one path and not the others, and
-   * three of the four are paths nobody will ever exercise by hand.
+   * four of the five are paths nobody will ever exercise by hand.
+   *
+   * Back arrived at 04-12 and needed nothing here, which is the payoff of the shape: the
+   * shield gained one more event and this transition did not gain a branch. Its early return
+   * on an empty seat is also what keeps a double discard silent — a second departure event
+   * arriving after the first has already emptied `enteringRef` cannot speak a second time.
    *
    * `enteringRef` rather than `entering`, so this closes over nothing and stays stable.
    */
@@ -358,6 +363,12 @@ export function BanStageScreen({
     BAN-06, D-17, D-18. Scoped to that lifetime rather than to the screen's, because a
     permanently registered listener is one that will one day fire against a stale closure,
     and a restore that lands on the locked state should find nothing listening for it.
+
+    Since 04-12 the shield also PUSHES a history entry on install and spends it on teardown,
+    so this effect's dependency array is doing more than deciding who hears an event: a churn
+    here would stack history entries the host would have to press Back through. That is what
+    `handleShieldLock`'s stability buys, and why it is bought through refs rather than asked
+    for from callers.
   */
   useEffect(() => {
     if (entering === null) return undefined;
@@ -367,7 +378,7 @@ export function BanStageScreen({
   /**
    * Hand focus to the locked state's primary action after every exit from entry.
    *
-   * ONE target for all four, because the control that was focused no longer exists in any of
+   * ONE target for all five, because the control that was focused no longer exists in any of
    * them — leaving focus on a detached node or dropping it to `<body>` are the two failures
    * this closes. `useLayoutEffect` with no dependency array, always clearing its own flag,
    * exactly like `app.tsx`'s two handoffs: an armed handoff must never survive into a later,
@@ -766,8 +777,9 @@ export function BanStageScreen({
           entered={submitted.size}
           total={state.order.length}
           /*
-            ONE string serving the three discard paths — the panic control, a tab-hide and a
-            restore from the back/forward cache. `null` renders no notice at all, which is
+            ONE string serving the four discard paths — the panic control, a tab-hide, a
+            restore from the back/forward cache and the browser Back button. `null` renders
+            no notice at all, which is
             what a host sees on every entry that was not interrupted, and it is what a fresh
             page load sees because this screen's memory of the discard does not survive one.
           */

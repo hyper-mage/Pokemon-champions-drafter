@@ -48,12 +48,12 @@ function progressLine(entered: number, total: number): string {
 }
 
 /**
- * ONE string for three paths — the `Hide these bans` control, a tab hidden, and a restore
- * from the back/forward cache (D-17, D-18).
+ * ONE string for four paths — the `Hide these bans` control, a tab hidden, a restore from
+ * the back/forward cache, and the browser Back button (D-17, D-18).
  *
- * All three produce the same outcome: nothing was recorded and the player enters again.
- * Writing three sentences would be writing three things that can disagree about what just
- * happened, and the room cannot tell which of the three fired anyway. It names no species,
+ * All four produce the same outcome: nothing was recorded and the player enters again.
+ * Writing four sentences would be writing four things that can disagree about what just
+ * happened, and the room cannot tell which of the four fired anyway. It names no species,
  * so it is safe on this screen by construction rather than by review.
  */
 function discardNotice(playerName: string): string {

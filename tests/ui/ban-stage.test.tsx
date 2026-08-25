@@ -112,12 +112,40 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // The unmount comes FIRST, so the shield's own teardown gets to spend the history entry
+  // it pushed before the drain below looks for one.
   render(null, host);
   host.remove();
   abandonTournament();
   disposeTabLock();
   localStorage.clear();
+  drainSentinelEntries();
 });
+
+/**
+ * happy-dom keeps ONE history for the whole file and offers no way to clear it.
+ *
+ * Every case here that presses Back does it by calling `history.back()` rather than by
+ * dispatching a `popstate`, which is what makes those cases able to fail — so a case that
+ * ended sitting on a pushed entry would arm the NEXT case's Back before it entered anything.
+ * The teardown above spends the entry on the ordinary paths; this covers the cases that end
+ * mid-traversal, and the ones that press Forward on purpose.
+ *
+ * The loop terminates because the base entry's state is `null` and `ban-shield.ts` is the
+ * only thing in the repository that calls `pushState`. The bound is there anyway, because a
+ * suite that can hang is worse than one that fails.
+ */
+function drainSentinelEntries(): void {
+  const isSentinel = (): boolean => {
+    const state: unknown = window.history.state;
+    return (
+      typeof state === 'object' &&
+      state !== null &&
+      (state as { blindBanEntry?: unknown }).blindBanEntry === true
+    );
+  };
+  for (let guard = 0; guard < 32 && isSentinel(); guard += 1) window.history.back();
+}
 
 // ---------------------------------------------------------------------------
 // Task 1 — the start seam
@@ -1209,7 +1237,7 @@ describe('BanStageScreen at the blind locked stage', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 04-10 — the entry surface, and the four ways out of it
+// 04-10 — the entry surface, and the five ways out of it (Back added at 04-12)
 // ---------------------------------------------------------------------------
 
 /*
@@ -1337,13 +1365,13 @@ describe('BanStageScreen, entering a player’s bans', () => {
     expect(getState()?.banSubmissions).toMatchObject([
       { playerId: 'p1', monIds: [chosen[0]?.id, chosen[1]?.id] },
     ]);
-    // A submission is not a discard, so the notice that serves the three discard paths
+    // A submission is not a discard, so the notice that serves the four discard paths
     // must NOT appear here.
     expect(discardNotice()).toBeNull();
   });
 });
 
-describe('the four ways out of the entry surface', () => {
+describe('the five ways out of the entry surface', () => {
   it('hides on the panic control, recording nothing', () => {
     startBlindStage(2);
     mountBlindStage();
@@ -1424,9 +1452,113 @@ describe('the four ways out of the entry surface', () => {
   });
 
   /**
-   * ONE OUTCOME, ONE MESSAGE, THREE PATHS — `04-UI-SPEC` §4.
+   * THE HOST'S 04-11 FINDING, CLOSED — UAT item (b) path 3.
    *
-   * Compared against ONE ANOTHER rather than against a literal three times: three literals
+   * Back discarded correctly and then took the room out of the application, because the
+   * back/forward stack held one entry and Back popped it. `ban-shield.ts` now makes the
+   * entry surface its own history entry, so the traversal stays inside the document.
+   *
+   * `history.back()` and NOT a synthetic `popstate`. A dispatched event reaches the listener
+   * whether or not an entry was ever pushed, so a case written that way passes against the
+   * exact defect the host reported. Driving the real traversal is what couples the two
+   * halves: with nothing pushed the call fires nothing and this case fails.
+   */
+  it('returns to the locked state on the browser Back button', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    act(() => {
+      window.history.back();
+    });
+
+    expect(entrySurface()).toBeNull();
+    expect(lockedPanel()).not.toBeNull();
+    expect(discardNotice()).toBe("Ada's entry was discarded. Nothing was recorded.");
+    expect(submissionCount()).toBe(0);
+  });
+
+  /**
+   * D-17's other half. Entering bans is a deliberate act, so no browser gesture may put an
+   * unlocked player's selection back on a shared screen — which is the whole point of the
+   * decision. The shield is torn down with the surface, so the entry Forward returns to has
+   * nothing listening and nothing rendering.
+   */
+  it('does not re-enter the entry surface when Forward follows Back', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    act(() => {
+      window.history.back();
+    });
+    expect(entrySurface()).toBeNull();
+
+    act(() => {
+      window.history.forward();
+    });
+
+    expect(entrySurface()).toBeNull();
+    expect(lockedPanel()).not.toBeNull();
+    expect(discardNotice()).toBe("Ada's entry was discarded. Nothing was recorded.");
+  });
+
+  /**
+   * D-18's guarantee across the new path: the selection dies with the component here too, so
+   * a Back is not a route by which a previous player's half-entry reaches the next one.
+   */
+  it('retains nothing after a Back when the same player enters again', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    expect(host.querySelector('.ban-chip-list')).not.toBeNull();
+
+    act(() => {
+      window.history.back();
+    });
+    enterBans();
+
+    expect(entrySurface()).not.toBeNull();
+    expect(host.querySelector('.ban-chip-list')).toBeNull();
+    expect(host.querySelector('.blind-entry__progress')?.textContent).toBe('0 of 2 chosen');
+  });
+
+  /**
+   * ONE DISCARD, NOT TWO.
+   *
+   * A same-document traversal fires no `pagehide`, which `tests/adapters/ban-shield.test.ts`
+   * measures directly. This is the belt to that adapter case's braces, at the layer where a
+   * second discard would actually cost something: all three arrive inside ONE `act`, so the
+   * shield's listeners are still registered when the last two land, and what stops a second
+   * announcement is `leaveEntry`'s own early return on an empty seat rather than luck about
+   * which events a browser chooses to fire.
+   */
+  it('discards once when a departure’s other events land after a Back', () => {
+    startBlindStage(2);
+    mountBlindStage();
+    enterBans();
+    chooseOnEntry(1);
+
+    act(() => {
+      window.history.back();
+      window.dispatchEvent(new Event('pagehide'));
+      document.dispatchEvent(setVisibility('hidden'));
+    });
+
+    expect(entrySurface()).toBeNull();
+    expect(discardNotice()).toBe("Ada's entry was discarded. Nothing was recorded.");
+    expect(liveText()).toBe("Ada's entry was discarded. Nothing was recorded.");
+    expect(submissionCount()).toBe(0);
+  });
+
+  /**
+   * ONE OUTCOME, ONE MESSAGE, FOUR PATHS — `04-UI-SPEC` §4.
+   *
+   * Compared against ONE ANOTHER rather than against a literal four times: four literals
    * would be three things that can be edited apart, which is the exact failure the single
    * composer exists to prevent.
    */
@@ -1447,10 +1579,12 @@ describe('the four ways out of the entry surface', () => {
     leaveBy(() => entryControl('.blind-entry__hide').click());
     leaveBy(() => document.dispatchEvent(setVisibility('hidden')));
     leaveBy(() => window.dispatchEvent(persistedPageShowEvent()));
+    leaveBy(() => window.history.back());
 
     expect(notices[0]).not.toBeNull();
     expect(notices[1]).toBe(notices[0]);
     expect(notices[2]).toBe(notices[0]);
+    expect(notices[3]).toBe(notices[0]);
   });
 
   /**
@@ -1499,7 +1633,7 @@ describe('the four ways out of the entry surface', () => {
   });
 
   /**
-   * `04-UI-SPEC` §Interaction: ONE focus target for all four exits, because the control
+   * `04-UI-SPEC` §Interaction: ONE focus target for all five exits, because the control
    * that was focused no longer exists in any of them. Focus must never be left on a
    * detached node and never dropped to `<body>`.
    */
@@ -1521,6 +1655,7 @@ describe('the four ways out of the entry surface', () => {
     leaveBy(() => entryControl('.blind-entry__hide').click(), 1);
     leaveBy(() => document.dispatchEvent(setVisibility('hidden')), 1);
     leaveBy(() => window.dispatchEvent(persistedPageShowEvent()), 1);
+    leaveBy(() => window.history.back(), 1);
   });
 
   /**
