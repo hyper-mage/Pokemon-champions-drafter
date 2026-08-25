@@ -298,3 +298,107 @@ export const SWAP_CONFIRM = {
   ): string =>
     `This spends one of ${playerName}'s ${swaps(remaining)}. ${outName} leaves round ${round} and returns to the pool for everyone; ${inName} takes the slot.`,
 };
+
+/**
+ * 11. Abandoning from the ban stage — 04-UI-SPEC §8, D-36.
+ *
+ * A SECOND set rather than a parameterisation of `ABANDON_CONFIRM`, on the
+ * `CLEAR_MEGA_FORME_BANLIST_CONFIRM` precedent: the state genuinely differs. Zero picks
+ * have been made and the bans are what is at stake, so "This discards 0 picks across 4
+ * players" would be a plain untruth on the one surface whose job is telling the host what
+ * they are about to lose. `Keep the bans` is right here for exactly the reason
+ * `Keep drafting` is right when picks are what exist.
+ *
+ * `danger` toned, and the same genuine data loss: the log goes, the saved record goes, and
+ * the only durable copy is a file the host may or may not have downloaded. D-09 makes that
+ * more pointed rather than less — no JSON checkpoint is offered before the reveal, so
+ * during a blind stage there very likely IS no downloaded copy.
+ */
+export const ABANDON_BAN_STAGE_CONFIRM = {
+  heading: 'Abandon this tournament?',
+  tone: 'danger' as const,
+  confirmLabel: 'Abandon tournament',
+  safeLabel: 'Keep the bans',
+  body: (playerCount: number): string =>
+    `This discards the tournament and every ban the ${players(playerCount)} have entered. Nothing recovers it unless you have already downloaded the tournament JSON.`,
+};
+
+/**
+ * 12. Undoing a blind submission — 04-UI-SPEC §8, D-03, D-05.
+ *
+ * ## Why this one confirms when undoing a pick in the current round does not
+ *
+ * This is the sharpest design point in the phase, and the set reads as an inconsistency
+ * until the reason is understood — so the reason lives here.
+ *
+ * Every other undo in this project acts on something VISIBLE: a pick on the board, a card
+ * in the played row, a swap in a slot. The host clicks, the screen changes, and the change
+ * is its own receipt. D-05 forbids re-displaying a blind submission once it has been
+ * removed, so this undo removes a thing the host cannot see and produces no visible
+ * receipt at all.
+ *
+ * An unconfirmed undo of an invisible thing is precisely the misclick D-03 exists to
+ * correct, and this dialog is the ONLY place the host can be told what is about to happen
+ * and what it will cost them — a second message to Discord asking for the list again. The
+ * body says that outright rather than leaving them to discover it.
+ *
+ * `default` toned: nothing is destroyed that cannot be re-entered, and the player is still
+ * in the room. The cost is a conversation, not a tournament.
+ *
+ * The set names NO SPECIES, in any of its four strings, so it leaks nothing. That is the
+ * same control `undoAnnouncement`'s ban arms carry for the live region, applied to the one
+ * surface that speaks about a removal at all.
+ */
+export const UNDO_BAN_SUBMISSION_CONFIRM = {
+  heading: (playerName: string): string => `Remove ${playerName}'s bans?`,
+  tone: 'default' as const,
+  confirmLabel: (playerName: string): string => `Remove ${playerName}'s bans`,
+  safeLabel: (playerName: string): string => `Keep ${playerName}'s bans`,
+  body: (playerName: string): string =>
+    `This removes ${playerName}'s bans. They are not shown on screen, so ask ${playerName} for the list again before you re-enter it.`,
+};
+
+/**
+ * The possessive form of the player count, for the one body that needs one.
+ *
+ * NOT a seventh plural rule. It composes {@link players} rather than restating it, so the
+ * singular/plural decision still happens in exactly one place — the module's standing
+ * argument against a second copy is respected rather than waived. All this adds is which
+ * apostrophe goes on the end, which `players` cannot answer because most of its callers
+ * want no apostrophe at all.
+ *
+ * `The 3 players' bans` and `The 1 player's bans`. Rendering §8's literal slot instead
+ * produces `The 1 player' bans` at a one-player configuration.
+ */
+function playersPossessive(count: number): string {
+  return count === 1 ? `${players(count)}'s` : `${players(count)}'`;
+}
+
+/**
+ * 13. Undoing the reveal — 04-UI-SPEC §8, D-03, D-23.
+ *
+ * ## Honest about the half it cannot undo
+ *
+ * Un-revealing does not un-read. The room has seen the bans, and some of them are already
+ * planning around them. The body says so in as many words rather than implying a secrecy
+ * restoration the tool cannot deliver — which is the difference between a control that
+ * steps back and a control that lies about what it did.
+ *
+ * What it CAN do it does cleanly, and D-23 is why: no pool is drawn until a separate
+ * `Start draft`, so there is nothing to un-draw. Every `bans/submitted` survives and the
+ * stage returns to `{m} of {m} entered`, which is a designed destination that already
+ * exists rather than a state invented for this undo.
+ *
+ * The last sentence is the one that stops a host pressing again in confusion: the next
+ * undo removes a player's bans, which is a different and much more expensive act.
+ *
+ * `default` toned. Nothing recorded is lost.
+ */
+export const UNDO_REVEAL_CONFIRM = {
+  heading: 'Undo the reveal?',
+  tone: 'default' as const,
+  confirmLabel: 'Undo the reveal',
+  safeLabel: 'Keep the reveal',
+  body: (playerCount: number): string =>
+    `This takes the reveal back to the locked screen. The ${playersPossessive(playerCount)} bans stay recorded, and everyone who has already read them still has. Undo again to remove a player's bans.`,
+};

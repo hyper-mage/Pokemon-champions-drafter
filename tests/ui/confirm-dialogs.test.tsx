@@ -97,14 +97,18 @@ import {
   CHECKPOINT_DISMISS,
   CHECKPOINT_HEADING,
 } from '../../src/ui/components/CheckpointPrompt';
+import { ConfirmDialog } from '../../src/ui/components/ConfirmDialog';
 import { LiveRegion, announce } from '../../src/ui/components/LiveRegion';
 import {
+  ABANDON_BAN_STAGE_CONFIRM,
   ABANDON_CONFIRM,
   REMOVE_PLAYER_CONFIRM,
   REROLL_ORDER_CONFIRM,
   REROLL_POOL_CONFIRM,
+  UNDO_BAN_SUBMISSION_CONFIRM,
   UNDO_BOUNDARY_CONFIRM,
   UNDO_RESOLVED_ORDER_CONFIRM,
+  UNDO_REVEAL_CONFIRM,
 } from '../../src/ui/confirm-copy';
 
 // ---------------------------------------------------------------------------
@@ -1048,5 +1052,162 @@ describe('an undone ban never puts a species name into the room', () => {
 
     expect(heard).toBe("Undid Bo's ban. It is Bo's turn again.");
     for (const name of ROSTER_NAMES) expect(heard).not.toContain(name);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The three ban-stage confirmations — 04-UI-SPEC §8, T-04-32.
+//
+// Every string is asserted in FULL rather than by substring: these are contracts down to
+// the em dash and the apostrophe, and a substring assertion passes against a body that
+// lost half its sentence. That is `confirm-copy.ts`'s own rule for existing sets.
+//
+// Two of the three sets have no reachable surface yet — the blind locked screen is 04-09's
+// and the reveal is 04-11's — so they are asserted through their composers and through a
+// directly rendered `ConfirmDialog`. The composer IS the contract; `app.tsx` routes
+// `crossing.kind` to it and that routing is asserted for the kind whose screen exists.
+// ---------------------------------------------------------------------------
+
+describe('the ban-stage confirmations, word for word', () => {
+  it('states what abandoning a ban stage discards', () => {
+    expect(ABANDON_BAN_STAGE_CONFIRM.body(3)).toBe(
+      'This discards the tournament and every ban the 3 players have entered. Nothing recovers it unless you have already downloaded the tournament JSON.',
+    );
+    expect(ABANDON_BAN_STAGE_CONFIRM.confirmLabel).toBe('Abandon tournament');
+    expect(ABANDON_BAN_STAGE_CONFIRM.safeLabel).toBe('Keep the bans');
+    expect(ABANDON_BAN_STAGE_CONFIRM.tone).toBe('danger');
+  });
+
+  it('tells the host what undoing a blind submission will cost them', () => {
+    // The sharpest design point in the phase. Every other undo acts on something visible;
+    // D-05 forbids re-displaying a removed submission, so this one removes a thing the
+    // host cannot see — and the dialog is the only place they can be told that the price
+    // is a second message to Discord.
+    expect(UNDO_BAN_SUBMISSION_CONFIRM.body('Cass')).toBe(
+      "This removes Cass's bans. They are not shown on screen, so ask Cass for the list again before you re-enter it.",
+    );
+    expect(UNDO_BAN_SUBMISSION_CONFIRM.confirmLabel('Cass')).toBe("Remove Cass's bans");
+    expect(UNDO_BAN_SUBMISSION_CONFIRM.safeLabel('Cass')).toBe("Keep Cass's bans");
+    expect(UNDO_BAN_SUBMISSION_CONFIRM.tone).toBe('default');
+  });
+
+  it('is honest that un-revealing cannot un-read', () => {
+    expect(UNDO_REVEAL_CONFIRM.body(3)).toBe(
+      "This takes the reveal back to the locked screen. The 3 players' bans stay recorded, and everyone who has already read them still has. Undo again to remove a player's bans.",
+    );
+    expect(UNDO_REVEAL_CONFIRM.confirmLabel).toBe('Undo the reveal');
+    expect(UNDO_REVEAL_CONFIRM.safeLabel).toBe('Keep the reveal');
+    expect(UNDO_REVEAL_CONFIRM.tone).toBe('default');
+  });
+
+  it('reads 1 player rather than 1 players at a one-player configuration', () => {
+    // Reachable: nothing stops a host configuring one player, and a visible grammar error
+    // in a dialog that destroys work reads as a tool that was not finished.
+    expect(ABANDON_BAN_STAGE_CONFIRM.body(1)).toContain('the 1 player have entered');
+    expect(ABANDON_BAN_STAGE_CONFIRM.body(1)).not.toContain('1 players');
+
+    expect(UNDO_REVEAL_CONFIRM.body(1)).toContain("The 1 player's bans stay recorded");
+    expect(UNDO_REVEAL_CONFIRM.body(1)).not.toContain('1 players');
+  });
+
+  it('names no species anywhere in any of the three sets', () => {
+    const strings = [
+      ABANDON_BAN_STAGE_CONFIRM.heading,
+      ABANDON_BAN_STAGE_CONFIRM.body(3),
+      ABANDON_BAN_STAGE_CONFIRM.confirmLabel,
+      ABANDON_BAN_STAGE_CONFIRM.safeLabel,
+      UNDO_BAN_SUBMISSION_CONFIRM.heading('Cass'),
+      UNDO_BAN_SUBMISSION_CONFIRM.body('Cass'),
+      UNDO_BAN_SUBMISSION_CONFIRM.confirmLabel('Cass'),
+      UNDO_BAN_SUBMISSION_CONFIRM.safeLabel('Cass'),
+      UNDO_REVEAL_CONFIRM.heading,
+      UNDO_REVEAL_CONFIRM.body(3),
+      UNDO_REVEAL_CONFIRM.confirmLabel,
+      UNDO_REVEAL_CONFIRM.safeLabel,
+    ];
+
+    for (const text of strings) {
+      for (const name of ROSTER_NAMES) expect(text, text).not.toContain(name);
+    }
+  });
+
+  it('renders the blind-submission dialog with no species name in it', async () => {
+    // Rendered rather than only composed, because the module's rule is about what reaches
+    // the DOM: JSX collapses whitespace between text lines, which is why every body is a
+    // pre-composed string rather than prose in the component.
+    await act(async () => {
+      render(
+        <ConfirmDialog
+          heading={UNDO_BAN_SUBMISSION_CONFIRM.heading('Cass')}
+          body={UNDO_BAN_SUBMISSION_CONFIRM.body('Cass')}
+          confirmLabel={UNDO_BAN_SUBMISSION_CONFIRM.confirmLabel('Cass')}
+          safeLabel={UNDO_BAN_SUBMISSION_CONFIRM.safeLabel('Cass')}
+          tone={UNDO_BAN_SUBMISSION_CONFIRM.tone}
+          onConfirm={() => undefined}
+          onSafe={() => undefined}
+        />,
+        host,
+      );
+      await Promise.resolve();
+    });
+
+    expect(dialogText()).toContain(UNDO_BAN_SUBMISSION_CONFIRM.body('Cass'));
+    for (const name of ROSTER_NAMES) expect(dialogText()).not.toContain(name);
+
+    // The confirming button first, the safe one second — so the safe one is the last thing
+    // focus reaches. The same ordering rule every other set in this file is held to.
+    expect(dialogButtons().map((button) => button.textContent?.trim())).toEqual([
+      "Remove Cass's bans",
+      "Keep Cass's bans",
+    ]);
+  });
+});
+
+describe('the ban stage on screen asks, or does not, as the stage requires', () => {
+  /** A snake stage with `placements` bans down and the clock still running. */
+  function snakeSaved(placements: number): void {
+    const doc = banStageDoc('snake', (push) => {
+      const sequence = ['p1', 'p2', 'p3', 'p3', 'p2', 'p1'];
+      for (let index = 0; index < placements; index++) {
+        push(
+          bansPlaced(sequence[index] as string, `mon-${index}`, Math.floor(index / 3) + 1),
+        );
+      }
+    });
+
+    expect(saveTournament(doc)).toBe(true);
+  }
+
+  async function reachBanStage(placements = 2): Promise<void> {
+    snakeSaved(placements);
+    claimLock();
+    await mountApp();
+    await click(buttonNamed('Resume saved draft'));
+  }
+
+  it('undoes a snake ban with no dialog at all', async () => {
+    // The ban is on the board and reversing it is visible, so it is the same category as a
+    // pick and D-08's no-confirm posture holds. `crossing.crosses` is false for
+    // `'banPlaced'`, so this takes the pre-existing silent path with no new code.
+    await reachBanStage(2);
+
+    const before = getDoc()?.log.length ?? 0;
+    await click(buttonNamed('Undo last move'));
+
+    expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(0);
+    expect(getDoc()?.log.length).toBe(before - 1);
+  });
+
+  it('offers the ban-stage abandon copy rather than the draft one', async () => {
+    // Routed by screen: bans are what is at stake here, exactly as picks are on the draft
+    // screen, so `Keep the bans` is the right safe label and `This discards N picks` would
+    // be a plain untruth at zero picks.
+    await reachBanStage(2);
+    await click(buttonNamed('Abandon draft'));
+
+    expect(dialogText()).toContain(ABANDON_BAN_STAGE_CONFIRM.body(3));
+    expect(dialogText()).not.toContain(ABANDON_CONFIRM.body(0, 3));
+    expect(dialogButtonNamed('Keep the bans')).toBeDefined();
+    expect(dialogButtonNamed('Abandon tournament')).toBeDefined();
   });
 });
