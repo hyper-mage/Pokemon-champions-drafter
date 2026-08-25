@@ -75,24 +75,29 @@ import { App } from '../../src/app';
 import { save as saveTournament } from '../../src/adapters/persistence';
 import { claimOwnership, CLAIM_WINDOW_MS, disposeTabLock } from '../../src/adapters/tab-lock';
 import {
+  bansPlaced,
+  bansRevealed,
+  bansSubmitted,
   cardsPlayed,
   draftStarted,
   orderResolved,
   pickMade,
   poolBuilt,
   scheduleCompiled,
+  swapMade,
+  swapPassed,
   type Action,
   type Intent,
   type RoundSpec,
 } from '../../src/core/actions';
 import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
 import { selectPhase, selectPickCount } from '../../src/core/selectors';
-import { getDoc, getState } from '../../src/store';
+import { abandonTournament, adoptTournament, getDoc, getState, undo } from '../../src/store';
 import {
   CHECKPOINT_DISMISS,
   CHECKPOINT_HEADING,
 } from '../../src/ui/components/CheckpointPrompt';
-import { announce } from '../../src/ui/components/LiveRegion';
+import { LiveRegion, announce } from '../../src/ui/components/LiveRegion';
 import {
   ABANDON_CONFIRM,
   REMOVE_PLAYER_CONFIRM,
@@ -770,5 +775,278 @@ describe('picking is never confirmed', () => {
 
     expect(pickCount()).toBe(1);
     expect(host.querySelectorAll('[role="alertdialog"]')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What the live region says an undo just did — T-04-30, and 04-RESEARCH Pitfall 1.
+//
+// The live region is the phase's ONLY non-visual leak path. It is audible in the room and
+// it persists in the accessibility tree after the render that wrote it is gone, so the
+// full-screen visual shield does not cover it. Before 04-07 `undoAnnouncement` was a chain
+// of `if` arms ending in an UNGUARDED return that interpolated a species name, reached by
+// anything that was not `card | order | swap | pass` — so a new `UndoRemoval.kind` with no
+// arm announced the species a host had just privately removed, and did it while
+// compiling, type-checking and passing every existing test.
+//
+// These tests drive `undo` against the store directly rather than through the ban screens.
+// The announcement is a property of the store, the screens for the blind stage land in
+// later plans, and a test that needed them would be testing something else.
+// ---------------------------------------------------------------------------
+
+const BAN_PLAYERS = ['p1', 'p2', 'p3'];
+
+const BLIND_ALLOTMENTS: Record<string, string[]> = {
+  p1: ['mon-0', 'mon-1'],
+  p2: ['mon-2', 'mon-3'],
+  p3: ['mon-4', 'mon-5'],
+};
+
+/** Every display name in the fixture roster — the whole list, not one specimen. */
+const ROSTER_NAMES = fixture.bundle.snapshot.entries.map((entry) => entry.name);
+
+/** What the app hands `undo`: the roster lookup the store deliberately does not hold. */
+function resolveFixtureName(monId: string): string {
+  return ROSTER_NAMES[Number(monId.replace('mon-', ''))] ?? monId;
+}
+
+function banConfig(banMode: 'blind' | 'snake'): TournamentConfig {
+  return { ...configOf(3), banMode, bansPerPlayer: 2 };
+}
+
+function makeStageDoc(config: TournamentConfig, build: (push: (intent: Intent) => void) => void): TournamentDoc {
+  const log: Action[] = [];
+  const push = (intent: Intent): void => {
+    log.push(stamp(intent, log.length));
+  };
+  build(push);
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: 'announcement-fixture',
+    createdAt: 1_770_000_000_000,
+    config,
+    rng: { seed: 0x5f3a91c2, cursor: 0 },
+    log,
+  };
+}
+
+const OPEN_SCHEDULE: RoundSpec[] = Array.from({ length: 6 }, (_, position) => ({
+  index: position + 1,
+  kind: 'open' as const,
+}));
+
+/** D-11's opening for blind and snake: schedule, then start, and NO pool. */
+function banStageDoc(
+  banMode: 'blind' | 'snake',
+  build: (push: (intent: Intent) => void) => void,
+): TournamentDoc {
+  return makeStageDoc(banConfig(banMode), (push) => {
+    push(scheduleCompiled(OPEN_SCHEDULE));
+    push(draftStarted(BAN_PLAYERS, 13));
+    build(push);
+  });
+}
+
+function draftDoc(build: (push: (intent: Intent) => void) => void): TournamentDoc {
+  const config: TournamentConfig = { ...configOf(2), swapBudget: 1, swapRounds: 1 };
+
+  return makeStageDoc(config, (push) => {
+    push(
+      poolBuilt(
+        Array.from({ length: 30 }, (_, index) => `mon-${index}`),
+        'mb',
+        'test-checksum',
+        29,
+        0,
+      ),
+    );
+    push(scheduleCompiled(OPEN_SCHEDULE));
+    push(draftStarted(['p1', 'p2'], 13));
+    build(push);
+  });
+}
+
+function liveRegionText(): string {
+  return host.querySelector('[aria-live="polite"]')?.textContent ?? '';
+}
+
+/**
+ * Adopt `doc`, undo its last move, and hand back what the room heard.
+ *
+ * `LiveRegion` is mounted alone rather than through `App`, because the announcement is the
+ * subject and a whole app around it would only add ways for the test to fail for another
+ * reason.
+ */
+async function undoAndHear(
+  doc: TournamentDoc,
+  resolve: (monId: string) => string = resolveFixtureName,
+): Promise<string> {
+  claimLock();
+  await act(async () => {
+    render(<LiveRegion />, host);
+    await Promise.resolve();
+  });
+
+  expect(adoptTournament(doc)).toBe(true);
+
+  await act(async () => {
+    expect(undo(resolve)).toBe(true);
+    await Promise.resolve();
+  });
+
+  return liveRegionText();
+}
+
+describe('the five announcements that shipped before the ban stage', () => {
+  // Pinned as literals, read out of `store.ts` before the switch replaced the `if` chain.
+  // The rewrite must be a refactor rather than a rewording: these are what the room has
+  // been hearing since Phase 1, and a silent change to any of them would be the kind of
+  // regression only somebody in the room would notice.
+  afterEach(() => {
+    abandonTournament();
+  });
+
+  it('names the species a pick returned to the pool', async () => {
+    const doc = draftDoc((push) => {
+      push(pickMade({ playerId: 'p1', monId: 'mon-7', round: 1, pickIndex: 0 }));
+    });
+
+    expect(await undoAndHear(doc)).toBe('Undid Round 1 — Mon 7 is back in the pool.');
+  });
+
+  it('names the value a card play returned to a hand', async () => {
+    const doc = draftDoc((push) => {
+      push(cardsPlayed({ playerId: 'p1', value: 4, round: 1 }));
+    });
+
+    expect(await undoAndHear(doc)).toBe("Undid Ada's card — 4 is back in their hand.");
+  });
+
+  it('names the round a resolved pick order belonged to', async () => {
+    const doc = draftDoc((push) => {
+      push(cardsPlayed({ playerId: 'p1', value: 4, round: 1 }));
+      push(cardsPlayed({ playerId: 'p2', value: 2, round: 1 }));
+      push(orderResolved(1, ['p2', 'p1']));
+    });
+
+    expect(await undoAndHear(doc)).toBe(
+      "Undid round 1's pick order — Bo's 2 is back in their hand.",
+    );
+  });
+
+  it('names both directions of a swap', async () => {
+    const doc = draftDoc((push) => {
+      push(pickMade({ playerId: 'p1', monId: 'mon-0', round: 1, pickIndex: 0 }));
+      push(
+        swapMade({
+          playerId: 'p1',
+          round: 1,
+          outMonId: 'mon-0',
+          inMonId: 'mon-5',
+          swapRound: 0,
+        }),
+      );
+    });
+
+    expect(await undoAndHear(doc)).toBe(
+      "Undid the swap — Mon 5 is back in the pool and Mon 0 returns to Ada's round 1 slot.",
+    );
+  });
+
+  it('names the swap round a pass belonged to', async () => {
+    const doc = draftDoc((push) => {
+      push(swapPassed({ playerId: 'p2', swapRound: 1 }));
+    });
+
+    expect(await undoAndHear(doc)).toBe("Undid Bo's pass in swap round 1.");
+  });
+});
+
+describe('an undone ban never puts a species name into the room', () => {
+  afterEach(() => {
+    abandonTournament();
+  });
+
+  it('reports a removed blind submission by player and by count', async () => {
+    // 04-UI-SPEC §The Live-Region Contract, verbatim. `{n}` is the count AFTER the
+    // removal, which is what the locked screen now reads.
+    const doc = banStageDoc('blind', (push) => {
+      for (const playerId of BAN_PLAYERS) {
+        push(bansSubmitted(playerId, BLIND_ALLOTMENTS[playerId] as string[]));
+      }
+    });
+
+    expect(await undoAndHear(doc)).toBe("Cass's bans were removed. 2 of 3 entered.");
+  });
+
+  it('names NONE of the roster when a blind submission comes off', async () => {
+    // The load-bearing assertion, and it is a negative one against the WHOLE fixture
+    // rather than against one specimen: a guard that happens to miss one name is not a
+    // guard. D-05 forbids re-displaying a removed submission, and the live region is the
+    // channel the visual shield does not cover.
+    const doc = banStageDoc('blind', (push) => {
+      for (const playerId of BAN_PLAYERS) {
+        push(bansSubmitted(playerId, BLIND_ALLOTMENTS[playerId] as string[]));
+      }
+    });
+
+    const heard = await undoAndHear(doc);
+
+    for (const name of ROSTER_NAMES) {
+      expect(heard, `announced "${heard}"`).not.toContain(name);
+    }
+  });
+
+  it('never asks the roster for a name when a ban comes off', async () => {
+    // Structural rather than observational. `resolveSpeciesName` is the only route from
+    // an id to a display name inside the store, so a resolver that is never called cannot
+    // have leaked one — this holds even for a future arm whose copy nobody has read.
+    const resolve = vi.fn(resolveFixtureName);
+
+    const doc = banStageDoc('blind', (push) => {
+      push(bansSubmitted('p1', BLIND_ALLOTMENTS['p1'] as string[]));
+    });
+
+    await undoAndHear(doc, resolve);
+
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('says the reveal came off without naming what it revealed', async () => {
+    const doc = banStageDoc('blind', (push) => {
+      for (const playerId of BAN_PLAYERS) {
+        push(bansSubmitted(playerId, BLIND_ALLOTMENTS[playerId] as string[]));
+      }
+      push(
+        bansRevealed(
+          BAN_PLAYERS.map((playerId) => ({
+            playerId,
+            monIds: BLIND_ALLOTMENTS[playerId] as string[],
+          })),
+        ),
+      );
+    });
+
+    const heard = await undoAndHear(doc);
+
+    expect(heard).toBe('Undid the reveal. The bans are recorded and not shown.');
+    for (const name of ROSTER_NAMES) expect(heard).not.toContain(name);
+  });
+
+  it('says a snake ban came off and whose turn it is again', async () => {
+    // Snake bans ARE public, so this string could name a species without leaking. It does
+    // not, because `UndoRemoval.monId` is null for every ban kind and there is therefore
+    // no name to reach for — one rule for all three rather than three rules to keep
+    // straight.
+    const doc = banStageDoc('snake', (push) => {
+      push(bansPlaced('p1', 'mon-0', 1));
+      push(bansPlaced('p2', 'mon-1', 1));
+    });
+
+    const heard = await undoAndHear(doc);
+
+    expect(heard).toBe("Undid Bo's ban. It is Bo's turn again.");
+    for (const name of ROSTER_NAMES) expect(heard).not.toContain(name);
   });
 });
