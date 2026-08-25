@@ -38,7 +38,7 @@
   background: var(--color-surface);
 }
 
-/* DRFT-14 assertion 13. --space-6 above and below is what stops the panel reading as a form. */
+/* DRFT-14 assertion 13. --space-6 above it is what stops the panel reading as a form. */
 .ban-reveal__headline {
   margin: var(--space-6) 0 0;
   font: var(--text-display);
@@ -117,7 +117,22 @@
   text-align: center;
 }
 
+/*
+ * The blocked verdict is two paragraphs — the gate's objection and the only remaining exit.
+ * They stack with the narrow gap because they are one statement read straight through, and
+ * neither is muted: this is the last thing this tournament will ever say.
+ */
 .ban-reveal__feasibility--blocked {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--color-text);
+}
+
+.ban-reveal__problem,
+.ban-reveal__exit {
+  margin: 0;
+  font: var(--text-body);
   color: var(--color-text);
 }
 
@@ -126,9 +141,8 @@
  * screen. --target-min in BOTH axes: the height is set here and the horizontal padding
  * carries the width past it.
  *
- * The blocked state keeps the fill and the pointer, because the control is still focusable
- * and still explains itself; it is the accessible state, not the paint, that says it will
- * not act. Colour is never the only signal, and here the signal is the sentence above it.
+ * The blocked state below keeps the control FOCUSABLE — that is what `aria-disabled` buys
+ * over the native attribute, and it is the whole reason the reason is reachable at all.
  */
 .ban-reveal__action {
   align-self: center;

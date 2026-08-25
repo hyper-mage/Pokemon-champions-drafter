@@ -272,17 +272,30 @@ describe('BanReveal — collisions, named out loud', () => {
 });
 
 describe('BanReveal — the feasibility line and Start draft', () => {
+  /**
+   * The gate's OWN sentence, verbatim in the shape `checkFeasibility` composes it at a
+   * caller whose bans are already materialised — so it ends with a config-time remedy the
+   * host can no longer take. That ending is the reason D-22's clause is a separate element
+   * rather than something appended to this string.
+   */
   const BLOCKING: FeasibilityProblem = {
     code: 'notEnoughMegas',
     severity: 'blocking',
     message:
-      'Not enough Pokémon can Mega after the bans. 4 players × 2 Mega rounds needs 8; 3 can still Mega. The bans are locked, so this tournament cannot start — abandon it and set it up again.',
+      'Not enough Pokémon can Mega. 4 players × 1 Mega rounds needs 4; 0 can still Mega after 0 species bans and 235 Mega-forme bans. Lower the Mega requirement, or unban a Mega forme.',
   };
 
   it('says the pool can be drawn on a passing verdict', () => {
     mount({ blocking: null });
 
     expect(text('.ban-reveal__feasibility')).toBe('The pool can be drawn.');
+  });
+
+  it('offers no exit sentence at all on a passing verdict', () => {
+    mount({ blocking: null });
+
+    expect(host.querySelector('.ban-reveal__exit')).toBeNull();
+    expect(host.textContent).not.toContain('cannot start');
   });
 
   it('leaves Start draft live on a passing verdict', () => {
@@ -297,11 +310,32 @@ describe('BanReveal — the feasibility line and Start draft', () => {
     expect(counter.started).toBe(1);
   });
 
-  it('states the blocking reason in full, ending with the only remaining exit', () => {
+  it("states the gate's own reason, unedited", () => {
     mount({ blocking: BLOCKING });
 
-    expect(text('.ban-reveal__feasibility')).toBe(BLOCKING.message);
-    expect(BLOCKING.message.endsWith('— abandon it and set it up again.')).toBe(true);
+    expect(text('.ban-reveal__problem')).toBe(BLOCKING.message);
+  });
+
+  /**
+   * D-22's closing sentence, and the reason it is a separate element rather than part of
+   * the gate's message: `TournamentConfig` never changes after creation (D-14), so every
+   * remedy the config-time sentence names has expired by the time a host reads it here.
+   * The last thing said has to be the one thing that can still be done.
+   */
+  it('names abandonment as the only remaining exit, in full', () => {
+    mount({ blocking: BLOCKING });
+
+    expect(text('.ban-reveal__exit')).toBe(
+      'The bans are locked, so this tournament cannot start — abandon it and set it up again.',
+    );
+  });
+
+  it('ends the whole blocked region with the exit rather than with the problem', () => {
+    mount({ blocking: BLOCKING });
+
+    expect(text('.ban-reveal__feasibility').endsWith('— abandon it and set it up again.')).toBe(
+      true,
+    );
   });
 
   it('puts the blocking reason in a status region the button points at', () => {

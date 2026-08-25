@@ -106,6 +106,29 @@ function collisionSentence(speciesName: string, playerNames: readonly string[]):
 /** The passing verdict — `04-UI-SPEC` §7, RULE-08. */
 const POOL_CAN_BE_DRAWN = 'The pool can be drawn.';
 
+/**
+ * D-22's closing sentence, and it is not optional — `04-UI-SPEC` §7.
+ *
+ * ## Why it is a separate element rather than part of the gate's message
+ *
+ * `checkFeasibility` is the one authority on what is wrong, and its sentences end with the
+ * remedy a host takes AT CONFIG TIME: lower the Mega requirement, unban a forme, use fewer
+ * players. Every one of those has expired by the time anybody reads this. `TournamentConfig`
+ * never changes after creation (D-14), so there is no config edit to offer; and a
+ * host-voids-a-named-player's-ban remedy was considered and rejected, because it makes the
+ * host publicly overrule a named player with no rule to point at.
+ *
+ * So the problem is quoted from the gate unedited — no second arithmetic, and no sentence in
+ * this layer that could disagree with the one that decided the verdict — and the LAST thing
+ * said is the one thing that can still be done. `CLAUDE.md` §Copy requires a problem and a
+ * next action; this is that rule applied to the harshest state in the project.
+ *
+ * It is one constant serving every blocking code rather than a per-code rewrite, because the
+ * exit is the same whatever the gate objected to.
+ */
+const REVEAL_BLOCKED_EXIT =
+  'The bans are locked, so this tournament cannot start — abandon it and set it up again.';
+
 /** The stage's one accent-filled action, and the tap that draws the pool (D-23). */
 const START_DRAFT = 'Start draft';
 
@@ -239,18 +262,25 @@ export function BanReveal({
         The feasibility line's two verdicts. The blocked one is a `role="status"` region the
         button points at, so a host who tabs to a control that will not act hears why; the
         passing one is muted prose and needs no such wiring.
+
+        The blocked region is TWO sentences in one describable element — the gate's problem
+        and D-22's exit — so `aria-describedby` reads both, in that order. Splitting them
+        across two regions would let a host hear the objection and not the way out.
       */}
-      <p
-        class={
-          blocked
-            ? 'ban-reveal__feasibility ban-reveal__feasibility--blocked'
-            : 'ban-reveal__feasibility'
-        }
-        id={FEASIBILITY_ID}
-        {...(blocked ? { role: 'status' } : {})}
-      >
-        {blocking === null ? POOL_CAN_BE_DRAWN : blocking.message}
-      </p>
+      {blocking === null ? (
+        <p class="ban-reveal__feasibility" id={FEASIBILITY_ID}>
+          {POOL_CAN_BE_DRAWN}
+        </p>
+      ) : (
+        <div
+          class="ban-reveal__feasibility ban-reveal__feasibility--blocked"
+          id={FEASIBILITY_ID}
+          role="status"
+        >
+          <p class="ban-reveal__problem">{blocking.message}</p>
+          <p class="ban-reveal__exit">{REVEAL_BLOCKED_EXIT}</p>
+        </div>
+      )}
 
       {/*
         `aria-disabled`, never the native attribute — a natively disabled control is not
