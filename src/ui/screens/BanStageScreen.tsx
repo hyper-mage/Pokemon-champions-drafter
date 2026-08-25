@@ -3,9 +3,14 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preac
 import { installBanShield } from '../../adapters/ban-shield';
 import type { SpriteMeta } from '../../adapters/roster-source';
 import type { PaneState } from '../../adapters/view-prefs';
+import { bannedEntries } from '../../core/bans';
+import { checkFeasibility } from '../../core/feasibility';
 import type { DraftState } from '../../core/model';
 import type { RosterEntry } from '../../core/roster/types';
 import {
+  selectAllBanIds,
+  selectAttributedBans,
+  selectBanCollisions,
   selectBanStageState,
   selectBanTurn,
   selectPlayerName,
@@ -14,8 +19,10 @@ import {
   selectSubmittedPlayerIds,
 } from '../../core/selectors';
 import { BanBoard } from '../components/BanBoard';
+import { BanReveal } from '../components/BanReveal';
 import { BlindEntry } from '../components/BlindEntry';
 import { BlindLocked } from '../components/BlindLocked';
+import { CHECKPOINT_HEADING_BANS, CheckpointPrompt } from '../components/CheckpointPrompt';
 import { PoolGrid, type BanInertState } from '../components/PoolGrid';
 import { SplitPanes } from '../components/SplitPanes';
 import { TopBar, type TopBarProps } from '../components/TopBar';
@@ -97,6 +104,33 @@ export interface BanStageScreenProps {
    * see the latest-value ref below.
    */
   onSubmitBans: (playerId: string, monIds: string[]) => void;
+  /**
+   * The host's second, deliberate tap at the reveal — D-23.
+   *
+   * It draws the pool, and it is a prop for the reason every other write on this screen is:
+   * `dispatch` lives in the store and no component may reach it. The SEED is rolled behind
+   * this callback rather than in front of it, because ambient values are stamped at the
+   * impure edge (`store.ts`'s `drawPoolForBanStage`) — a screen that rolled one would be a
+   * second place randomness enters the document.
+   *
+   * A blocked verdict never calls it. `BanReveal` refuses its own click as well, because
+   * `aria-disabled` leaves a control clickable by design.
+   */
+  onStartDraft: () => void;
+  /**
+   * The PERS-06 checkpoint's three fields as one bag — D-09, assertion S8.
+   *
+   * A bag on `topBar`'s precedent: the file offer is an app-level concern that predates this
+   * screen, and three more fields on this contract would be three more things every arm has
+   * to carry past. The screen decides WHEN it is offered — after `bans/revealed` and at no
+   * earlier point — and nothing about what the file contains.
+   */
+  checkpoint: {
+    /** Whether the host has already waved it away this tournament. */
+    dismissed: boolean;
+    onDownload: () => void;
+    onDismiss: () => void;
+  };
   /**
    * The host's STORED pane preference, uncoerced. See below for why the coercion happens
    * here rather than in `app.tsx`.
@@ -192,6 +226,8 @@ export function BanStageScreen({
   topBar,
   onReveal,
   onSubmitBans,
+  onStartDraft,
+  checkpoint,
   storedPane,
   onPaneChange,
 }: BanStageScreenProps) {
@@ -755,19 +791,161 @@ export function BanStageScreen({
     );
   }
 
+  if (stage === 'reveal') {
+    /*
+      --- THE REVEAL, AND EVERY VALUE ON IT IS SOMEBODY ELSE'S ANSWER ---
+
+      The last surface of the phase, and the one screen that serves BOTH modes: blind
+      arrives here on the host's tap, snake the moment the serpentine runs out. One
+      component renders both, so what varies is the fold and never the markup.
+
+      `selectAttributedBans` is what makes that true. It answers "whose bans are whose" for
+      both rituals, in starting order, and it branches on the mode so this file does not have
+      to — the same branch `selectPublicBanIds` takes, so what the room may see and whose
+      name sits above it cannot disagree about the authoritative source.
+    */
+    const bannedIds = selectAllBanIds(state);
+
+    /*
+      `bannedEntries` resolves the ids against the roster and drops the strangers, which is
+      the containment rule `bans.ts` states: an id this regulation no longer carries renders
+      no chip because it resolves to nothing, not because a check remembered to reject it.
+      It also SORTS by name, which is the display order every other ban list in the project
+      already reads down.
+    */
+    const rows = selectAttributedBans(state).map((attributed) => ({
+      playerName: selectPlayerName(state, attributed.playerId) ?? attributed.playerId,
+      entries: bannedEntries(entries, attributed.monIds),
+    }));
+
+    /*
+      A LOOKUP, like the snake arm's two. `selectBanCollisions` groups on `monId` and never
+      on a display name; turning one id and a list of player ids into copy is this layer's
+      job, because `src/core/` may not hold a rendered string.
+
+      The raw id is the fallback for a species this regulation dropped — it reads as "a
+      Pokémon this roster no longer has", which is true, where an empty name would read as a
+      rendering bug and tell the room nothing.
+    */
+    function speciesName(monId: string): string {
+      return entries.find((entry) => entry.id === monId)?.name ?? monId;
+    }
+
+    const collisions = selectBanCollisions(state).map((collision) => ({
+      speciesName: speciesName(collision.monId),
+      playerNames: collision.playerIds.map(
+        (playerId) => selectPlayerName(state, playerId) ?? playerId,
+      ),
+    }));
+
+    /*
+      --- RULE-08, AND IT IS `checkFeasibility` ITSELF ---
+
+      `bansPerPlayer` and `banMode` on `FeasibilityInput` together mean "player bans this
+      configuration has NOT YET put in `bannedIds`". By the reveal there are none: every ban
+      is materialised in the union above, so the pending count is 0 and the mode presents as
+      `'hostBanlist'` whatever the document's own mode says. Counting the ritual again would
+      double-count every ban, and validating a field the host can no longer edit would state
+      a problem with no next action.
+
+      WITHOUT THAT SENTENCE a later reader will "fix" this to pass `config.banMode` and
+      `config.bansPerPlayer`, and every blind tournament will be permanently blocked here by
+      `bansPerPlayerNotPositive` — the surface dead, on the screen the whole room is watching.
+
+      There is NO second gate function and none may be added. A second arithmetic is a second
+      thing that can disagree with the first about whether the night can proceed, and reusing
+      this one also catches the pool-size and player-count branches a Mega-only re-check
+      would miss.
+    */
+    const verdict = checkFeasibility({
+      playerNames: state.config.players.map((player) => player.name),
+      rounds: state.config.rounds,
+      poolSize: state.config.poolSize,
+      megasRequiredPerTeam: state.config.megasRequiredPerTeam,
+      bannedIds,
+      megaFormeBans: state.config.megaFormeBans,
+      dualMegaChoices: state.config.dualMegaChoices,
+      swapBudget: state.config.swapBudget,
+      swapRounds: state.config.swapRounds,
+      banMode: 'hostBanlist',
+      bansPerPlayer: 0,
+      entries,
+    });
+
+    /*
+      BLOCKING ONLY. `poolExactlyMinimum` and `swapRoundsOnExactPool` are config-time
+      warnings, and D-22 has removed every exit but abandonment by the time anybody reads
+      this — so rendering one would state a problem the host cannot act on, on the screen
+      where that costs the most.
+
+      `find` rather than a fold, and the first is the right one: `PRECEDENCE` in
+      `feasibility.ts` declares the order deliberately, and the gate has already sorted.
+    */
+    const blocking = verdict.problems.find((problem) => problem.severity === 'blocking') ?? null;
+
+    return (
+      <>
+        <div class="sticky-head">
+          <TopBar {...topBar} />
+        </div>
+
+        <BanReveal
+          rows={rows}
+          collisions={collisions}
+          /*
+            `bannedEntries(...).length` and never a length taken off `rows` — the union is
+            deduped and resolved, so this is the number of SPECIES the tournament lost, which
+            is smaller than the number of bans spent by exactly the collision count.
+          */
+          bannedCount={bannedEntries(entries, bannedIds).length}
+          blocking={blocking}
+          spriteMeta={spriteMeta}
+          onStartDraft={onStartDraft}
+        />
+
+        {/*
+          D-09's split, and assertion S8's other half — the checkpoint is offered HERE and at
+          no earlier point in the ban stage.
+
+          The gating is `CheckpointPrompt`'s own, unchanged and unwidened: it still imports
+          nothing from the file-io adapter and still has no access to the tournament document,
+          so there is no code path from mounting it to a file appearing. What makes S8 true is
+          that this is the FIRST arm of this screen that mounts it at all; the locked state,
+          the entry surface and the whole snake stage mount none.
+
+          localStorage autosave runs throughout the stage and is untouched by any of this. It
+          is same-origin, so nobody reads it without the machine, and it is what makes a crash
+          mid-ban recoverable. The JSON checkpoint is a different object entirely: it TRAVELS,
+          and handing around unrevealed bans defeats the mode.
+        */}
+        <CheckpointPrompt
+          heading={CHECKPOINT_HEADING_BANS}
+          // `true` unconditionally, because reaching this arm IS the milestone — the bans are
+          // settled and the pool has not been drawn. A condition here would be a second
+          // opinion about a question `selectBanStageState` has already answered.
+          reached
+          dismissed={checkpoint.dismissed}
+          onDownload={checkpoint.onDownload}
+          onDismiss={checkpoint.onDismiss}
+        />
+      </>
+    );
+  }
+
   /*
     --- AMENDMENT 2's BLIND ROW, WHICH IS A THING THIS FILE DOES NOT DO ---
 
-    Below this line the stage mounts NO panes, and the host's stored pane preference is
-    therefore neither read nor written. `storedPane` is not consulted and `onPaneChange` is
+    The three arms above other than snake mount NO panes, and the host's stored pane
+    preference is therefore neither read nor written by any of them. `storedPane` is not consulted and `onPaneChange` is
     not called on any path that reaches here.
 
     That is a requirement rather than an accident, and it is written down because "we do not
     touch it" is invisible in code — a later reader sees only an unused prop and has every
     reason to wire it up. The preference must survive the whole blind ban stage untouched so
     the draft opens in the state the host actually chose; a value written here would outlive
-    the stage and silently change a screen the host has not seen yet. 04-09 and 04-11 build
-    the two blind screens and inherit this rule with them.
+    the stage and silently change a screen the host has not seen yet. The locked state, the
+    entry surface and the reveal are all built now and all obey it: each is `.app-shell` and
+    single-column, so none of them has a pane to have a preference about.
 
     The snake row is the coercion above, and it is the opposite shape: the preference IS read
     there, `pool` is silently forced to `split`, and nothing is written back — so the host
@@ -778,15 +956,16 @@ export function BanStageScreen({
     The remaining arms render nothing, and each is unreachable TODAY for a stated reason. A
     `null` that outlives its plan is invisible otherwise.
 
+    EVERY ARM IS NOW BUILT, so no branch below is waiting on a plan and none names one.
+    What is left is a total-branch fallback the compiler requires and the selector never
+    reaches:
+
       'blindEntry'   BUILT, and it does not reach here. It is never returned by
                      `selectBanStageState` at all: entry is a transient state this screen
                      enters on a deliberate tap and holds in `entering` above, because D-18
                      requires the in-progress selection to die with the component rather
                      than be derivable from anything stored. The surface is mounted from
                      inside the `'blindLocked'` arm and unmounted on every exit from it.
-      'reveal'       04-11. Reachable in snake the moment the last ban lands, and D-23
-                     requires a separate `Start draft` tap there rather than the pool
-                     appearing on its own.
       'notRunning'   not a ban stage at all. `app.tsx` routes to the draft screen instead,
                      so this arm is the one that should never render rather than the one
                      waiting on a plan.

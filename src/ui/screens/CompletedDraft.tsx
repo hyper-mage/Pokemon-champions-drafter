@@ -2,7 +2,7 @@ import { toShowdownPaste, type PasteSlot } from '../../core/export/paste';
 import type { DraftState, PlayerConfig } from '../../core/model';
 import type { RosterEntry } from '../../core/roster/types';
 import { selectSlotStone, selectTeams } from '../../core/selectors';
-import { CheckpointPrompt } from '../components/CheckpointPrompt';
+import { CHECKPOINT_HEADING, CheckpointPrompt } from '../components/CheckpointPrompt';
 import { ExportPanel } from '../components/ExportPanel';
 
 /**
@@ -103,6 +103,9 @@ export function CompletedDraft({
   return (
     <div class="completed-draft">
       <CheckpointPrompt
+        // The DRAFT milestone names itself. 04-11 mounts the same component at the ban
+        // reveal under its own heading, and neither caller inherits the other's by default.
+        heading={CHECKPOINT_HEADING}
         reached={checkpointReached}
         dismissed={checkpointDismissed}
         onDownload={onDownload}

@@ -75,6 +75,7 @@ import {
   adoptTournament,
   dispatch,
   draftState,
+  drawPoolForBanStage,
   getDoc,
   getState,
   subscribe,
@@ -558,6 +559,12 @@ export function App() {
   // reminded again, on the one milestone the phase has.
   const [checkpointDismissed, setCheckpointDismissed] = useState(false);
 
+  // A SECOND flag rather than a shared one, because there are now two milestones and one
+  // tournament passes both. Sharing it would mean a host who clicked `Not now` at the ban
+  // reveal is never offered a copy of the finished draft — the milestone that actually has
+  // something worth keeping — with nothing on screen to explain why.
+  const [revealCheckpointDismissed, setRevealCheckpointDismissed] = useState(false);
+
   const storageOk = probe.ok;
 
   // The saved document, probed once during the same first render as the canary, so
@@ -665,6 +672,7 @@ export function App() {
     // about this BROWSER's storage, not about the tournament, and re-asking the host to
     // acknowledge a quota that is still full would be a nag rather than news.
     setCheckpointDismissed(false);
+    setRevealCheckpointDismissed(false);
     setFiltersCleared(false);
     setImportFlow({ status: 'idle' });
 
@@ -1636,6 +1644,24 @@ export function App() {
   }, []);
 
   /**
+   * The second, deliberate tap — D-23, RULE-08.
+   *
+   * The draw is `drawPoolForBanStage`'s, in the store, because it rolls a seed and `dispatch`
+   * lives there; this is the routing half and nothing else. The screen moves only if the draw
+   * landed, and which screen it moves to is `screenForState`'s call rather than this line's:
+   * a non-empty `poolIds` is what ends the ban stage, so the selector answers `'notRunning'`
+   * and the draft opens.
+   *
+   * A refused draw leaves the reveal exactly where it was, which is the only honest thing to
+   * do with it. `BanReveal` refuses its own click on a blocking verdict and this refuses
+   * again behind it, so the two layers agree without either depending on the other.
+   */
+  const handleStartDraft = useCallback(() => {
+    if (!drawPoolForBanStage(entries)) return;
+    setScreen(screenForState(getState()));
+  }, [entries]);
+
+  /**
    * Hand focus to the pool grid's first cell when the card panel has just unmounted.
    *
    * The same shape `SplitPanes` uses for the expand that removes the button that was
@@ -2156,6 +2182,18 @@ export function App() {
             }}
             onReveal={handleRevealBans}
             onSubmitBans={handleSubmitBans}
+            onStartDraft={handleStartDraft}
+            /*
+              D-09's split. The stage decides WHEN the offer appears — after `bans/revealed`
+              and at no earlier point — and this supplies the same `handleDownload` the top
+              bar already has, so there is still exactly one way a file is written and it
+              still needs a click.
+            */
+            checkpoint={{
+              dismissed: revealCheckpointDismissed,
+              onDownload: handleDownload,
+              onDismiss: () => setRevealCheckpointDismissed(true),
+            }}
             // The STORED preference, uncoerced. `pane` below coerces against the DRAFT's
             // availability, which tracks `selectPhase` — and `selectPhase` answers `'cards'`
             // at a ban stage. Amendment 2's coercion is the stage's own and lives there.

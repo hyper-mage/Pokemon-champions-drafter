@@ -231,6 +231,7 @@ describe('the checkpoint prompt', () => {
     act(() => {
       render(
         <CheckpointPrompt
+          heading={CHECKPOINT_HEADING}
           reached
           dismissed={false}
           onDownload={onDownload}

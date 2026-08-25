@@ -34,6 +34,7 @@ import type { PaneState } from '../../src/adapters/view-prefs';
 import type { RoundSpec } from '../../src/core/actions';
 import { bansPlaced, bansRevealed, bansSubmitted } from '../../src/core/actions';
 import type { DraftState, TournamentConfig } from '../../src/core/model';
+import { megaFormeRows } from '../../src/core/mega';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import {
   selectAllBanIds,
@@ -354,6 +355,14 @@ function mountStage(): { calls: { playerId: string; monId: string; pass: number 
         onReveal={() => undefined}
         // The snake arm never enters a blind allotment, so this is never called there.
         onSubmitBans={() => undefined}
+        // The draw belongs to the reveal, which this harness reaches only in the
+        // stage-is-over case below; a tap is never simulated through it.
+        onStartDraft={() => undefined}
+        checkpoint={{
+          dismissed: false,
+          onDownload: () => undefined,
+          onDismiss: () => undefined,
+        }}
         onPlaceBan={(playerId, monId, pass) => {
           calls.push({ playerId, monId, pass });
         }}
@@ -471,7 +480,15 @@ describe('BanStageScreen at the snake stage', () => {
     expect(host.querySelectorAll('.mon-card')).toHaveLength(0);
   });
 
-  it('renders nothing once the stage is over', () => {
+  /**
+   * Retargeted rather than deleted, on 04-09's rule: the case was written when `'reveal'`
+   * was a stub and asserted an empty screen, and 04-11 gave that arm a surface. What it
+   * actually guards is that the SNAKE surface stops rendering the moment the serpentine runs
+   * out — no turn banner over a stage with nobody on the clock — and that claim is unchanged
+   * and still worth a test. The screen it hands over to is now asserted here too, so a
+   * regression that renders neither fails rather than passing vacuously.
+   */
+  it('takes the snake surface down once the stage is over, and puts the reveal up', () => {
     startSnakeStage(1);
     ENTRIES.slice(0, 4).forEach((entry, index) => {
       dispatch(bansPlaced(`p${index + 1}`, entry.id, 1));
@@ -484,6 +501,7 @@ describe('BanStageScreen at the snake stage', () => {
 
     mountStage();
     expect(host.querySelector('.turn-banner')).toBeNull();
+    expect(host.querySelector('.ban-reveal')).not.toBeNull();
   });
 });
 
@@ -532,6 +550,12 @@ function LiveStage({
       onPaneChange={onPaneChange}
       onReveal={() => undefined}
       onSubmitBans={() => undefined}
+      onStartDraft={() => undefined}
+      checkpoint={{
+        dismissed: false,
+        onDownload: () => undefined,
+        onDismiss: () => undefined,
+      }}
       onPlaceBan={(playerId, monId, pass) => {
         dispatch(bansPlaced(playerId, monId, pass));
         bump((count) => count + 1);
@@ -996,6 +1020,12 @@ function LiveBlindStage({
       onSubmitBans={(playerId, monIds) => {
         dispatch(bansSubmitted(playerId, monIds));
         bump((count) => count + 1);
+      }}
+      onStartDraft={() => undefined}
+      checkpoint={{
+        dismissed: false,
+        onDownload: () => undefined,
+        onDismiss: () => undefined,
       }}
     />
   );
@@ -1717,5 +1747,310 @@ describe('drawPoolForBanStage', () => {
     abandonTournament();
 
     expect(drawPoolForBanStage(ENTRIES)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 2 — the reveal arm, RULE-08, and the checkpoint that must not fire early
+// ---------------------------------------------------------------------------
+
+const CHECKPOINT = {
+  dismissed: false,
+  onDownload: () => undefined,
+  onDismiss: () => undefined,
+};
+
+/** The stage re-rendered against the fold, with the draw wired to the real store. */
+function LiveRevealStage({ onStartDraft }: { onStartDraft?: () => void } = {}) {
+  const [, bump] = useState(0);
+  const state = getState();
+  if (state === null) return null;
+
+  return (
+    <BanStageScreen
+      state={state}
+      entries={ENTRIES}
+      spriteMeta={SPRITE_META}
+      topBar={TOP_BAR}
+      storedPane="split"
+      onPaneChange={() => undefined}
+      onPlaceBan={() => undefined}
+      onReveal={() => undefined}
+      onSubmitBans={() => undefined}
+      checkpoint={CHECKPOINT}
+      onStartDraft={
+        onStartDraft ??
+        (() => {
+          drawPoolForBanStage(ENTRIES);
+          bump((count) => count + 1);
+        })
+      }
+    />
+  );
+}
+
+function mountRevealStage(options: { onStartDraft?: () => void } = {}): void {
+  act(() => {
+    render(<LiveRevealStage {...options} />, host);
+  });
+}
+
+/** A blind stage with every allotment sealed and the reveal landed. */
+function revealBlindStage(
+  overrides: Partial<TournamentConfig> = {},
+  submissions?: readonly { playerId: string; monIds: string[] }[],
+): TournamentConfig {
+  const config = { ...configFor('blind', 2), ...overrides };
+  createBanStage({ config, order: order(config), orderSeed: 11, schedule: schedule() });
+
+  const lists =
+    submissions ??
+    config.players.map((player, index) => ({
+      playerId: player.id,
+      monIds: [rosterEntryAt(index * 2).id, rosterEntryAt(index * 2 + 1).id],
+    }));
+
+  for (const list of lists) dispatch(bansSubmitted(list.playerId, list.monIds));
+  dispatch(bansRevealed(lists.map((list) => ({ ...list }))));
+
+  return config;
+}
+
+function revealText(selector: string): string {
+  return host.querySelector(selector)?.textContent?.trim() ?? '';
+}
+
+function revealStartDraft(): HTMLButtonElement {
+  const button = host.querySelector<HTMLButtonElement>('.ban-reveal__action');
+  if (button === null) throw new Error('the reveal rendered no primary action');
+  return button;
+}
+
+describe('BanStageScreen at the reveal', () => {
+  it('mounts the reveal rather than nothing, which is what 04-05 stubbed', () => {
+    revealBlindStage();
+    mountRevealStage();
+
+    expect(host.querySelector('.ban-reveal')).not.toBeNull();
+  });
+
+  it('renders one attribution row per player, in starting order', () => {
+    revealBlindStage();
+    mountRevealStage();
+
+    expect(
+      [...host.querySelectorAll('.ban-reveal__player')].map((node) => node.textContent),
+    ).toEqual(['Ada', 'Bo', 'Cy', 'Sam']);
+  });
+
+  it('counts DISTINCT banned species, so a collision does not inflate the heading', () => {
+    // Ada and Bo both ban entry 0. Four players times two bans is eight submissions and
+    // seven species, and the heading is about species.
+    const shared = rosterEntryAt(0).id;
+    revealBlindStage({}, [
+      { playerId: 'p1', monIds: [shared, rosterEntryAt(1).id] },
+      { playerId: 'p2', monIds: [shared, rosterEntryAt(3).id] },
+      { playerId: 'p3', monIds: [rosterEntryAt(4).id, rosterEntryAt(5).id] },
+      { playerId: 'p4', monIds: [rosterEntryAt(6).id, rosterEntryAt(7).id] },
+    ]);
+    mountRevealStage();
+
+    expect(revealText('.ban-reveal__headline')).toBe('7 Pokémon banned');
+  });
+
+  it('names the collision, with both players and what the duplicate cost', () => {
+    const shared = rosterEntryAt(0);
+    revealBlindStage({}, [
+      { playerId: 'p1', monIds: [shared.id, rosterEntryAt(1).id] },
+      { playerId: 'p2', monIds: [shared.id, rosterEntryAt(3).id] },
+      { playerId: 'p3', monIds: [rosterEntryAt(4).id, rosterEntryAt(5).id] },
+      { playerId: 'p4', monIds: [rosterEntryAt(6).id, rosterEntryAt(7).id] },
+    ]);
+    mountRevealStage();
+
+    expect(revealText('.ban-reveal__collision')).toBe(
+      `Ada and Bo both banned ${shared.name}. It is banned once; the second ban is spent.`,
+    );
+  });
+
+  it('lands focus on the reveal heading and NOT on Start draft', () => {
+    // D-23 exists so the group reads the reveal before the screen changes under them.
+    revealBlindStage();
+    mountRevealStage();
+
+    expect(document.activeElement).toBe(host.querySelector('.ban-reveal__headline'));
+    expect(document.activeElement).not.toBe(revealStartDraft());
+  });
+
+  it('says the pool can be drawn when the post-ban check passes', () => {
+    revealBlindStage();
+    mountRevealStage();
+
+    expect(revealText('.ban-reveal__feasibility')).toBe('The pool can be drawn.');
+    expect(revealStartDraft().getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('appends exactly one pool/built when Start draft is tapped', () => {
+    revealBlindStage();
+    mountRevealStage();
+
+    act(() => {
+      revealStartDraft().click();
+    });
+
+    expect(
+      (getDoc()?.log ?? []).filter((action) => action.type === 'pool/built'),
+    ).toHaveLength(1);
+    expect(selectBanStageState(getState() as DraftState)).toBe('notRunning');
+  });
+
+  it('renders a snake reveal from the placements, with no reveal action in the log', () => {
+    const config = startSnakeStage(1);
+    config.players.forEach((player, index) => {
+      dispatch(bansPlaced(player.id, rosterEntryAt(index).id, 1));
+    });
+    mountRevealStage();
+
+    expect(host.querySelector('.ban-reveal')).not.toBeNull();
+    expect(revealText('.ban-reveal__headline')).toBe('4 Pokémon banned');
+    expect(host.querySelector('.ban-reveal__collision')).toBeNull();
+  });
+});
+
+/**
+ * The blocked verdict — RULE-08 and D-22.
+ *
+ * 04-02's config-time gate is fully pessimistic, so a tournament created through the config
+ * screen CANNOT fail here: it assumes every player ban lands on a Mega-capable species, and
+ * a collision wastes a ban rather than removing an extra species. The only way in is a
+ * document that did not come from this build, which is why this constructs one rather than
+ * driving the config flow — a config-driven test would assert nothing.
+ */
+describe('BanStageScreen at a blocked reveal', () => {
+  function blockedReveal(): void {
+    revealBlindStage({
+      // Every Mega forme on the roster banned, so nothing can Mega after the bans.
+      megaFormeBans: megaFormeRows(ENTRIES).map((forme) => forme.id),
+      megasRequiredPerTeam: 1,
+    });
+  }
+
+  it('states the gate reason and ends with the only remaining exit', () => {
+    blockedReveal();
+    mountRevealStage();
+
+    expect(revealText('.ban-reveal__problem')).toContain('Not enough Pokémon can Mega');
+    expect(revealText('.ban-reveal__exit')).toBe(
+      'The bans are locked, so this tournament cannot start — abandon it and set it up again.',
+    );
+  });
+
+  it('blocks Start draft with aria-disabled pointing at the reason', () => {
+    blockedReveal();
+    mountRevealStage();
+
+    const region = host.querySelector('.ban-reveal__feasibility');
+    expect(revealStartDraft().getAttribute('aria-disabled')).toBe('true');
+    expect(revealStartDraft().getAttribute('aria-describedby')).toBe(region?.id);
+    expect(region?.getAttribute('role')).toBe('status');
+  });
+
+  it('draws nothing when a blocked Start draft is tapped', () => {
+    blockedReveal();
+    mountRevealStage();
+
+    act(() => {
+      revealStartDraft().click();
+    });
+
+    expect(getState()?.poolIds).toEqual([]);
+    expect(selectBanStageState(getState() as DraftState)).toBe('reveal');
+  });
+
+  it('renders no config-time warning, which has no remedy here', () => {
+    // `poolExactlyMinimum` fires for this configuration and is a WARNING. D-22 has removed
+    // every exit but abandonment, so a warning would state a problem with no next action.
+    blockedReveal();
+    mountRevealStage();
+
+    expect(host.textContent).not.toContain('exactly the minimum');
+  });
+});
+
+/**
+ * Assertion S8 — no PERS-06 JSON checkpoint before `bans/revealed`, D-09.
+ *
+ * THE ONE LEAK THAT LEAVES THE MACHINE. localStorage autosave is same-origin and stays
+ * behind the machine; a downloadable JSON checkpoint travels, and one written before the
+ * reveal carries unrevealed bans out of the room.
+ *
+ * Checked at THREE moments rather than one, because a single-moment test would miss the
+ * other two — and each of them is a screen a host can sit on for minutes.
+ */
+describe('the checkpoint, and the three moments it must not appear at', () => {
+  function checkpointPrompt(): Element | null {
+    return host.querySelector('.checkpoint-prompt');
+  }
+
+  it('offers nothing at the blind locked state', () => {
+    startBlindStage(2);
+    mountRevealStage();
+
+    expect(host.querySelector('.blind-locked')).not.toBeNull();
+    expect(checkpointPrompt()).toBeNull();
+  });
+
+  it('offers nothing at the blind entry surface', () => {
+    startBlindStage(2);
+    mountBlindStage();
+
+    act(() => {
+      primaryAction().click();
+    });
+
+    expect(host.querySelector('.blind-entry')).not.toBeNull();
+    expect(checkpointPrompt()).toBeNull();
+  });
+
+  it('offers nothing mid-snake-stage', () => {
+    startSnakeStage(2);
+    dispatch(bansPlaced('p1', rosterEntryAt(0).id, 1));
+    mountRevealStage();
+
+    expect(host.querySelector('.turn-banner')).not.toBeNull();
+    expect(checkpointPrompt()).toBeNull();
+  });
+
+  it('offers one after the reveal, naming the milestone it is standing at', () => {
+    revealBlindStage();
+    mountRevealStage();
+
+    expect(checkpointPrompt()).not.toBeNull();
+    expect(revealText('.checkpoint-prompt__heading')).toBe('Bans are final — save a copy?');
+  });
+
+  it('offers nothing after the reveal once the host has waved it away', () => {
+    revealBlindStage();
+
+    act(() => {
+      render(
+        <BanStageScreen
+          state={getState() as DraftState}
+          entries={ENTRIES}
+          spriteMeta={SPRITE_META}
+          topBar={TOP_BAR}
+          storedPane="split"
+          onPaneChange={() => undefined}
+          onPlaceBan={() => undefined}
+          onReveal={() => undefined}
+          onSubmitBans={() => undefined}
+          checkpoint={{ ...CHECKPOINT, dismissed: true }}
+          onStartDraft={() => undefined}
+        />,
+        host,
+      );
+    });
+
+    expect(checkpointPrompt()).toBeNull();
   });
 });

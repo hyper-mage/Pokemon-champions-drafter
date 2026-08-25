@@ -38,12 +38,35 @@ import './CheckpointPrompt.css';
  * lines, and the heading's em dash and the body's comma placement are both contract.
  */
 export const CHECKPOINT_HEADING = 'Draft complete — save a copy?';
+/**
+ * The ban-reveal milestone's heading — D-09.
+ *
+ * The heading is the ONLY string a milestone varies, and it is a caller's argument rather
+ * than a branch inside the component, so a third milestone adds a constant instead of a
+ * condition. The body, the call to action and the dismissal are milestone-independent by
+ * inspection: every one of them is about the FILE, and the file is the same file.
+ *
+ * It names the bans rather than the reveal, and that is deliberate for the reason
+ * `04-UI-SPEC` §7 gives for the reveal's own heading: this surface serves snake as well,
+ * where nothing is disclosed at this point because every ban was seen as it landed. What is
+ * true in both modes is that the bans are settled and the pool has not been drawn.
+ */
+export const CHECKPOINT_HEADING_BANS = 'Bans are final — save a copy?';
 export const CHECKPOINT_BODY =
   'Download the tournament JSON so you can reopen it on another machine, or after this browser clears its storage.';
 export const CHECKPOINT_CTA = 'Download tournament JSON';
 export const CHECKPOINT_DISMISS = 'Not now';
 
 export interface CheckpointPromptProps {
+  /**
+   * Which milestone is offering the copy — {@link CHECKPOINT_HEADING} at draft complete,
+   * {@link CHECKPOINT_HEADING_BANS} after the ban reveal.
+   *
+   * Required rather than defaulted, so each caller NAMES the milestone it is standing at.
+   * A default would let a new one inherit `Draft complete — save a copy?` by omission, on a
+   * screen where the draft has not started, and nothing would fail.
+   */
+  heading: string;
   /** Whether the milestone has been reached. Phase 1 passes `selectIsComplete`. */
   reached: boolean;
   /** Whether the host has already waved it away this session. */
@@ -54,6 +77,7 @@ export interface CheckpointPromptProps {
 }
 
 export function CheckpointPrompt({
+  heading,
   reached,
   dismissed,
   onDownload,
@@ -64,7 +88,7 @@ export function CheckpointPrompt({
   return (
     <section class="checkpoint-prompt" aria-labelledby="checkpoint-heading">
       <h2 id="checkpoint-heading" class="checkpoint-prompt__heading">
-        {CHECKPOINT_HEADING}
+        {heading}
       </h2>
 
       <p class="checkpoint-prompt__body">{CHECKPOINT_BODY}</p>
