@@ -272,6 +272,66 @@ describe('row 2 — snake, during and after the stage', () => {
   });
 });
 
+describe('row 3 — blind, before bans/revealed', () => {
+  /**
+   * THE ROW THIS WHOLE FILE EXISTS FOR.
+   *
+   * Three of six submissions are in the log, in plaintext (D-06). The disclosure must carry
+   * the host's banlist and nothing else — asserted by naming a species that IS in a
+   * submission and requiring it absent, which is the assertion a count could not make.
+   */
+  it('carries the host banlist only, with submissions already in the log', async () => {
+    seed(configFor('blind', ['mon-0'], 2), [
+      scheduleCompiled(schedule()),
+      draftStarted(['p1', 'p2'], 13),
+      bansSubmitted('p1', ['mon-5', 'mon-6']),
+    ]);
+
+    await mountApp();
+    await resumeSaved();
+
+    expect(summaryText()).toBe('Bans (1)');
+    expect(disclosedNames()).toEqual(['Mon 0']);
+    expect(disclosedNames()).not.toContain('Mon 5');
+    expect(disclosedNames()).not.toContain('Mon 6');
+  });
+
+  it('leaks no submitted species anywhere on the locked screen, chrome included', async () => {
+    seed(configFor('blind', ['mon-0'], 2), [
+      scheduleCompiled(schedule()),
+      draftStarted(['p1', 'p2'], 13),
+      bansSubmitted('p1', ['mon-5', 'mon-6']),
+    ]);
+
+    await mountApp();
+    await resumeSaved();
+
+    const rendered = host.textContent ?? '';
+    expect(rendered).toContain('0 of 2 entered');
+    for (const name of ['Mon 5', 'Mon 6', 'Mon 7']) {
+      expect(rendered).not.toContain(name);
+    }
+  });
+
+  /**
+   * `04-UI-SPEC` Amendment 2 and §3: blind's locked screen is a read-and-act screen like
+   * the landing screen, so it takes `.app-shell`. `read-only-shell.test.tsx` asserts the
+   * snake half of the same three-way branch.
+   */
+  it('wears the app shell rather than the draft shell', async () => {
+    seed(configFor('blind', [], 2), [
+      scheduleCompiled(schedule()),
+      draftStarted(['p1', 'p2'], 13),
+    ]);
+
+    await mountApp();
+    await resumeSaved();
+
+    expect(host.querySelector('.app-shell')).not.toBeNull();
+    expect(host.querySelector('.draft-shell')).toBeNull();
+  });
+});
+
 describe('row 4 — blind, after bans/revealed', () => {
   it('discloses every revealed ban alongside the host banlist', async () => {
     seed(configFor('blind', ['mon-0'], 2), [

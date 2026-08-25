@@ -32,7 +32,7 @@ import type { SpriteMeta } from '../../src/adapters/roster-source';
 import { disposeTabLock } from '../../src/adapters/tab-lock';
 import type { PaneState } from '../../src/adapters/view-prefs';
 import type { RoundSpec } from '../../src/core/actions';
-import { bansPlaced } from '../../src/core/actions';
+import { bansPlaced, bansSubmitted } from '../../src/core/actions';
 import type { TournamentConfig } from '../../src/core/model';
 import type { RosterEntry, RosterSnapshot } from '../../src/core/roster/types';
 import { selectBanTurn, selectBanStageState } from '../../src/core/selectors';
@@ -941,3 +941,184 @@ describe('the snake board pane reads as the ban round so far', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// 04-09 — the blind locked arm
+// ---------------------------------------------------------------------------
+
+/**
+ * The stage at `blind`, re-rendered against the fold exactly as `LiveStage` is.
+ *
+ * `onReveal` is recorded rather than dispatched, because D-08's guarantee is about WHEN the
+ * reveal fires and the only way to assert "never automatically" is to count the calls.
+ */
+function LiveBlindStage({
+  storedPane = 'split',
+  onPaneChange = () => undefined,
+  onReveal = () => undefined,
+}: {
+  storedPane?: PaneState;
+  onPaneChange?: (pane: PaneState) => void;
+  onReveal?: () => void;
+}) {
+  const state = getState();
+  if (state === null) return null;
+
+  return (
+    <BanStageScreen
+      state={state}
+      entries={ENTRIES}
+      spriteMeta={SPRITE_META}
+      topBar={TOP_BAR}
+      storedPane={storedPane}
+      onPaneChange={onPaneChange}
+      onPlaceBan={() => undefined}
+      onReveal={onReveal}
+    />
+  );
+}
+
+function mountBlindStage(options: {
+  storedPane?: PaneState;
+  onPaneChange?: (pane: PaneState) => void;
+  onReveal?: () => void;
+} = {}): void {
+  act(() => {
+    render(<LiveBlindStage {...options} />, host);
+  });
+}
+
+function startBlindStage(
+  bansPerPlayer = 2,
+  playerNames: readonly string[] = ['Ada', 'Bo', 'Cy', 'Sam'],
+): TournamentConfig {
+  const config = configFor('blind', bansPerPlayer, playerNames);
+  createBanStage({ config, order: order(config), orderSeed: 11, schedule: schedule() });
+  return config;
+}
+
+function lockedText(selector: string): string | null {
+  return host.querySelector(selector)?.textContent?.trim() ?? null;
+}
+
+function primaryAction(): HTMLButtonElement {
+  const button = host.querySelector<HTMLButtonElement>('.blind-locked__action');
+  if (button === null) throw new Error('the blind locked state rendered no primary action');
+  return button;
+}
+
+describe('BanStageScreen at the blind locked stage', () => {
+  it('mounts the locked state and names who is next over the count', () => {
+    startBlindStage(2, ['Ada', 'Bo', 'Cy', 'Dee', 'Eli', 'Sam']);
+    mountBlindStage();
+
+    expect(lockedText('.blind-locked__headline')).toBe('Ada is next');
+    expect(lockedText('.blind-locked__progress')).toBe('0 of 6 entered');
+  });
+
+  /**
+   * Assertion S3 at the screen level, which is where a leak would actually arrive: the
+   * screen holds the whole roster and the whole fold, and hands the locked state a slice.
+   * Swept over EVERY committed roster name rather than one.
+   */
+  it('names no species anywhere, with real submissions in the log', () => {
+    startBlindStage(2, ['Ada', 'Bo', 'Cy', 'Dee', 'Eli', 'Sam']);
+    dispatch(bansSubmitted('p1', [rosterEntryAt(0).id, rosterEntryAt(1).id]));
+    dispatch(bansSubmitted('p2', [rosterEntryAt(2).id, rosterEntryAt(3).id]));
+    mountBlindStage();
+
+    expect(lockedText('.blind-locked__progress')).toBe('2 of 6 entered');
+
+    const rendered = host.textContent ?? '';
+    const leaked = ENTRIES.filter((entry) => rendered.includes(entry.name)).map(
+      (entry) => entry.name,
+    );
+    expect(leaked).toEqual([]);
+  });
+
+  it('reads every row off the fold, in starting order', () => {
+    startBlindStage(2);
+    dispatch(bansSubmitted('p2', [rosterEntryAt(0).id, rosterEntryAt(1).id]));
+    mountBlindStage();
+
+    const names = [...host.querySelectorAll<HTMLElement>('.ban-board__blind-name')].map(
+      (element) => element.textContent,
+    );
+    expect(names).toEqual(['Ada', 'Bo', 'Cy', 'Sam']);
+
+    const states = [...host.querySelectorAll<HTMLElement>('.ban-board__blind-status')].map(
+      (element) => element.textContent,
+    );
+    expect(states).toEqual(['Not yet', 'Entered', 'Not yet', 'Not yet']);
+  });
+
+  it('names the first player in starting order who has not submitted', () => {
+    startBlindStage(2);
+    // p2 out of turn. The next player is p1 — the ORDER decides, never the log.
+    dispatch(bansSubmitted('p2', [rosterEntryAt(0).id]));
+    mountBlindStage();
+
+    expect(lockedText('.blind-locked__headline')).toBe('Ada is next');
+    expect(primaryAction().textContent).toBe("Enter Ada's bans");
+  });
+
+  it('offers the reveal once every player has submitted, and never before', () => {
+    const config = startBlindStage(2);
+    for (const player of config.players) {
+      dispatch(bansSubmitted(player.id, [rosterEntryAt(0).id]));
+    }
+    mountBlindStage();
+
+    expect(lockedText('.blind-locked__headline')).toBe('All bans are in');
+    expect(primaryAction().textContent).toBe('Reveal bans');
+  });
+
+  /**
+   * D-08. The last submission lands on a screen showing nothing and one button, and the
+   * reveal waits for a host tap — asserted by counting, because "it did not happen yet" is
+   * the only shape that catches an effect somebody adds later.
+   */
+  it('reveals on a tap and never on a render', () => {
+    const config = startBlindStage(2);
+    for (const player of config.players) {
+      dispatch(bansSubmitted(player.id, [rosterEntryAt(0).id]));
+    }
+
+    let reveals = 0;
+    mountBlindStage({ onReveal: () => (reveals += 1) });
+
+    expect(reveals).toBe(0);
+
+    act(() => {
+      primaryAction().click();
+    });
+
+    expect(reveals).toBe(1);
+  });
+
+  /**
+   * `04-UI-SPEC` Amendment 2's blind row: no panes, and the stored preference is NEITHER
+   * read NOR written, so it survives the ban stage untouched and the draft opens in the
+   * state the host chose.
+   */
+  it('mounts no panes and leaves the stored pane preference byte-identical', () => {
+    const stored = JSON.stringify({ density: 'full', pane: 'board' });
+    localStorage.setItem('champions-drafter:view', stored);
+
+    startBlindStage(2);
+
+    let paneChanges = 0;
+    mountBlindStage({ storedPane: 'board', onPaneChange: () => (paneChanges += 1) });
+
+    expect(host.querySelector('.panes')).toBeNull();
+    expect(host.querySelector('.pane__scroll')).toBeNull();
+    expect(host.querySelector('.pool__grid')).toBeNull();
+
+    act(() => {
+      render(null, host);
+    });
+
+    expect(paneChanges).toBe(0);
+    expect(localStorage.getItem('champions-drafter:view')).toBe(stored);
+  });
+});

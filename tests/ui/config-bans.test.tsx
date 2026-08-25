@@ -216,15 +216,30 @@ describe('the ban mode control', () => {
   });
 
   /**
-   * 04-09 flips this in the same one-line move. Enabling it here would strand a host on a
-   * locked state that does not exist yet, which is T-04-21.
+   * The mode has been a disabled option since Phase 2, and this is where it becomes
+   * selectable — D-12's promised payoff, which was that Phase 4 would enable two options
+   * rather than redesign the control and migrate every saved tournament.
+   *
+   * The suffix goes with the flag. A host who can click a member must not read
+   * `— Not yet available` on it, and a member that still carried the suffix would be the
+   * stale contract comment problem in the one place the host can actually see it.
    */
-  it('leaves Blind disabled until its own surfaces exist', () => {
+  it('offers Blind with no suffix, now that its locked state is built', () => {
     mount();
 
     const blind = radiosNamed('ban-mode').find((radio) => radio.value === 'blind');
-    expect(blind?.disabled).toBe(true);
-    expect(labelFor(blind as HTMLInputElement)).toBe('Blind — Not yet available');
+    expect(blind).toBeDefined();
+    expect(blind?.disabled).toBe(false);
+    expect(blind?.hasAttribute('aria-disabled')).toBe(false);
+    expect(labelFor(blind as HTMLInputElement)).toBe('Blind');
+  });
+
+  it('takes the click and carries the mode into the started tournament', () => {
+    mount();
+    pickMode('blind');
+
+    const blind = radiosNamed('ban-mode').find((radio) => radio.value === 'blind');
+    expect(blind?.checked).toBe(true);
   });
 });
 
@@ -247,6 +262,13 @@ describe('Bans per player', () => {
   it('appears at snake, defaulting to 1', () => {
     mount();
     pickMode('snake');
+
+    expect(bansPerPlayerInput()?.value).toBe('1');
+  });
+
+  it('appears at blind too, on the same default', () => {
+    mount();
+    pickMode('blind');
 
     expect(bansPerPlayerInput()?.value).toBe('1');
   });
@@ -368,11 +390,28 @@ describe('the Duplicate bans control', () => {
     pickMode('snake');
     expect(duplicateWrapper()?.getAttribute('aria-disabled')).toBe('true');
 
-    // `blind` is a disabled OPTION, so the click cannot come from the control. The host's
-    // route back is `hostBanlist`, which unmounts the whole thing — a stronger shed than the
-    // attribute clearing, and the one a host can actually reach today.
-    pickMode('hostBanlist');
-    expect(duplicateWrapper()).toBeNull();
+    // Now that `blind` is selectable this is the real route — snake to blind, on the control
+    // itself, which is the switch WR-04 is actually about. `hostBanlist` unmounts the whole
+    // group and would pass against an implementation that never clears anything.
+    pickMode('blind');
+    expect(duplicateWrapper()).not.toBeNull();
+    expect(duplicateWrapper()?.hasAttribute('aria-disabled')).toBe(false);
+    expect(duplicateWrapper()?.querySelector('.config-screen__inert-reason')).toBeNull();
+  });
+
+  /**
+   * The snake inert reason applies to SNAKE only. Blind is the mode the duplicate policy
+   * exists for — a collision is only possible when nobody can see the previous bans — so
+   * the control has to be live the moment a host picks it.
+   */
+  it('is a live control at blind, and takes a click on its one built option', () => {
+    mount();
+    pickMode('blind');
+
+    const bothApply = radiosNamed('duplicate-bans').find((radio) => radio.value === 'bothApply');
+    expect(bothApply).toBeDefined();
+    expect(bothApply?.disabled).toBe(false);
+    expect(bothApply?.checked).toBe(true);
   });
 
   /** The separator is markup and `aria-hidden`, so the copy constant, the source constant and
@@ -443,6 +482,35 @@ describe('starting from the config screen', () => {
       'draft/started',
     ]);
     expect(getDoc()?.config.banMode).toBe('snake');
+    expect(getDoc()?.config.bansPerPlayer).toBe(2);
+    expect(getState()?.poolIds).toEqual([]);
+  });
+
+  /**
+   * The same seam, reached by the mode that has never been reachable before. `handleStart`
+   * gains no branch for it: `hasPlayerBans` is `banMode !== 'hostBanlist'`, so blind takes
+   * the route snake already takes, and that is asserted rather than assumed.
+   */
+  it('opens a blind tournament at a ban stage, on the same seam snake uses', () => {
+    let started = false;
+    mount(() => {
+      started = true;
+    });
+
+    nameEveryPlayer();
+    pickMode('blind');
+    typeInto(bansPerPlayerInput() as HTMLInputElement, '2');
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    expect(started).toBe(true);
+    expect(getDoc()?.log.map((action) => action.type)).toEqual([
+      'schedule/compiled',
+      'draft/started',
+    ]);
+    expect(getDoc()?.config.banMode).toBe('blind');
     expect(getDoc()?.config.bansPerPlayer).toBe(2);
     expect(getState()?.poolIds).toEqual([]);
   });
