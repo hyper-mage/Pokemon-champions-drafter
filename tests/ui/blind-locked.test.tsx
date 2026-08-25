@@ -355,3 +355,54 @@ describe('assertion S7 — the live region is emptied on entering this state', (
     expect(ROSTER_NAMES.filter((name) => spoken.includes(name))).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Assertion S2, one rung up — the props of the SCREEN, not just of the board
+// ---------------------------------------------------------------------------
+
+/**
+ * These two assertions compile rather than run, exactly as `ban-board.test.tsx`'s do.
+ *
+ * `BanBoard`'s union makes its blind ARM incapable of holding a species. It does not stop a
+ * caller mounting the PUBLIC arm during the blind stage, which is a legitimate configuration
+ * for snake and would be a total disclosure here — 04-08's summary hands that gap forward in
+ * as many words. This component is where it closes: `BlindLockedProps` has no field that
+ * could carry a species or a sprite, so the public arm cannot be fed from inside it, and the
+ * screen above it has nowhere to pass one either.
+ *
+ * `esbuild` strips types, so `vitest` sees nothing here. `tsc --noEmit` checks it and
+ * `npm run build` runs that first, so widening these props turns each directive into an
+ * unused-directive error and fails the build on the file that explains why.
+ */
+describe('the props cannot carry a species, and that is the guarantee', () => {
+  it('refuses a species id smuggled onto a progress row', () => {
+    act(() => {
+      render(
+        <BlindLocked
+          {...propsWith({ entered: 1 })}
+          rows={[
+            // @ts-expect-error — a progress row is a name and a boolean. If this ever
+            // compiles, the locked state can hold a species and S3 is no longer structural.
+            { playerName: 'Ada', entered: true, monIds: ['venusaur'] },
+          ]}
+        />,
+        host,
+      );
+    });
+
+    expect(text('.blind-locked__progress')).toBe('1 of 6 entered');
+  });
+
+  it('refuses sprite metadata, which only a species-rendering surface needs', () => {
+    act(() => {
+      render(
+        // @ts-expect-error — `spriteMeta` is the public board's prop. Nothing on this screen
+        // renders a species, so nothing on this screen takes the metadata for drawing one.
+        <BlindLocked {...propsWith({ entered: 1 })} spriteMeta={{ byRosterId: {} }} />,
+        host,
+      );
+    });
+
+    expect(text('.blind-locked__progress')).toBe('1 of 6 entered');
+  });
+});
