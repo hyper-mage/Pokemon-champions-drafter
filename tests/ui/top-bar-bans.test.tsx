@@ -307,7 +307,7 @@ describe('row 3 — blind, before bans/revealed', () => {
     await resumeSaved();
 
     const rendered = host.textContent ?? '';
-    expect(rendered).toContain('0 of 2 entered');
+    expect(rendered).toContain('1 of 2 entered');
     for (const name of ['Mon 5', 'Mon 6', 'Mon 7']) {
       expect(rendered).not.toContain(name);
     }

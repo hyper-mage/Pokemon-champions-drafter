@@ -345,6 +345,8 @@ function mountStage(): { calls: { playerId: string; monId: string; pass: number 
         topBar={TOP_BAR}
         storedPane="split"
         onPaneChange={() => undefined}
+        // Snake has no reveal in its ritual, so the snake arm never calls this.
+        onReveal={() => undefined}
         onPlaceBan={(playerId, monId, pass) => {
           calls.push({ playerId, monId, pass });
         }}
@@ -521,6 +523,7 @@ function LiveStage({
       topBar={TOP_BAR}
       storedPane={storedPane}
       onPaneChange={onPaneChange}
+      onReveal={() => undefined}
       onPlaceBan={(playerId, monId, pass) => {
         dispatch(bansPlaced(playerId, monId, pass));
         bump((count) => count + 1);
@@ -997,6 +1000,25 @@ function startBlindStage(
   return config;
 }
 
+/**
+ * Seal every player's allotment, each a distinct pair.
+ *
+ * `canApply`'s `wrongBanCount` refuses a submission that is not exactly `bansPerPlayer`
+ * long, so a fixture that submitted one id would be testing the refusal rather than the
+ * screen. The pairs are disjoint so no collision is in play either — that is 04-11's
+ * subject, not this one's.
+ */
+function submitEveryAllotment(config: TournamentConfig): void {
+  config.players.forEach((player, index) => {
+    dispatch(
+      bansSubmitted(player.id, [
+        rosterEntryAt(index * 2).id,
+        rosterEntryAt(index * 2 + 1).id,
+      ]),
+    );
+  });
+}
+
 function lockedText(selector: string): string | null {
   return host.querySelector(selector)?.textContent?.trim() ?? null;
 }
@@ -1063,10 +1085,7 @@ describe('BanStageScreen at the blind locked stage', () => {
   });
 
   it('offers the reveal once every player has submitted, and never before', () => {
-    const config = startBlindStage(2);
-    for (const player of config.players) {
-      dispatch(bansSubmitted(player.id, [rosterEntryAt(0).id]));
-    }
+    submitEveryAllotment(startBlindStage(2));
     mountBlindStage();
 
     expect(lockedText('.blind-locked__headline')).toBe('All bans are in');
@@ -1079,10 +1098,7 @@ describe('BanStageScreen at the blind locked stage', () => {
    * the only shape that catches an effect somebody adds later.
    */
   it('reveals on a tap and never on a render', () => {
-    const config = startBlindStage(2);
-    for (const player of config.players) {
-      dispatch(bansSubmitted(player.id, [rosterEntryAt(0).id]));
-    }
+    submitEveryAllotment(startBlindStage(2));
 
     let reveals = 0;
     mountBlindStage({ onReveal: () => (reveals += 1) });

@@ -254,38 +254,29 @@ const SWAP_ROUNDS_HELPER =
   'Each swap round gives every player one chance to swap or pass. 0 means the draft ends with the last pick.';
 
 /**
- * The three ban modes — BAN-01, D-12. All three render; two are refused.
+ * The three ban modes — BAN-01, D-12. All three render and **all three are now selectable.**
  *
- * ## The two unavailable options take the native attribute AND the ARIA one
+ * ## D-12's promised payoff, paid in full
  *
- * This is deliberately UNLIKE `FeasibilityBar`'s `Start draft`, which carries the ARIA state
- * alone so it stays focusable. Do not "fix" either of them into agreement with the other.
+ * `BanMode` has carried all three values since 02-02, so Phase 4 enabled two options rather
+ * than redesigning the control and migrating every saved tournament. 04-05 took the suffix
+ * and the `disabled` flag off `snake`; 04-09 took them off `blind` once its locked state
+ * existed to land on. Neither change moved anything else about this control, which is what
+ * shipping an unbuilt mode as a disabled member of a real control was for.
  *
- * `Start draft`'s reason is COMPUTED, changes on every keystroke, and lives in a separate
- * status element that only a focusable control can point at. These two carry a reason that
- * is static and sits INSIDE the option's own accessible name — the visible suffix below,
- * which 02-UI-SPEC §2 specifies and which `SegmentedControl` was built to accept from the
- * caller rather than synthesize. A natively disabled radio is still in the accessibility
- * tree and still announces that name, so nothing is lost by refusing the click outright.
+ * A mode is enabled only once the surfaces behind it exist — enabling one earlier routes a
+ * host to a screen with nothing on it and no way back (T-04-21), which is why these two
+ * moves were sequenced rather than made together.
  *
- * ## Why the values exist in the model today
+ * ## The suffix mechanism is still live, one control down
  *
- * `BanMode` already carries all three (02-02), so Phase 4 enables two options rather than
- * redesigning the control and migrating every saved tournament. This is D-12's promised
- * payoff arriving: `snake` loses its suffix and its `disabled` flag in a one-line change,
- * and nothing else about the control moves.
- *
- * ## `blind` stays disabled in THIS plan, and that is sequencing rather than oversight
- *
- * 04-UI-SPEC §1 enables both new modes; 04-05 enables only `snake`, because a mode is only
- * selectable once the surfaces it lands on exist. Blind's resting `locked` state is 04-09 and
- * its shield is 04-10, so enabling it here would route a host to a screen with nothing on it
- * and no way back — T-04-21. 04-09 flips this line in the same one-line move `snake` just
- * took.
+ * No member here carries it any more, but `DUPLICATE_POLICY_OPTIONS` does: BAN-07 is
+ * partial by D-19 and its `Re-ban` member ships disabled. The reasoning for the shape lives
+ * there now, because that is where the last unbuilt option is.
  */
 const BAN_MODE_OPTIONS: readonly SegmentedOption<BanMode>[] = [
   { value: 'hostBanlist', label: 'Host banlist' },
-  { value: 'blind', label: 'Blind — Not yet available', disabled: true },
+  { value: 'blind', label: 'Blind' },
   { value: 'snake', label: 'Snake' },
 ];
 
@@ -335,16 +326,28 @@ const DUPLICATE_BANS_SNAKE_REASON =
  * bumping the schema to carry what it writes. It is the same move Phase 2's D-12 made for
  * blind and snake themselves, and the line above is that move paying out.
  *
- * The suffix below carries a CAPITAL `N`, matching the shipped form at `BAN_MODE_OPTIONS`
- * above. D-19's own text renders it lowercase while also requiring the established label form
- * be reused exactly; the two cannot both be met literally, and two casings of one label form
- * IS the second way of saying it that D-19 exists to prevent. 04-UI-SPEC §A conflict in the
- * upstream instructions records the resolution. The string is written once, in `label` — a
- * comment restating it would be the third copy and the first one free to drift.
+ * The suffix below carries a CAPITAL `N`, which is the form `BAN_MODE_OPTIONS` shipped for
+ * both of its own unbuilt members before 04-05 and 04-09 enabled them. **This is now the
+ * only place in the file that carries it**, so the form it matches is a historical one
+ * rather than a live sibling — recorded here because the reference above it is gone and the
+ * next reader would otherwise have nothing to check the casing against. D-19's own text
+ * renders it lowercase while also requiring the established label form be reused exactly;
+ * the two cannot both be met literally, and two casings of one label form IS the second way
+ * of saying it that D-19 exists to prevent. 04-UI-SPEC §A conflict in the upstream
+ * instructions records the resolution. The string is written once, in `label` — a comment
+ * restating it would be the third copy and the first one free to drift.
  *
- * `SegmentedControl` applies both `disabled` and `aria-disabled` for a static reason and does
- * not synthesize copy, so the visible suffix belongs here in `label` — which also puts the
- * reason inside the option's own accessible name.
+ * ## The refused option takes the native attribute AND the ARIA one
+ *
+ * This is deliberately UNLIKE `FeasibilityBar`'s `Start draft`, which carries the ARIA state
+ * alone so it stays focusable. Do not "fix" either of them into agreement with the other.
+ *
+ * `Start draft`'s reason is COMPUTED, changes on every keystroke, and lives in a separate
+ * status element that only a focusable control can point at. This one carries a reason that
+ * is static and sits INSIDE the option's own accessible name — the visible suffix below,
+ * which 02-UI-SPEC §2 specifies and which `SegmentedControl` was built to accept from the
+ * caller rather than synthesize. A natively disabled radio is still in the accessibility
+ * tree and still announces that name, so nothing is lost by refusing the click outright.
  */
 const DUPLICATE_POLICY_OPTIONS: readonly SegmentedOption<DuplicateBanPolicy>[] = [
   { value: 'bothApply', label: 'Both apply, one is spent' },

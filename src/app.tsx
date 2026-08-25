@@ -27,6 +27,7 @@ import { claimOwnership, disposeTabLock, notifyAbandoned } from './adapters/tab-
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
 import {
   bansPlaced,
+  bansRevealed,
   cardsPlayed,
   orderResolved,
   pickMade,
@@ -1579,6 +1580,40 @@ export function App() {
   }, []);
 
   /**
+   * The blind reveal — BAN-04, D-08, D-13.
+   *
+   * ## It is MATERIALIZED, not an instruction to re-derive
+   *
+   * The payload carries the attributed lists themselves rather than "reveal what was
+   * submitted" (ARCHITECTURE Pattern 5). The reveal is a host act at a point in the log, and
+   * a build that re-derived it would be free to disagree about which submissions were in it
+   * after an undo — which is the one moment the room is watching the screen together.
+   *
+   * ## In STARTING order, and assembled here rather than in the screen
+   *
+   * `banSubmissions` is in LOG order, which is the order the host happened to type them. The
+   * reveal reads down the starting order like every other list in the phase, so the mapping
+   * is over `state.order` and the submission is looked up by `playerId`. It lives at the
+   * composition root because this is the layer that owns `dispatch` — `BanStageScreen`
+   * reports the tap and carries no payload at all, so it cannot become a second opinion
+   * about what was revealed.
+   *
+   * `getState()` rather than the render's `state`: the tap is an event, and the document at
+   * the moment of the tap is the one being revealed.
+   */
+  const handleRevealBans = useCallback(() => {
+    const current = getState();
+    if (current === null) return;
+
+    const bans = current.order.map((playerId) => ({
+      playerId,
+      monIds: current.banSubmissions.find((entry) => entry.playerId === playerId)?.monIds ?? [],
+    }));
+
+    dispatch(bansRevealed(bans));
+  }, []);
+
+  /**
    * Hand focus to the pool grid's first cell when the card panel has just unmounted.
    *
    * The same shape `SplitPanes` uses for the expand that removes the button that was
@@ -2097,6 +2132,7 @@ export function App() {
               onRequestAbandon: handleRequestAbandon,
               bannedNames,
             }}
+            onReveal={handleRevealBans}
             // The STORED preference, uncoerced. `pane` below coerces against the DRAFT's
             // availability, which tracks `selectPhase` — and `selectPhase` answers `'cards'`
             // at a ban stage. Amendment 2's coercion is the stage's own and lives there.

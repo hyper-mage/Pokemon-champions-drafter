@@ -304,16 +304,41 @@ describe('the ban mode control', () => {
     ]);
   });
 
+  /**
+   * The mechanism, retargeted rather than deleted.
+   *
+   * This case was written against `blind` while `blind` was refused, and every ban mode is
+   * now selectable — so the only refused option left on this screen is `Re-ban` in the
+   * duplicate-policy control (BAN-07 is partial by D-19). The rule it guards is unchanged
+   * and is the reason a disabled member is safe to ship: a click on one must leave the
+   * selection exactly where it was, rather than merely LOOKING greyed while writing a
+   * policy nothing implements into a saved tournament.
+   *
+   * `config-bans.test.tsx` owns that member's attributes and its label; this owns what a
+   * click does, which is the half neither an attribute assertion nor a screenshot covers.
+   */
   it('leaves the selection alone when a refused option is clicked', () => {
     mountScreen();
 
-    const [hostBanlist, blind] = banModeInputs();
+    // The duplicate-policy control is not rendered at `hostBanlist` — there are no player
+    // bans in that mode — and at `snake` the whole group is inert. `blind` is the mode it
+    // exists for, and it is reachable for the first time here.
+    const [, blind] = banModeInputs();
     act(() => {
       host.querySelector<HTMLLabelElement>(`label[for="${blind?.id ?? ''}"]`)?.click();
     });
+    expect(blind?.checked).toBe(true);
 
-    expect(hostBanlist?.checked).toBe(true);
-    expect(blind?.checked).toBe(false);
+    const policies = [...host.querySelectorAll<HTMLInputElement>('input[name="duplicate-bans"]')];
+    const [bothApply, reBan] = policies;
+    expect(reBan?.disabled).toBe(true);
+
+    act(() => {
+      host.querySelector<HTMLLabelElement>(`label[for="${reBan?.id ?? ''}"]`)?.click();
+    });
+
+    expect(bothApply?.checked).toBe(true);
+    expect(reBan?.checked).toBe(false);
   });
 
   it('is a native radio group, not a hand-rolled one', () => {
