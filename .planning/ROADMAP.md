@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Draft Skeleton on a Real URL** - Deployed, offline-capable two-player draft on the real Champions roster with undo, autosave, and working export (completed 2026-08-06)
 - [x] **Phase 2: Host-Configured Draft Night** - A real group drafts on one shared screen: config, N players, pool, host banlist, board, feasibility gate (completed 2026-08-12)
 - [x] **Phase 3: Compiled Rules, Priority Cards, Swaps** - Composition requirements compile into a typed round schedule; cards decide turn order, swaps respect slot constraints (completed 2026-08-19)
-- [ ] **Phase 4: Blind and Snake Bans** - The ban ritual on one shared screen, with a real pass-the-device flow that cannot leak
+- [x] **Phase 4: Blind and Snake Bans** - The ban ritual on one shared screen, with a real pass-the-device flow that cannot leak (completed 2026-08-25)
 - [ ] **Phase 5: Full Tournament — Brackets, Standings, Archive** - Round robin, seeded cut, single elim, match records, recap, and roster refresh across a regulation rotation
 
 ## Phase Details
@@ -275,7 +275,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 04-11-PLAN.md — the reveal, collisions, RULE-08's re-check, D-23's separate pool draw, and the three-metre human pass (BAN-04, BAN-07, RULE-08) — **checkpoint, not autonomous**. Tasks 1 and 2 built, committed and green (`04-11-SUMMARY.md`); **task 3's blocking human pass is outstanding** and `04-HUMAN-UAT.md` is pre-filled and pending.
+- [x] 04-11-PLAN.md — the reveal, collisions, RULE-08's re-check, D-23's separate pool draw, and the three-metre human pass (BAN-04, BAN-07, RULE-08) — **checkpoint, not autonomous**. Tasks 1 and 2 built, committed and green (`04-11-SUMMARY.md`); **task 3's blocking human pass is outstanding** and `04-HUMAN-UAT.md` is pre-filled and pending.
 
 **UI hint**: yes
 **Notes**: Research need MEDIUM and it is a UX problem, not a technical one — the nearest precedents are party apps (Werewolf, Mafia, Spy) and tabletop games, not draft tools; no surveyed Pokémon draft tool attempts bans at all. This needs an actual playtest with the target group. The back-button leak (BAN-06) is a bfcache / `pageshow` guard and is easy to get silently wrong. Host banlist mode already shipped in Phase 2 and already unblocked the compiler's Mega-ban list, which is why this phase can sit this late without holding anything up.
@@ -308,7 +308,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Draft Skeleton on a Real URL | 11/11 | Complete   | 2026-08-06 |
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
-| 4. Blind and Snake Bans | 10/11 | In Progress — 04-11 paused at its blocking human pass |  |
+| 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
 | 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
 
 ## Requirement Coverage
