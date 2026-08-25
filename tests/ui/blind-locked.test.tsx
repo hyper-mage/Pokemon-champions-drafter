@@ -60,7 +60,7 @@ function propsWith(overrides: Partial<BlindLockedProps> = {}): BlindLockedProps 
 
   return {
     rows: rowsWith(entered),
-    nextPlayerName: entered >= TOTAL ? null : NAMES[entered],
+    nextPlayerName: entered >= TOTAL ? null : (NAMES[entered] ?? null),
     entered,
     total: TOTAL,
     discardedPlayerName: null,

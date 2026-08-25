@@ -1,0 +1,99 @@
+/*
+ * BlindLocked — the blind stage's resting state, and the plainest panel in the project.
+ *
+ * Tokens only: no raw hex and no raw length. No :focus rule — the global accent ring in
+ * app.css covers every focusable element.
+ *
+ * ONE accent fill, on the primary action, which is accent's second reserved use
+ * (04-UI-SPEC §Accent reserved for). Nothing else on this screen competes with it, because
+ * nothing else on this screen is a control.
+ *
+ * ## Nothing here moves, and that is a secrecy rule rather than a taste
+ *
+ * 04-UI-SPEC S9 makes arriving at this state from the entry surface a hard motion
+ * prohibition at any duration. A fade or a cross-dissolve leaves the roster and the
+ * selection readable for its whole length — a leak measured in frames. 04-10 owns the
+ * change-over itself, but a motion rule declared on this component's own class would defeat
+ * that guarantee from the other end, so this stylesheet declares none.
+ */
+
+.blind-locked {
+  display: flex;
+  flex-direction: column;
+  /* The gap between the blocks — progress, discard notice, sub-heading, board, action. */
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+/*
+ * DRFT-14 assertion 13: the headline renders at --text-display, the largest size the
+ * project has. It is the one thing a room reads without walking towards the screen, and
+ * --space-6 above and below is what stops the panel reading as a form.
+ */
+.blind-locked__headline {
+  margin: var(--space-6) 0;
+  font: var(--text-display);
+  color: var(--color-text);
+  text-align: center;
+}
+
+/*
+ * Muted, and DELIBERATELY quieter than the headline. The count is the second thing read
+ * and it is read from the same distance; --text-body is assertion 15's floor and this
+ * clears it.
+ */
+.blind-locked__progress {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/*
+ * The discard notice is NOT muted. It says something happened, where the line above it says
+ * where the room has got to, and a host who just hid the screen needs to see that the entry
+ * was thrown away rather than half-kept.
+ */
+.blind-locked__discard {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+  text-align: center;
+}
+
+.blind-locked__sub-heading {
+  margin: 0;
+  font: var(--text-heading);
+  color: var(--color-text);
+}
+
+/*
+ * The one accent-filled control on this screen — accent's second reserved use, one per
+ * screen. --target-min in BOTH axes: the height is set here and the horizontal padding
+ * carries the width past it for every label this button can hold.
+ */
+.blind-locked__action {
+  align-self: center;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--hairline-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+/*
+ * Under the button rather than above it, because it is about the tap the host is deciding
+ * whether to make. Muted, so the button stays the thing the eye lands on.
+ */
+.blind-locked__reveal-helper {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text-muted);
+  text-align: center;
+}
