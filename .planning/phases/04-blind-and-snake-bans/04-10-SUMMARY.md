@@ -378,6 +378,9 @@ Created files present on disk: `src/adapters/ban-shield.ts`, `src/ui/components/
 
 All five commits reachable from `HEAD`: `e6c0b6e`, `28cdab5`, `2448683`, `040e297`, `992bdc2`.
 
+**Self-Check: PASSED.** All five created files present on disk, all five task commits present in
+`git log` against the plan's base `cf55800`, and the working tree is clean.
+
 ---
 *Phase: 04-blind-and-snake-bans*
 *Completed: 2026-08-25*
