@@ -25,15 +25,16 @@ See: .planning/PROJECT.md (updated 2026-08-03)
 
 ## Current Position
 
-Phase: 5
+Phase: 5 (full-tournament — brackets, standings, archive) — not started
 Plan: Not started
-Next: 04-11 task 3 — the blocking three-metre human pass. Nothing else in the phase is
-      outstanding; every other plan is complete and `npm run verify` exits 0.
-Status: Ready to plan
-        `.planning/phases/04-blind-and-snake-bans/04-HUMAN-UAT.md`, which is pre-filled.
-Last activity: 2026-08-26
+Next: `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
+Status: Ready to plan. Phase 4 is complete and verified — 11/11 plans, 4/4 success criteria,
+        verification `passed`, and the three-metre human pass approved on a ~24" 1080p screen
+        (`04-HUMAN-UAT.md`, status complete, 4 passed / 0 issues). BAN-07 ships Partial by
+        owner decision D-19: `bothApply` is built, the `Re-ban` arm is present but disabled.
+Last activity: 2026-08-26 -- Phase 04 complete
 
-Progress: [█████████████████░░░] 46/47 plans (4 of 5 phases, phase 4 one human pass short)
+Progress: [████████████████████] 47/47 plans (4 of 5 phases complete)
 
 **Sequencing note (2026-08-20).** ROADMAP's execution order is 1→5, but Phase 5 depends only on
 Phase 3 and its own entry says it is "independent of Phase 4 and buildable before it." Phase 5
