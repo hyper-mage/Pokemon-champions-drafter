@@ -83,18 +83,22 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **RULE-05**: Compiled rounds type the resulting team slots, so a slot's constraint survives swaps
 - [x] **RULE-06**: Host can reorder the derived round schedule
 - [ ] **RULE-07**: A feasibility check runs at config time and disables Start with a stated reason when the rules, player count, bans, and roster cannot all be satisfied
-- [ ] **RULE-08**: Feasibility is re-checked after the ban reveal, since bans change the arithmetic
+- [x] **RULE-08**: Feasibility is re-checked after the ban reveal, since bans change the arithmetic
 - [x] **RULE-09**: Mega-round feasibility enforces `players × megaRounds ≤ megaCapableSpecies − megaBans`
 
 ### Bans
 
 - [ ] **BAN-01**: Host selects the ban mode at config time — blind, snake, or host banlist
 - [ ] **BAN-02**: Host banlist mode lets the host exclude Pokémon directly, with no per-player bans
-- [ ] **BAN-03**: Snake mode runs bans in turn order with previous bans visible
-- [ ] **BAN-04**: Blind mode collects each player's bans privately and reveals them together
-- [ ] **BAN-05**: Blind mode uses a full-screen pass-the-device interstitial, not an input mask
-- [ ] **BAN-06**: Returning via the back button cannot resurrect a private ban screen
+- [x] **BAN-03**: Snake mode runs bans in turn order with previous bans visible
+- [x] **BAN-04**: Blind mode collects each player's bans privately and reveals them together
+- [x] **BAN-05**: Blind mode uses a full-screen pass-the-device interstitial, not an input mask
+- [x] **BAN-06**: Returning via the back button cannot resurrect a private ban screen
 - [ ] **BAN-07**: Host selects the duplicate-ban policy at config time — both apply with one wasted, or a collision grants a re-ban
+      — **PARTIAL (Phase 4).** `bothApply` is built and shipped. The `Re-ban` arm is deliberately unbuilt per
+      owner decision D-19: the option ships present-but-disabled (`Re-ban — Not yet available`) so a later
+      milestone enables a control rather than adding one plus a schema bump. Do not score ROADMAP Phase 4
+      success criterion 4 green on the re-ban clause.
 - [ ] **BAN-08**: Banned Pokémon never appear in the pool at all
 
 ### Swaps
@@ -247,15 +251,15 @@ Which phases cover which requirements. Populated during roadmap creation.
 | RULE-05 | Phase 3 | Complete |
 | RULE-06 | Phase 3 | Complete |
 | RULE-07 | Phase 2 | Complete |
-| RULE-08 | Phase 4 | Pending |
+| RULE-08 | Phase 4 | Complete |
 | RULE-09 | Phase 3 | Complete |
 | BAN-01 | Phase 2 | Complete |
 | BAN-02 | Phase 2 | Complete |
-| BAN-03 | Phase 4 | Pending |
-| BAN-04 | Phase 4 | Pending |
-| BAN-05 | Phase 4 | Pending |
-| BAN-06 | Phase 4 | Pending |
-| BAN-07 | Phase 4 | Pending |
+| BAN-03 | Phase 4 | Complete |
+| BAN-04 | Phase 4 | Complete |
+| BAN-05 | Phase 4 | Complete |
+| BAN-06 | Phase 4 | Complete |
+| BAN-07 | Phase 4 | Partial |
 | BAN-08 | Phase 2 | Complete |
 | SWAP-01 | Phase 3 | Complete |
 | SWAP-02 | Phase 3 | Complete |

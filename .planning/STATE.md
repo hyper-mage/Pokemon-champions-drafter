@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 04 plan 11 — blocking human-verify checkpoint (the three-metre pass)
-last_updated: "2026-08-25T00:00:00.000Z"
+status: ready_to_plan
+stopped_at: Phase 04 complete (11/11) — ready to discuss Phase 5
+last_updated: 2026-08-26T01:45:51.143Z
 last_activity: 2026-08-25 -- Phase 04 plan 11 built; paused at its blocking human pass
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 47
-  completed_plans: 46
-  percent: 87
+  completed_plans: 47
+  percent: 60
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** A group of friends can run an entire draft tournament — rules, bans, picks, swaps, brackets, results — start to finish inside the tool, without anyone reaching for a spreadsheet or a Discord message to track state.
-**Current focus:** Phase 04 — blind-and-snake-bans
+**Current focus:** Phase 5 — full tournament — brackets, standings, archive
 
 ## Current Position
 
-Phase: 04 (blind-and-snake-bans) — EXECUTING, PAUSED AT A CHECKPOINT
-Plan: 11 of 11
+Phase: 5
+Plan: Not started
 Next: 04-11 task 3 — the blocking three-metre human pass. Nothing else in the phase is
       outstanding; every other plan is complete and `npm run verify` exits 0.
-Status: Awaiting the developer's physical pass. Record the verdict per item in
+Status: Ready to plan
         `.planning/phases/04-blind-and-snake-bans/04-HUMAN-UAT.md`, which is pre-filled.
-Last activity: 2026-08-25 -- Phase 04 plan 11 built; paused at its blocking human pass
+Last activity: 2026-08-26
 
 Progress: [█████████████████░░░] 46/47 plans (4 of 5 phases, phase 4 one human pass short)
 
@@ -47,7 +47,7 @@ session the one outstanding UAT item needs. Not decided; recorded so the choice 
 
 **Velocity:**
 
-- Total plans completed: 36
+- Total plans completed: 47
 - Average duration: — (only 2 of 36 plans were timed)
 - Total execution time: not tracked
 
