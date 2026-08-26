@@ -42,10 +42,26 @@ files_reviewed_list:
   - src/ui/screens/ConfigScreen.tsx
 findings:
   critical: 0
+  warning: 0
+  info: 0
+  total: 0
+resolved:
+  critical: 0
   warning: 2
   info: 1
   total: 3
-status: issues_found
+  commits:
+    - id: WR-01
+      commit: a603e55
+      summary: "fix(04-12): give the blind entry surface its own full-screen shell"
+    - id: IN-01
+      commit: a603e55
+      summary: "Fixed with WR-01 — the stale BlindEntry.css contract comment is true once the surface escapes .app-shell"
+    - id: WR-02
+      commit: 032e4fa
+      summary: "fix(04-12): stop a teardown's queued Back discarding the next entry"
+status: resolved
+resolved_at: 2026-08-25
 ---
 
 # Phase 4: Code Review Report
@@ -84,9 +100,23 @@ contract. Both hold up well:
 Two real defects were found, both about the blind entry surface's actual rendered
 behaviour rather than about secrecy. Neither leaks a species name or a player's ban.
 
+**Both are now resolved, as two separate commits, and the Info item went with the first:**
+
+| Finding | Commit | Status |
+|---------|--------|--------|
+| WR-01 — the entry surface is not actually full-screen | `a603e55` | ✅ Resolved |
+| IN-01 — `BlindEntry.css`'s contract comment is inaccurate | `a603e55` | ✅ Resolved |
+| WR-02 — the queued `history.back()` can discard the next entry | `032e4fa` | ✅ Resolved |
+
+`npm run verify` exits 0 at `032e4fa`: `check:pure` and `check:nohtml` both report zero
+violations, 61 test files / 2040 tests pass, `tsc` is clean on both projects, and `vite build`
+plus the service-worker manifest (322 URLs) both succeed. The per-finding accounts below are
+left in full — what was wrong is worth keeping alongside what was done about it — each with a
+`**Resolved**` block appended.
+
 ## Warnings
 
-### WR-01: The blind entry surface is not actually full-screen — it renders inside `.app-shell`'s 1200px, padded, centred column
+### WR-01 ✅ RESOLVED (`a603e55`): The blind entry surface is not actually full-screen — it renders inside `.app-shell`'s 1200px, padded, centred column
 
 **File:** `src/app.tsx:2105-2119`, `src/ui/components/BlindEntry.css:31-44`, `src/ui/screens/BanStageScreen.tsx:744-755`
 
@@ -155,7 +185,41 @@ one wrapper per shell state and does not require exposing `entering` outside
 `screen.name === 'bans'` and let `BanStageScreen` itself decide, per arm, which shell
 (if any) surrounds its content.
 
-### WR-02: `ban-shield.ts`'s sentinel history entry assumes `history.back()` resolves before the next `installBanShield()` call, and nothing guards against the browser's asynchronous `popstate`
+**Resolved in `a603e55` — and NOT by the route suggested immediately above.**
+
+The sibling render was the obvious fix and it is the wrong one. The `inert` attribute lives
+on that wrapper. An earlier plan deliberately moved the landing and config screens *inside*
+it because a secondary tab could otherwise build a whole rival tournament (T-04-20), and the
+entry surface is the most interactive screen the phase has — a typeahead, a 235-cell grid and
+a lock-in that writes to the document. Rendering it beside the gate would look identical on
+screen and hand a read-only tab a live ban screen: the same hole, with a secrecy problem
+stapled to it. The paragraph above underweighted that, and the fix takes the other option.
+
+What shipped instead:
+
+- **A fourth arm on the shell expression**, emitting a new `.entry-shell` class — full-bleed,
+  no `max-width`, no `margin-inline` and **no padding**. The last one is not tidiness: the
+  surface declares one viewport of height, and page padding stacks on top of that height
+  rather than inside it, which is exactly the unintended page scroll this finding describes.
+- **`BanStageScreen` reports the entry sub-state upward as a BOOLEAN**, from a
+  `useLayoutEffect` keyed on `entering`. This finding correctly observed that `app.tsx` could
+  not see the sub-state; one boolean is what it needs and all it gets. Who is entering and
+  what they have chosen stay in the component, because D-18 requires the in-progress selection
+  to die with it. Layout rather than passive so the class flips in the same commit that mounts
+  the surface — a passive effect would paint this bug for exactly one frame — and the flag is
+  cleared on unmount so an abandon mid-entry cannot leave it set.
+- **The surface stays under the gate**, which is now asserted rather than assumed.
+
+Two cases in `tests/ui/read-only-shell.test.tsx` (`describe('the shell over the blind entry
+surface')`) close the "no test asserts the shell class for the entering state either" half of
+this finding. They are a deliberate pair and neither is sufficient alone: the first says the
+surface escapes `.app-shell`, which the sibling render would also satisfy; the second says it
+is still under the gate, which the shipped bug already satisfied. Both were proved able to
+fail — reverting the shell arm breaks the first, and moving the ban stage outside the gate
+breaks all three ban-stage containment cases in that file. Neither touches the locked or
+reveal states, so 04-09 stays the only authority on those.
+
+### WR-02 ✅ RESOLVED (`032e4fa`): `ban-shield.ts`'s sentinel history entry assumes `history.back()` resolves before the next `installBanShield()` call, and nothing guards against the browser's asynchronous `popstate`
 
 **File:** `src/adapters/ban-shield.ts:95-169`
 
@@ -202,9 +266,69 @@ for that identity — though the object-identity check in the current design alr
 that half; what is missing is a guard against a stale back() being *misread as belonging to
 the new installation* on the way in.
 
+**Resolved in `032e4fa`.** The last sentence above is the correct diagnosis, and the fix is
+aimed at it directly rather than at the unique-token variant offered first — a per-install
+token would let the new installation *notice* the sentinel is not its own, but it would still
+have to decide what to do about the `popstate` that is coming, which is the actual question.
+
+`ban-shield.ts` gains one module-level flag, `consumeInFlight`. Teardown raises it **before**
+it calls `history.back()`, so the record of the request exists from the moment the request is
+made rather than from the moment it lands. An installation that ADOPTS a sentinel while that
+flag is set owes exactly one `popstate` to the outstanding request: it swallows that one
+instead of calling `onLock`, and re-pushes a sentinel of its own so the player it is guarding
+still has somewhere for their own Back to land — without that re-push the fix would hand every
+player after the first the 04-11 defect this adapter exists to close.
+
+It **closes** the window rather than narrowing it, and the distinction is the point of the
+finding: nothing in the guard reads a clock, a duration or an elapsed ordering, so it holds
+whether the browser resolves the traversal in one millisecond or five hundred, and it cannot
+be defeated by removing the human pause between two entries — the auto-advance, scripted demo
+and fast double-tap cases this finding names as what would make the race reachable.
+
+Two mirrors keep it from becoming the same bug with the sign flipped:
+
+- An installation that **pushed** its own sentinel owes nothing, so the flag cannot leak into
+  a later, unrelated entry and eat that player's real Back. A plain "ignore one `popstate`
+  after any teardown" flag would have shipped exactly that.
+- A teardown still holding an unpaid swallow declines to ask for a second traversal. Spending
+  one sentinel twice would traverse past the entry surface's own entry and out of the
+  application.
+
+Two cases were added to `tests/adapters/ban-shield.test.ts`, both RED against the unfixed
+adapter — `locksB` was 1 where it must be 0, and two traversals were requested where one is
+correct. happy-dom traverses synchronously, so the suite gains a `queueTraversals` helper that
+captures `history.back()` and releases it by hand: it reproduces the real browser's ORDERING,
+which is the only thing standing between the test and this defect. Then, holding 04-10's and
+04-11's standard, five mutations of the shipped fix were each run against the suite and
+reverted:
+
+| Mutation | Cases broken |
+|----------|--------------|
+| Swallow removed — *this finding's defect, reconstructed* | 1 |
+| Swallow keeps no sentinel (no re-push) | 1 |
+| Teardown spends an adopted, still-outstanding sentinel again | 1 |
+| Every adoption owes a swallow (the over-broad form) | 1 |
+| Install never clears the flag | 1 |
+
+The last two break the **pre-existing** orphan-adoption case rather than a new one, which is
+what shows the guard is not over-broad. A sixth mutation — raising the flag on the line *after*
+`history.back()` rather than before — broke nothing, and that is reported rather than
+suppressed: JavaScript is single-threaded and the traversal is a queued task in every engine
+that matters, so the two orderings are genuinely equivalent in behaviour. The before-ordering
+is kept because it is the form that stays correct if that ever stops being true.
+
+**What the automated cases do not establish**, stated plainly for the same reason 04-11 stated
+it: they model the queue, they do not run one. No real Back button is pressed, no real task
+queue runs, and the ordinary path — where the traversal lands before the next install — is the
+same synchronous happy-dom path every other case in that file takes. Exercising the real
+ordering needs a host: in a blind tournament, lock a player in and tap `Enter {next}'s bans`
+as fast as the tap can be made. The next player's entry surface must come up empty and **stay
+up**. It is not a UAT item and no UAT item is reopened for it — item (b) tested the Back
+gesture itself, which is unchanged.
+
 ## Info
 
-### IN-01: `04-UI-SPEC` §1's blocked-string deviation and other recorded gaps are consistent, but one comment/behaviour pair is subtly inaccurate and worth correcting at the source
+### IN-01 ✅ RESOLVED (`a603e55`): `04-UI-SPEC` §1's blocked-string deviation and other recorded gaps are consistent, but one comment/behaviour pair is subtly inaccurate and worth correcting at the source
 
 **File:** `src/ui/components/BlindEntry.css:38-40`
 
@@ -220,8 +344,16 @@ comment becomes true; until then, it should be corrected or qualified in the sam
 that fixes the containment, per the project's own convention on superseded contract
 comments.
 
+**Resolved in `a603e55`, in the same change, as prescribed.** The claim is now true of the
+composed result. It was also extended rather than merely left standing: it names the
+`.entry-shell` ancestor the claim depends on, says what the same declarations render under
+`.app-shell` instead, and points at the test that pins the shell class — because nothing in
+that stylesheet can detect the ancestor, and a comment whose truth depends on a file it never
+mentions is the next stale comment waiting to happen.
+
 ---
 
 _Reviewed: 2026-08-25T22:26:39Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_All three findings resolved: 2026-08-25, commits `a603e55` (WR-01, IN-01) and `032e4fa` (WR-02)_
