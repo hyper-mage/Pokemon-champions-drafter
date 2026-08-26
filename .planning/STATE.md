@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 04 complete (11/11) — ready to discuss Phase 5
-last_updated: 2026-08-26T01:45:51.143Z
-last_activity: 2026-08-25 -- Phase 04 plan 11 built; paused at its blocking human pass
+status: planning
+stopped_at: Phase 5 context gathered
+last_updated: "2026-08-26T03:06:43.381Z"
+last_activity: 2026-08-26 -- Phase 04 complete
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 47
   completed_plans: 47
-  percent: 60
+  percent: 80
 ---
 
 # Project State
@@ -142,6 +142,7 @@ None yet.
   acceptance as well as DRFT-14. All code is built, committed and green. If an item fails, that is
   a finding about a `--text-*` token — the remedies are the existing four-size scale and the
   existing pane states, and introducing a fifth font size is explicitly out of bounds.
+
 - **BAN-07 is PARTIALLY satisfied by owner-approved decision D-19.** Only the `bothApply` branch
   is built; `Re-ban — Not yet available` ships disabled. The verifier must not score ROADMAP Phase
   4 success criterion 4 green on the re-ban clause.
@@ -195,9 +196,9 @@ stays open and unverified. Plans 03-01 through 03-11 are complete and green.
 
 ## Session Continuity
 
-Last session: 2026-08-20T22:54:45.336Z
-Stopped at: Phase 4 UI-SPEC approved
-Resume file: .planning/phases/04-blind-and-snake-bans/04-UI-SPEC.md
+Last session: 2026-08-26T03:06:43.372Z
+Stopped at: Phase 5 context gathered
+Resume file: .planning/phases/05-full-tournament-brackets-standings-archive/05-CONTEXT.md
 
 ### Phase 2 planning is complete
 
