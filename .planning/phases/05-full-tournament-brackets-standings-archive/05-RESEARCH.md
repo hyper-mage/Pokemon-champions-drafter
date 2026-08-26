@@ -1712,7 +1712,12 @@ server-side data and no user-to-user data flow.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All four were ruled during planning and are cited as binding in the plans’ `<precedence>` blocks:
+> Q1 → 05-10 (fifth `Screen` member, explicit host act, `screenForState` unchanged); Q2 → 05-03, rendered 05-11 (`3 3 3`);
+> Q3 → 05-01, 05-05 (config time only); Q4 → 05-01 (nothing else; recorded in the `TournamentDepth` doc block).
+> None is open. Each `**Recommendation:**` below is the adopted ruling.
 
 1. **Does the tournament stage get a fifth `Screen` union member, or a branch inside `draft`?**
    - What we know: `05-UI-SPEC.md` §Layout Budget forces `.draft-shell` (full-bleed) and shows
