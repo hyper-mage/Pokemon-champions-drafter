@@ -59,10 +59,11 @@ traced in `REQUIREMENTS.md`; `02-VERIFICATION.md` scores 11/11 must-haves.
 
 **Bans**
 
-- [ ] Blind mode: each player submits bans privately, all revealed together before the pool is built
-- [ ] Snake mode: players ban in turn order with previous bans visible
+- [x] Blind mode: each player submits bans privately, all revealed together before the pool is built
+- [x] Snake mode: players ban in turn order with previous bans visible
 - [ ] Host chooses the duplicate-ban policy at config time: both bans apply with one wasted, or a collision grants a re-ban
-- [ ] Blind mode uses a real full-screen pass-the-device interstitial, not an input mask, and the back button cannot resurrect a private screen
+      — **Partial after Phase 4 (D-19):** both-apply-one-wasted ships; the re-ban arm is present but disabled.
+- [x] Blind mode uses a real full-screen pass-the-device interstitial, not an input mask, and the back button cannot resurrect a private screen
 
 **Composition rules via round structure**
 
@@ -71,7 +72,7 @@ traced in `REQUIREMENTS.md`; `02-VERIFICATION.md` scores 11/11 must-haves.
 - [ ] Host can maintain a Mega-ban list: Pokémon that are Mega-capable but not permitted to Mega this tournament, excluded from Mega rounds
 - [ ] Compiled rounds type the resulting team slots, so a slot's constraint survives swaps
 - [ ] Host can reorder the derived round schedule; a full generic schedule editor is out of scope for v1
-- [ ] Feasibility is re-checked after the ban reveal, since bans change the arithmetic
+- [x] Feasibility is re-checked after the ban reveal, since bans change the arithmetic
 
 **Swaps**
 
@@ -208,7 +209,7 @@ The volatility is real and near-term: regulations rotate roughly every 10 weeks 
 | Priority cards: open sequential, count derived from rounds | The original spec was internally contradictory and produced ties in 98.5% of rounds at 6 players with no tiebreak rule. Open sequential play also avoids recreating the blind-ban privacy problem once per round | — Pending |
 | Roster refresh is Tier A only | Fetching the project's own pre-built snapshot works; live upstream parsing costs 16 MB for 330 KB and needs a second parser that will drift | — Pending |
 | Snapshots are regulation-stamped and the script pins a SHA | `mod: 'champions'` silently means "whatever is current," so an unpinned script would swap regulations with no error signal. M-C lands around 2 Sep 2026 | — Pending |
-| Host picks the duplicate-ban policy | Both-apply-one-wasted and collision-grants-reban change the pool sizing arithmetic differently; the group should choose | — Pending |
+| Host picks the duplicate-ban policy | Both-apply-one-wasted and collision-grants-reban change the pool sizing arithmetic differently; the group should choose | Phase 4 — Partial (D-19): `bothApply` built; `Re-ban` ships present-but-disabled so a later milestone enables an option rather than adding a control plus a schema bump |
 
 ## Evolution
 
@@ -228,4 +229,6 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-15 after Phase 2 (Host-Configured Draft Night) completed — 13/13 plans, 11/11 must-haves verified*
+*Last updated: 2026-08-26 after Phase 4 (Blind and Snake Bans) completed — 11/11 plans, 4/4 success criteria verified,
+and a human three-metre pass approved on a ~24" 1080p screen. RULE-08 and BAN-03..06 validated; BAN-07 partial by D-19.
+Phase 3 (Compiled Rules, Priority Cards, Swaps) completed 2026-08-19, 12/12 plans.*
