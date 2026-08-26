@@ -811,7 +811,7 @@ rejected outright.
 | Section heading | `Your tournaments` at `--text-heading` |
 | Row heading | `{formatLabel}` at `--text-heading` |
 | Row description | `{date} — {m} players, {status}` at `--text-body` |
-| Row actions | `Open` · `Download JSON` |
+| Row actions | `Open tournament` · `Download JSON` |
 | Order | Newest first, by `createdAt` |
 
 `{date}` is `createdAt` formatted absolutely. This does **not** contradict
@@ -912,7 +912,7 @@ Phases 1–4's tables apply in full. These are the additions this phase forces.
 | **Focus entering and leaving the recap** | To the recap's `<h2 tabindex="-1">` on entry; to `View the draft recap` on exit — the control that was activated, which exists again. |
 | **`aria-disabled`, never native `disabled`, on every inert control** | The metric segmented control below tier 3, both format controls at `draftOnly`, the cut control before the round robin is complete, an unknown-participant match card, every cell of a finished tournament, the reorder end buttons, and the record dialog's identical-result state. A natively disabled control is not focusable, so its reason is unreachable by keyboard. |
 | **Inert ARIA is always shed** | Every inert state here removes `aria-disabled` the moment its condition lifts — the cut when the last match lands, a match card when its participants resolve, every cell on reopen, the metric control when depth changes. WR-04; this phase adds seven consumers. |
-| **Target size** | Every new control ≥ `--target-min` in both axes: results-grid cell (188 × 46), bracket match card (592 × 96 at 8 seeds), `Take the cut`, `Confirm this order`, both reorder buttons, `Reopen this tournament`, `Check for a new roster`, `Import roster JSON…`, `Open`, `Download JSON`, `Update the roster`, `View the draft recap`, and every field in the record dialog. Column headers, row labels, the diagonal and the lower triangle are **not** interactive and are exempt, exactly as board chips are. |
+| **Target size** | Every new control ≥ `--target-min` in both axes: results-grid cell (188 × 46), bracket match card (592 × 96 at 8 seeds), `Take the cut`, `Confirm this order`, both reorder buttons, `Reopen this tournament`, `Check for a new roster`, `Import roster JSON…`, `Open tournament`, `Download JSON`, `Update the roster`, `View the draft recap`, and every field in the record dialog. Column headers, row labels, the diagonal and the lower triangle are **not** interactive and are exempt, exactly as board chips are. |
 | **Live region — match results** | Permitted, and safe. `announce` fires `{winner} beat {loser} {games}. {k} matches left.` on a round-robin record and `{winner} beat {loser} {games}. {winner} advances.` in the bracket. `LiveRegion`'s byte-identical limitation is not reachable: the only way to produce two consecutive identical announcements is to record the same result twice running, and §5 makes that state's primary button inert. |
 | **Live region — the cascade** | A void announces separately and after the record: `{n} matches were voided.` Two announcements rather than one long sentence, because the second is the surprising one. |
 | **Motion budget** | Unchanged: colour and border transitions only, ≤ 120ms. **A bracket does not animate an advance, a standings table does not animate a reorder, and taking the cut is not a transition.** A row that slides into place is a row nobody can read while it moves, on a screen a room is reading. |
@@ -1098,7 +1098,7 @@ precedent — `picks`, `players`, `bans`; this phase adds `matches` and `tournam
 | Section heading | `Your tournaments` |
 | Row description | `{date} — {m} players, {status}` |
 | Status | `{championName} won` · `draft complete, no bracket` · `in progress, {picks} of {total} picks` |
-| Row actions | `Open` · `Download JSON` |
+| Row actions | `Open tournament` · `Download JSON` |
 | Filing confirm heading | `Start a new tournament?` |
 | Filing confirm body | `{formatLabel} is filed with your tournaments and stays open from the landing screen. Download the JSON too if you want a copy that browser storage cannot lose.` |
 | Filing confirm | `Start a new tournament` / safe `Keep this one open` |
