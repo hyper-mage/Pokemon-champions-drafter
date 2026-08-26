@@ -294,7 +294,50 @@ Plans:
   4. A completed tournament stays viewable after the draft ends, including a draft recap rendered directly from the action log.
   5. The host refreshes the roster to a new regulation from inside the app, or imports a roster JSON with no network at all, and a staleness banner warns when the current snapshot's `validUntil` has passed — also with no network.
 
-**Plans**: 2 plans
+**Plans**: 15 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — schema 5: the metric, both stage formats, four fold fields, and the depth gate (TOUR-01, TOUR-07)
+- [ ] 05-02-PLAN.md — staleness with no network, and the one service-worker line a refresh needs (REFR-03, REFR-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-03-PLAN.md — the pair set, the stage fold, and standings by partition refinement (TOUR-02, TOUR-08)
+- [ ] 05-04-PLAN.md — the snapshot registry: refresh, strict parse, and a tournament's own roster (REFR-01, REFR-02, REFR-03)
+- [ ] 05-05-PLAN.md — config screen: depth, the metric and the two formats (TOUR-01, TOUR-04, TOUR-07)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 05-06-PLAN.md — the bracket, its byes, the locked fold and the void cascade (TOUR-03, TOUR-06, TOUR-09)
+- [ ] 05-07-PLAN.md — roster refresh and the staleness banner on screen (REFR-01, REFR-02, REFR-03)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 05-08-PLAN.md — five `tournament/*` actions across seven landing sites each (TOUR-05, TOUR-06, TOUR-09)
+- [ ] 05-09-PLAN.md — the library adapter, its cap of 12, and the phase's confirm copy (PERS-08)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 05-10-PLAN.md — the tournament screen and the round-robin results grid (TOUR-02, TOUR-04, TOUR-05, TOUR-06)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 05-11-PLAN.md — standings, the tiebreak override, and the cut (TOUR-08, TOUR-09)
+- [ ] 05-12-PLAN.md — the library on the landing screen, and filing a night (PERS-08)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 05-13-PLAN.md — the bracket, the champion, and reopening a finished tournament (TOUR-03, TOUR-04, TOUR-06)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 05-14-PLAN.md — the recap, folded from the log (PERS-09, PERS-08)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 05-15-PLAN.md — the three-metre pass and the phase gate *(not autonomous — blocking human check)* (TOUR-02, TOUR-03, TOUR-04, TOUR-08)
 **UI hint**: yes
 **Notes**: This phase first satisfies the full success criterion (a real draft plus bracket, end to end, nothing tracked elsewhere). Research need LOW on brackets and standings — well-trodden tournament-software territory; the real discipline is refusing scope, since double elimination, Swiss, and consolation brackets are explicitly out of scope and are where bracket rendering code goes to die. Research need MEDIUM on roster refresh — re-confirm `raw.githubusercontent.com` CORS and caching behavior at implementation time, and note this is Tier A only: the app fetches the project's own pre-built snapshot, never live upstream data. Brackets and standings are fully additive — they consume only completed teams — which is why they come last among feature work.
 
@@ -309,7 +352,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
-| 5. Full Tournament — Brackets, Standings, Archive | 0/2 | Not started | - |
+| 5. Full Tournament — Brackets, Standings, Archive | 0/15 | Not started | - |
 
 ## Requirement Coverage
 
