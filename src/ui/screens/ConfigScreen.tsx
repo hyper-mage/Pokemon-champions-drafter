@@ -44,7 +44,11 @@ import { NumericField, parseNumericField } from '../components/NumericField';
 import { PlayerList, type PlayerDraft } from '../components/PlayerList';
 import { PoolGrid } from '../components/PoolGrid';
 import { SchedulePreview, type MoveDirection } from '../components/SchedulePreview';
-import { SegmentedControl, type SegmentedOption } from '../components/SegmentedControl';
+import {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentedOption,
+} from '../components/SegmentedControl';
 import { TypeaheadField } from '../components/TypeaheadField';
 
 import './ConfigScreen.css';
@@ -217,6 +221,127 @@ const STAGE_FORMAT_OPTIONS: readonly SegmentedOption<StageFormat>[] = [
   { value: 'bo1', label: 'Best of one' },
   { value: 'bo3', label: 'Best of three' },
 ];
+
+/**
+ * `Match result`'s reason at the two lighter depths — 05-UI-SPEC §1 and §Copywriting →
+ * Config screen, and it EXCLUDES the `— ` separator for `DUPLICATE_BANS_SNAKE_REASON`'s
+ * stated reason: the separator is markup, so the copy contract, this constant and the test
+ * assertion stay one value (WR-03).
+ *
+ * It names the depth that WOULD make the control live. D-01/D-02 make `Draft and brackets`
+ * a winners-only tier, so there is no number for a metric to give a meaning to — and a
+ * reason that only said "unavailable" would leave the host with nothing to do about it.
+ */
+const MATCH_METRIC_REASON =
+  'Draft and brackets records winners only. Choose Draft, brackets and match log to record a number per match.';
+
+/**
+ * Both format controls' reason at `draftOnly` — ONE constant, read from two call sites.
+ *
+ * Two constants holding the same sentence would be two places to amend it, and 05-UI-SPEC
+ * §Copywriting gives it once as `Format inert reason` for both rows of the control table.
+ */
+const STAGE_FORMAT_REASON = 'Draft only has no matches.';
+
+/**
+ * The ids the three inert-able controls name as their description.
+ *
+ * Module constants rather than generated ones, on `FeasibilityBar.tsx:42-48`'s reasoning:
+ * there is exactly one config screen and exactly one of each control on it, so a pinned id
+ * is the answer and a generated one would be a second answer to one question.
+ *
+ * THREE ids even though two of them label the same sentence. Two elements sharing one id is
+ * invalid markup and `aria-describedby` resolves to whichever the parser saw first, so the
+ * bracket control would be described by the round robin's copy of the reason — correct by
+ * accident, and silently wrong the day the two sentences diverge.
+ */
+const MATCH_METRIC_REASON_ID = 'config-match-metric-reason';
+const ROUND_ROBIN_FORMAT_REASON_ID = 'config-round-robin-format-reason';
+const BRACKET_FORMAT_REASON_ID = 'config-bracket-format-reason';
+
+/**
+ * A `SegmentedControl` that can be inert, with its reason visible beneath it.
+ *
+ * ## `aria-disabled` WITHOUT native `disabled`, on the WHOLE control — do not "fix" it
+ *
+ * `SegmentedControl` has a per-OPTION `disabled` mechanism (`:73-79`) and this deliberately
+ * does not use it: 05-UI-SPEC §1 is explicit that at these depths EVERY member of the
+ * control is unavailable rather than one of them. So it takes `Start draft`'s pattern
+ * instead — `FeasibilityBar.tsx:18-25`: a natively disabled control is not focusable, so a
+ * keyboard user could never reach the explanation, and the explanation is the entire point
+ * of rendering an unusable control at all.
+ *
+ * ## The attribute is shed, never set to `'false'`
+ *
+ * `undefined` when live, so the attribute is ABSENT from the markup. Setting it to the
+ * string false instead is not the same thing, and plenty of assistive technology reports
+ * that as disabled anyway (WR-04, of which this phase adds seven consumers and this
+ * component is two of them). `aria-describedby` sheds with it: a live control has no
+ * description to point at, and a dangling id reference is a promise the DOM does not keep.
+ *
+ * This block DESCRIBES the attribute values rather than quoting them, following the
+ * repository pattern `FeasibilityBar`'s doc block states: the acceptance checks here are
+ * plain text searches, and a comment that quotes what it forbids makes the gate match its
+ * own documentation.
+ *
+ * ## One vnode shape across the boundary
+ *
+ * The wrapper, the control and its radios render identically in both states; only the reason
+ * appears. Rendering a different element in the inert branch would unmount the focused radio
+ * and drop focus to `<body>` — the regression 02-11 fixed on `SplitPanes`.
+ */
+function InertibleSegmentedControl<T extends string>({
+  legend,
+  name,
+  options,
+  value,
+  onChange,
+  inert,
+  reason,
+  reasonId,
+}: SegmentedControlProps<T> & {
+  inert: boolean;
+  reason: string;
+  reasonId: string;
+}) {
+  return (
+    <div
+      class="config-screen__inert-control"
+      aria-disabled={inert ? 'true' : undefined}
+      aria-describedby={inert ? reasonId : undefined}
+    >
+      <SegmentedControl
+        legend={legend}
+        name={name}
+        options={options}
+        value={value}
+        onChange={(next) => {
+          // The early return IS the refusal, and it is what keeps the ARIA honest: without
+          // it the attribute would claim the control is inert while an interaction still
+          // changed the config the host is about to commit to. Same guard the `Duplicate
+          // bans` control carries, for the same reason.
+          if (inert) return;
+          onChange(next);
+        }}
+      />
+
+      {inert && (
+        <span class="config-screen__inert-reason" id={reasonId}>
+          {/*
+            The `— ` separator is MARKUP rather than `::before` content — a dash generated
+            by a stylesheet is half a visible line that no test reads (WR-03) — and it is
+            `aria-hidden` so the description `aria-describedby` resolves to is the sentence
+            alone. An expression container holding a string literal, not bare JSX text,
+            because JSX collapses trailing whitespace and the space is half of the two
+            characters.
+          */}
+          <span aria-hidden="true">{'— '}</span>
+          {reason}
+        </span>
+      )}
+    </div>
+  );
+}
 
 /**
  * Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen.
@@ -553,6 +678,23 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
   const [bracketFormat, setBracketFormat] = useState<StageFormat>(
     V4_CONFIG_DEFAULTS.bracketFormat,
   );
+
+  /**
+   * Which of the three controls above the host can actually answer right now — 05-UI-SPEC
+   * §1's "Inert when" column, and the two conditions are deliberately different.
+   *
+   * `Match result` is live at ONE tier: D-01/D-02 make `draftBracketsAndLog` the only depth
+   * that records a number per match, so at both lighter tiers the metric has nothing to give
+   * a meaning to. Both stage formats are live at TWO, because `draftOnly` is the one tier
+   * that runs no matches at all and a best-of is a length for a match that exists.
+   *
+   * DERIVED from `depth` rather than mirrored into state, so the ARIA is shed in the same
+   * render the depth changes (WR-04) and there is no second value free to disagree with the
+   * first. `hasMatches` rather than a second `!== 'draftOnly'` here: it is the same question
+   * the round-robin size line asks, and one predicate cannot answer it two ways.
+   */
+  const matchMetricInert = depth !== 'draftBracketsAndLog';
+  const stageFormatInert = !hasMatches(depth);
 
   /**
    * The RAW text of `Megas required per team`, not a number — D-06.
@@ -1526,30 +1668,49 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
           their own: they are the same question the depth control asks, at a finer grain, and
           a host who has to scroll to find them has to hold the depth in their head to answer.
 
-          The inert treatment lands in the next change; these three render live here.
+          All three go through `InertibleSegmentedControl`, whose doc block states which of
+          the two available mechanisms was chosen and why: the WHOLE control takes
+          `aria-disabled` without native `disabled`, NOT `SegmentedControl`'s per-option
+          `disabled`, because §1 says every member is unavailable at these depths rather than
+          one of them. They stay in the tab order and their reasons are reachable by keyboard.
+
+          There is deliberately NO sentence here about player counts and brackets. The one
+          thing this screen says about a three-player bracket is `feasibility.ts`'s
+          `bracketNeedsFourPlayers`, rendered by `FeasibilityBar` from `checkFeasibility`'s
+          `problems` — one authority, and a second one in this file would be free to disagree
+          with it. It is a WARNING, so `Start draft` stays enabled at three players.
         */}
-        <SegmentedControl
+        <InertibleSegmentedControl
           legend="Match result"
           name="match-metric"
           options={MATCH_METRIC_OPTIONS}
           value={matchMetric}
           onChange={setMatchMetric}
+          inert={matchMetricInert}
+          reason={MATCH_METRIC_REASON}
+          reasonId={MATCH_METRIC_REASON_ID}
         />
 
-        <SegmentedControl
+        <InertibleSegmentedControl
           legend="Round robin format"
           name="round-robin-format"
           options={STAGE_FORMAT_OPTIONS}
           value={roundRobinFormat}
           onChange={setRoundRobinFormat}
+          inert={stageFormatInert}
+          reason={STAGE_FORMAT_REASON}
+          reasonId={ROUND_ROBIN_FORMAT_REASON_ID}
         />
 
-        <SegmentedControl
+        <InertibleSegmentedControl
           legend="Bracket format"
           name="bracket-format"
           options={STAGE_FORMAT_OPTIONS}
           value={bracketFormat}
           onChange={setBracketFormat}
+          inert={stageFormatInert}
+          reason={STAGE_FORMAT_REASON}
+          reasonId={BRACKET_FORMAT_REASON_ID}
         />
       </fieldset>
 

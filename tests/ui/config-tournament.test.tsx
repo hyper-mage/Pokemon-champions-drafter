@@ -60,6 +60,11 @@ const NOTE_DRAFT_AND_BRACKETS =
   'After the draft: a round robin, a cut you choose, and a single-elimination bracket. Winners only — no scores.';
 const NOTE_DRAFT_BRACKETS_AND_LOG =
   'Everything in Draft and brackets, plus one number per match that breaks ties in the standings.';
+const METRIC_INERT_REASON =
+  'Draft and brackets records winners only. Choose Draft, brackets and match log to record a number per match.';
+const FORMAT_INERT_REASON = 'Draft only has no matches.';
+const BRACKET_WARNING =
+  'A bracket needs at least 4 players to mean much. At 3 players the round robin already decides it. Choose Draft only, or add players.';
 
 // ---------------------------------------------------------------------------
 // The real roster
@@ -233,6 +238,40 @@ function setPlayerCount(count: number): void {
 function startButton(): HTMLButtonElement | null {
   return host.querySelector<HTMLButtonElement>('.feasibility-bar__start');
 }
+
+/**
+ * The inert wrapper around a control, found through one of its radios.
+ *
+ * Located by walking UP from the radio group rather than by index, so reordering the group
+ * cannot silently point an assertion at the wrong control.
+ */
+function inertWrapper(group: string): HTMLElement {
+  const radio = radiosNamed(group)[0];
+  if (radio === undefined) throw new Error(`no ${group} control on the screen`);
+  const wrapper = radio.closest<HTMLElement>('.config-screen__inert-control');
+  if (wrapper === null) throw new Error(`${group} is not inside an inert wrapper`);
+  return wrapper;
+}
+
+/**
+ * `aria-disabled` as the DOM actually holds it — `null` when the attribute is absent.
+ *
+ * `getAttribute` and not a truthiness check, because the distinction this file exists to
+ * pin is exactly the one a truthiness check erases: `aria-disabled="false"` is NOT the
+ * attribute being absent, and assistive technology reports the two differently.
+ */
+function ariaDisabled(group: string): string | null {
+  return inertWrapper(group).getAttribute('aria-disabled');
+}
+
+/** The visible inert reason for a control, separator stripped, or `null` when live. */
+function inertReason(group: string): string | null {
+  const reason = inertWrapper(group).querySelector('.config-screen__inert-reason');
+  if (reason === null) return null;
+  return (reason.textContent ?? '').replace('— ', '').trim();
+}
+
+const TOURNAMENT_GROUPS = ['match-metric', 'round-robin-format', 'bracket-format'] as const;
 
 // ---------------------------------------------------------------------------
 // The depth note — 05-UI-SPEC §Amendment 2
@@ -429,6 +468,238 @@ describe('the tournament controls', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The inertness table — 05-UI-SPEC §1's "Inert when" column
+//
+// The two load-bearing cases in this section are the ABSENT-not-`'false'` assertion and the
+// shed assertion, which changes the depth and re-queries all three controls in one test.
+// Both are WR-04, of which this phase adds seven consumers and this screen is three.
+// ---------------------------------------------------------------------------
+
+describe('the inertness table', () => {
+  it('makes all three controls inert at Draft only, which runs no matches at all', () => {
+    mount();
+
+    for (const group of TOURNAMENT_GROUPS) {
+      expect(ariaDisabled(group)).toBe('true');
+    }
+  });
+
+  it('frees both stage formats at Draft and brackets and leaves Match result inert', () => {
+    mount();
+    pick('tournament-depth', 'draftAndBrackets');
+
+    expect(ariaDisabled('match-metric')).toBe('true');
+    expect(ariaDisabled('round-robin-format')).toBeNull();
+    expect(ariaDisabled('bracket-format')).toBeNull();
+  });
+
+  it('frees all three at Draft, brackets and match log', () => {
+    mount();
+    pick('tournament-depth', 'draftBracketsAndLog');
+
+    for (const group of TOURNAMENT_GROUPS) {
+      expect(ariaDisabled(group)).toBeNull();
+    }
+  });
+
+  /**
+   * The attribute is ABSENT on a live control, not `"false"`.
+   *
+   * Asserted with `getAttribute` returning `null` rather than a falsy check, because the two
+   * are not the same thing to a screen reader and plenty of assistive technology reports
+   * `aria-disabled="false"` as disabled anyway.
+   */
+  it('renders no aria-disabled at all on a live control, never the string false', () => {
+    mount();
+    pick('tournament-depth', 'draftAndBrackets');
+
+    const wrapper = inertWrapper('bracket-format');
+    expect(wrapper.getAttribute('aria-disabled')).toBeNull();
+    expect(wrapper.getAttribute('aria-disabled')).not.toBe('false');
+    expect(wrapper.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  /** WR-04: the attribute is SHED the moment the condition above it lifts, in one render. */
+  it('sheds the attribute from all three controls when the depth deepens', () => {
+    mount();
+
+    for (const group of TOURNAMENT_GROUPS) {
+      expect(ariaDisabled(group)).toBe('true');
+    }
+
+    pick('tournament-depth', 'draftBracketsAndLog');
+
+    for (const group of TOURNAMENT_GROUPS) {
+      expect(ariaDisabled(group)).toBeNull();
+    }
+  });
+
+  /** And back again — the derivation runs in both directions, not only downhill. */
+  it('takes the attribute back when the depth shallows again', () => {
+    mount();
+    pick('tournament-depth', 'draftBracketsAndLog');
+    pick('tournament-depth', 'draftOnly');
+
+    for (const group of TOURNAMENT_GROUPS) {
+      expect(ariaDisabled(group)).toBe('true');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The reasons — visible, and reachable by keyboard
+// ---------------------------------------------------------------------------
+
+describe('the inert reasons', () => {
+  it('says what Draft and brackets records, and what would change it', () => {
+    mount();
+    pick('tournament-depth', 'draftAndBrackets');
+
+    expect(inertReason('match-metric')).toBe(METRIC_INERT_REASON);
+  });
+
+  it('gives both stage formats the same one-sentence reason at Draft only', () => {
+    mount();
+
+    expect(inertReason('round-robin-format')).toBe(FORMAT_INERT_REASON);
+    expect(inertReason('bracket-format')).toBe(FORMAT_INERT_REASON);
+  });
+
+  /**
+   * VISIBLE text, not only an accessible name — the reason is what the inert state exists
+   * to show, so a host who never opens a screen reader has to be able to read it.
+   */
+  it('renders each reason as text in the document, not as an attribute', () => {
+    mount();
+
+    expect(host.textContent).toContain(METRIC_INERT_REASON);
+    expect(host.textContent).toContain(FORMAT_INERT_REASON);
+  });
+
+  it('removes the reason when the control becomes live', () => {
+    mount();
+    pick('tournament-depth', 'draftBracketsAndLog');
+
+    for (const group of TOURNAMENT_GROUPS) {
+      expect(inertReason(group)).toBeNull();
+    }
+    expect(host.textContent).not.toContain(FORMAT_INERT_REASON);
+    expect(host.textContent).not.toContain(METRIC_INERT_REASON);
+  });
+
+  /**
+   * Reachable by keyboard: the radios stay in the tab order (no native `disabled`) and the
+   * wrapper points at the reason. Two ids and not one shared between the format controls —
+   * two elements with one id is invalid markup and resolves to whichever came first.
+   */
+  it('associates each reason by aria-describedby, with an id of its own', () => {
+    mount();
+
+    const ids = TOURNAMENT_GROUPS.map((group) =>
+      inertWrapper(group).getAttribute('aria-describedby'),
+    );
+    expect(new Set(ids).size).toBe(3);
+
+    for (const [index, group] of TOURNAMENT_GROUPS.entries()) {
+      const id = ids[index];
+      expect(id).not.toBeNull();
+      expect(host.querySelector(`#${id ?? ''}`)?.textContent).toContain(
+        group === 'match-metric' ? METRIC_INERT_REASON : FORMAT_INERT_REASON,
+      );
+    }
+  });
+
+  it('keeps the radios out of the native disabled state, so they keep their tab stop', () => {
+    mount();
+
+    for (const group of TOURNAMENT_GROUPS) {
+      for (const radio of radiosNamed(group)) {
+        expect(radio.disabled).toBe(false);
+      }
+    }
+  });
+
+  /** The description sheds with the state — a live control points at nothing. */
+  it('drops aria-describedby when the control becomes live', () => {
+    mount();
+    pick('tournament-depth', 'draftBracketsAndLog');
+
+    for (const group of TOURNAMENT_GROUPS) {
+      expect(inertWrapper(group).hasAttribute('aria-describedby')).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The bracket warning — one authority, and it does not block
+// ---------------------------------------------------------------------------
+
+describe('the three-player bracket warning', () => {
+  /**
+   * Off the `Exact` preset, and that is not incidental — `feasibility.ts:275-284`.
+   *
+   * `FeasibilityBar` renders `problems[0]` and `bracketNeedsFourPlayers` is deliberately
+   * LAST in the precedence order, below both pool warnings, because a host whose pool
+   * arithmetic is also degenerate should read the sentence that changes what the DRAFT
+   * does first. At the default `Exact` preset `poolExactlyMinimum` therefore outranks it
+   * and the bar shows the pool sentence — correctly. `2×` clears the pool warning so
+   * these cases assert the one they are named for.
+   */
+  function threePlayersWithABracket(depth: string): void {
+    mount();
+    setPlayerCount(3);
+    pick('pool-size-preset', 'x2');
+    pick('tournament-depth', depth);
+  }
+
+  it('warns without blocking the start at Draft and brackets', () => {
+    threePlayersWithABracket('draftAndBrackets');
+
+    expect(host.textContent).toContain(BRACKET_WARNING);
+    // A WARNING, never blocking — the project warns rather than hard-capping, and a
+    // three-person bracket runs perfectly well.
+    expect(startButton()?.getAttribute('aria-disabled')).toBeNull();
+    expect(startButton()?.disabled).toBe(false);
+  });
+
+  it('warns at Draft, brackets and match log too', () => {
+    threePlayersWithABracket('draftBracketsAndLog');
+
+    expect(host.textContent).toContain(BRACKET_WARNING);
+    expect(startButton()?.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  /**
+   * ONE authority. The sentence reaches the screen through `FeasibilityBar` from
+   * `checkFeasibility`'s problems, so it appears exactly once — a second copy rendered by
+   * the `Tournament` group would be free to disagree with the gate.
+   */
+  it('says it exactly once on the screen', () => {
+    threePlayersWithABracket('draftBracketsAndLog');
+
+    const text = host.textContent ?? '';
+    expect(text.split(BRACKET_WARNING)).toHaveLength(2);
+  });
+
+  it('is silent at Draft only, where no bracket is generated', () => {
+    mount();
+    setPlayerCount(3);
+    pick('pool-size-preset', 'x2');
+
+    expect(host.textContent).not.toContain(BRACKET_WARNING);
+  });
+
+  it('is silent once a fourth player makes the bracket worth having', () => {
+    mount();
+    setPlayerCount(4);
+    pick('pool-size-preset', 'x2');
+    pick('tournament-depth', 'draftAndBrackets');
+
+    expect(host.textContent).not.toContain(BRACKET_WARNING);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Start draft — the one place a document is written
 //
 // Last in the file, deliberately: the store is a module singleton with no reset, so
@@ -481,6 +752,34 @@ describe('Start draft', () => {
     const config = getDoc()?.config;
     expect(config?.depth).toBe('draftOnly');
     expect(config?.matchMetric).toBe('koDifference');
+    expect(config?.roundRobinFormat).toBe('bo3');
+  });
+
+  /**
+   * The ARIA and the behaviour cannot drift — T-05-22.
+   *
+   * The radios are NOT natively disabled, precisely so the reason stays reachable, which
+   * means a click still fires `change`. The early return in the handler is the only thing
+   * stopping that click from changing the config the host is about to commit to, so it is
+   * asserted against the WRITTEN DOCUMENT rather than against the checked state.
+   */
+  it('ignores an interaction with an inert control, all the way to the document', () => {
+    mount();
+    setPlayerCount(6);
+
+    pick('tournament-depth', 'draftAndBrackets');
+    pick('match-metric', 'koDifference');
+    pick('round-robin-format', 'bo3');
+
+    act(() => {
+      startButton()?.click();
+    });
+
+    const config = getDoc()?.config;
+    expect(config?.depth).toBe('draftAndBrackets');
+    // Inert at this depth, so the interaction above was refused and the default stands.
+    expect(config?.matchMetric).toBe('pokemonLeft');
+    // Live at this depth, so the interaction above was honoured.
     expect(config?.roundRobinFormat).toBe('bo3');
   });
 });

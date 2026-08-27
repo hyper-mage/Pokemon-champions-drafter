@@ -178,6 +178,35 @@
 }
 
 /*
+ * A `Tournament` control that can be inert, with its reason under it — `Match result`,
+ * `Round robin format` and `Bracket format`.
+ *
+ * The same column at --space-1 the `Duplicate bans` block uses, and for the same reason: the
+ * reason belongs to the control rather than being a sibling of it, so the group's --space-3
+ * would read as two separate fields. 60ch matches `.config-screen__note` directly above,
+ * which is what the metric's two-sentence reason wraps against.
+ */
+.config-screen__inert-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 60ch;
+}
+
+/*
+ * Inert, not absent. The opacity is the VISUAL ECHO of aria-disabled, never the mechanism —
+ * the mechanism is the early return in the change handler, and the control keeps its tab
+ * stop precisely so the reason is reachable. The same 0.45 the `Duplicate bans` control, the
+ * Mega filter and the reorder buttons take.
+ *
+ * The reason is deliberately OUTSIDE this rule: it is the whole point of rendering an
+ * unusable control, and dimming it would hide the sentence the state exists to show.
+ */
+.config-screen__inert-control[aria-disabled='true'] .segmented {
+  opacity: 0.45;
+}
+
+/*
  * The `Duplicate bans` block — the control, its helper and, at snake, its reason.
  *
  * A wrapper exists because three elements have to share one inert state and one of them
