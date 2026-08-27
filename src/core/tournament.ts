@@ -366,6 +366,71 @@ function headToHead(
 }
 
 /**
+ * Same members, ignoring order — the whole of link 4's matching rule.
+ *
+ * The `Set` is a COMPUTATION-LOCAL comparison aid and never leaves this function.
+ * `CLAUDE.md` §Serializability forbids a `Set` reaching the document; it says nothing
+ * about one living for the length of a membership test, which is all this is.
+ *
+ * A duplicated id inside an entry fails the size check rather than counting twice, so a
+ * hand-edited `['a', 'a', 'b']` cannot pass itself off as a three-player block.
+ */
+function isSameSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+
+  const members = new Set(a);
+  if (members.size !== a.length) return false;
+
+  return b.every((id) => members.has(id));
+}
+
+/**
+ * The host's ordering for exactly this block, or `null` — link 4.
+ *
+ * ## Why matching is by SET EQUALITY, and why that is the whole safety property
+ *
+ * An override is the host putting a block the tool refused to order into an order by hand
+ * (D-13). The danger is a STALE one: the host orders `{A, B, C}` for third, someone then
+ * corrects a result, and the block becomes `{A, B}` — an ordering the host gave for a
+ * different question is now sitting on a different table.
+ *
+ * Set equality answers that with no extra machinery. `{A, B, C}` is not `{A, B}`, so the
+ * override simply stops matching and the block is unresolved again. **The override
+ * self-invalidates**, which is why `tournament/resultsVoided` deliberately does NOT list
+ * `tournament/tiebreakOrdered` among its cascade targets: voiding it explicitly would be a
+ * SECOND mechanism for one fact, and two mechanisms for one fact disagree eventually.
+ * 05-08's void arm carries this same sentence from the other side.
+ *
+ * A subset and a superset are both rejected for the same reason — neither is the set of
+ * players who are actually tied, so neither is an answer to the question being asked.
+ *
+ * ## Why the override names players rather than assigning seed numbers
+ *
+ * D-13's own reason: typed seed numbers invite collisions and gaps — two players given
+ * `3`, or a table that jumps `2, 4` — and the host would be re-entering them after every
+ * correction. A numbered override could not self-invalidate at ALL, because a number
+ * carries no record of which players it was chosen for. Naming the players IS the
+ * invalidation mechanism.
+ *
+ * Highest `seq` wins, not last-in-array: `tiebreakOrders` is append-ordered by the fold,
+ * but `seq` is the log's own ordering and is the one that means "more recent".
+ */
+function hostOrderFor(
+  orders: readonly { playerIds: string[]; seq: number }[],
+  block: readonly string[],
+): string[] | null {
+  let latest: { playerIds: string[]; seq: number } | null = null;
+
+  for (const entry of orders) {
+    if (!isSameSet(entry.playerIds, block)) continue;
+    if (latest === null || entry.seq > latest.seq) latest = entry;
+  }
+
+  // Fresh, so a caller cannot reorder the fold's own array through the returned rows.
+  return latest === null ? null : [...latest.playerIds];
+}
+
+/**
  * What the automatic chain does with a block it has not yet resolved — links 3 and 4.
  *
  * Link 3's rule is **"the block is size 2"**, not "the record group is size 2", and the
@@ -373,9 +438,14 @@ function headToHead(
  * into `{A}` and `{B, C}` reach head-to-head legitimately for `{B, C}`: that block has
  * narrowed to two, so head-to-head is a total order over it, whatever the block it came
  * from looked like.
+ *
+ * Link 4 catches everything link 3 could not: a block of three or more, and also a block
+ * of exactly two whose head-to-head result has been voided away. Both are "still tied
+ * after the automatic chain", which is the only condition the override cares about.
  */
 function refineTiedBlock(
   results: readonly MatchResult[],
+  orders: readonly { playerIds: string[]; seq: number }[],
   block: readonly string[],
 ): StandingsGroup[] {
   if (block.length === 2) {
@@ -389,6 +459,12 @@ function refineTiedBlock(
         return [{ members: [winnerId, loserId], decidedBy: 'headToHead', tied: false }];
       }
     }
+  }
+
+  const ordered = hostOrderFor(orders, block);
+  if (ordered !== null) {
+    // Resolved, so `tied: false` — the block renumbers 1…n rather than sharing a place.
+    return [{ members: ordered, decidedBy: 'hostOrder', tied: false }];
   }
 
   return [{ members: [...block], decidedBy: 'tied', tied: true }];
@@ -477,7 +553,7 @@ export function selectStandings(state: DraftState): readonly StandingsRow[] {
         continue;
       }
 
-      groups.push(...refineTiedBlock(results, block));
+      groups.push(...refineTiedBlock(results, state.tiebreakOrders, block));
     }
   }
 
