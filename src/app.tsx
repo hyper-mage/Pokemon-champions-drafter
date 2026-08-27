@@ -149,7 +149,20 @@ type LoadState =
  */
 type Screen =
   | { name: 'landing' }
-  | { name: 'config' }
+  | {
+      name: 'config';
+      /**
+       * The host arrived by pressing `Update the roster` on the landing screen's staleness
+       * banner, so focus goes to `Check for a new roster` rather than to the top of the
+       * form — D-26.
+       *
+       * It rides on the ROUTE rather than living in its own `useState` because it is a
+       * property of how this screen was reached, and a separate flag would have to be
+       * cleared by hand on every other route into `config` or it would leak: the next
+       * `New tournament` would silently steal focus into the roster group.
+       */
+      focusRoster?: boolean;
+    }
   | { name: 'bans' }
   | { name: 'draft' };
 
@@ -2171,6 +2184,25 @@ export function App() {
             onNewTournament={() => setScreen({ name: 'config' })}
             onResume={handleResume}
             onImportFile={handleImportFile}
+            /*
+              The DEFAULT roster, which is what a new tournament would be created against —
+              never an opened document's. `null` until it lands, so the banner cannot claim
+              a regulation has expired before anything has said which regulation it is.
+            */
+            roster={
+              load.status === 'ready'
+                ? {
+                    regulationLabel: load.bundle.snapshot.regulation,
+                    validUntil: load.bundle.snapshot.validUntil,
+                  }
+                : null
+            }
+            /*
+              D-26: routes, and does not refresh in place. There is exactly one refresh
+              control in the app and it is on the config screen, so this navigates there and
+              asks for focus on it.
+            */
+            onUpdateRoster={() => setScreen({ name: 'config', focusRoster: true })}
           />
         )}
 
@@ -2196,6 +2228,9 @@ export function App() {
             // branch on `banMode` did not have to grow a second output. A snake start lands
             // on `bans`, a hostBanlist start on `draft`, and one selector decides which.
             onStarted={() => setScreen(screenForState(getState()))}
+            // D-26's landing site. `=== true` rather than a bare read because the field is
+            // optional on the route and `undefined` is not the prop's type.
+            focusRosterRefresh={screen.focusRoster === true}
           />
         )}
 

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'preact/hooks';
 
+import { todayIso } from '../../adapters/clock';
 import { newId, newSeed } from '../../adapters/id';
 import type { RosterBundle, SpriteMeta } from '../../adapters/roster-source';
 import { bannedEntries } from '../../core/bans';
@@ -50,6 +51,7 @@ import {
   type SegmentedControlProps,
   type SegmentedOption,
 } from '../components/SegmentedControl';
+import { StalenessBanner } from '../components/StalenessBanner';
 import { TypeaheadField } from '../components/TypeaheadField';
 
 import './ConfigScreen.css';
@@ -666,6 +668,20 @@ export function ConfigScreen({
   onRosterImported,
   focusRosterRefresh = false,
 }: ConfigScreenProps) {
+  /**
+   * Today, LOCAL, read ONCE per mount rather than on every render — REFR-03.
+   *
+   * A `useState` initializer for the same reason the player ids below use one: it is an
+   * impure read, and calling it in the render body would make this component answer a
+   * different question on every keystroke in the form. Once per mount is also the right
+   * granularity for the question being asked. A host who leaves this screen open across
+   * local midnight on the day a regulation expires does not get the banner until they
+   * navigate, which is fine — the banner exists to be read on arrival, and re-rendering a
+   * warning underneath someone mid-form would be worse than showing it when they next
+   * come back.
+   */
+  const [today] = useState(todayIso);
+
   /**
    * Four rows, all blank.
    *
@@ -1631,6 +1647,30 @@ export function ConfigScreen({
   return (
     <div class="config-screen">
       <h1 class="app-shell__title">Set up the tournament</h1>
+
+      {/*
+        REFR-03 / D-25, and one of exactly TWO mount sites in the app — this screen and the
+        landing screen. 05-UI-SPEC §3 gives the reason not to add a third: D-24 makes a live
+        or filed tournament's roster a settled fact, since the document loads its own
+        snapshot by `rosterVersion` and keeps working unchanged, so a banner on the draft,
+        ban or completed screens would warn about something that is not a problem and offer
+        an action that would not change that tournament. The banner's job is to stop a host
+        starting a night on an expired roster by ACCIDENT, and there are exactly two screens
+        where a night gets started.
+
+        Above the `Roster` group and not below it, because the config sentence says `Check
+        for a new roster below` and that has to be true.
+
+        `todayIso()` is stamped here, at the edge, and handed in as a string. The rule
+        itself is `isSnapshotStale` in `src/core`, which is not allowed to know what day it
+        is — `npm run check:pure` would fail a core implementation, correctly.
+      */}
+      <StalenessBanner
+        variant="config"
+        regulationLabel={snapshot.regulation}
+        validUntil={snapshot.validUntil}
+        today={today}
+      />
 
       {/*
         D-23: beside the roster the tournament is being created against, and FIRST in the
