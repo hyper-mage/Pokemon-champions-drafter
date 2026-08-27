@@ -253,6 +253,9 @@ function seedSavedDraft(): void {
     swapRounds: 0,
     bansPerPlayer: 0,
     duplicateBanPolicy: 'bothApply',
+    matchMetric: 'pokemonLeft',
+    roundRobinFormat: 'bo1',
+    bracketFormat: 'bo1',
   };
 
   const doc: TournamentDoc = {
@@ -460,6 +463,9 @@ function seedSavedBanStage(banMode: 'snake' | 'blind' = 'snake'): void {
     swapRounds: 0,
     bansPerPlayer: 2,
     duplicateBanPolicy: 'bothApply',
+    matchMetric: 'pokemonLeft',
+    roundRobinFormat: 'bo1',
+    bracketFormat: 'bo1',
   };
 
   const doc: TournamentDoc = {

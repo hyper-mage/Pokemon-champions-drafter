@@ -116,6 +116,9 @@ const CONFIG: TournamentConfig = {
   swapRounds: 0,
   bansPerPlayer: 0,
   duplicateBanPolicy: 'bothApply',
+  matchMetric: 'pokemonLeft',
+  roundRobinFormat: 'bo1',
+  bracketFormat: 'bo1',
 };
 
 /** A schema-2 document's schedule: none at all, which `selectSchedule` folds to all-open. */

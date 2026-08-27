@@ -517,6 +517,9 @@ function seedSavedDraft(bans: readonly string[]): void {
     swapRounds: 0,
     bansPerPlayer: 0,
     duplicateBanPolicy: 'bothApply',
+    matchMetric: 'pokemonLeft',
+    roundRobinFormat: 'bo1',
+    bracketFormat: 'bo1',
   };
 
   const doc: TournamentDoc = {

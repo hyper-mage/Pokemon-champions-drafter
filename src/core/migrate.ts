@@ -1,12 +1,12 @@
 /**
  * migrate.ts — PERS-07. The version decision, in one place, before there is a decision.
  *
- * Four schema versions now, and one arm each. The file was written while version 1 was
+ * Five schema versions now, and one arm each. The file was written while version 1 was
  * still a passthrough and it did nothing, and the reason it existed anyway was structural
  * rather than anticipatory: the alternative to a named home for version handling is
  * `if (doc.someNewField === undefined)` accreting across the reducer, the selectors and
  * the guard, at which point the question "can this build read this file" has no answer
- * that lives anywhere. Three bumps later there are three upgrade arms and a chain that
+ * that lives anywhere. Four bumps later there are four upgrade arms and a chain that
  * runs them in order, all in one place, which is what that structure bought.
  *
  * ## Refusal is a feature
@@ -34,10 +34,7 @@ import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from './mod
  * `TournamentDoc` is still assignable to {@link V2Doc}, which is what lets the version 2
  * arm hand `migrate`'s own argument straight to `migrateV2ToV3`.
  */
-type V2Config = Omit<
-  TournamentConfig,
-  'rules' | 'megaFormeBans' | 'swapBudget' | 'swapRounds' | 'bansPerPlayer' | 'duplicateBanPolicy'
->;
+type V2Config = Omit<V3Config, 'rules' | 'megaFormeBans' | 'swapBudget' | 'swapRounds'>;
 
 type V2Doc = Omit<TournamentDoc, 'config'> & { config: V2Config };
 
@@ -51,9 +48,26 @@ type V2Doc = Omit<TournamentDoc, 'config'> & { config: V2Config };
  * `TournamentDoc` is still assignable to {@link V3Doc}, which is what lets the version 3
  * arm hand `migrate`'s own argument straight to `migrateV3ToV4`.
  */
-type V3Config = Omit<TournamentConfig, 'bansPerPlayer' | 'duplicateBanPolicy'>;
+type V3Config = Omit<V4Config, 'bansPerPlayer' | 'duplicateBanPolicy'>;
 
 type V3Doc = Omit<TournamentDoc, 'config'> & { config: V3Config };
+
+/**
+ * The version 4 config shape: `TournamentConfig` minus everything version 5 added.
+ *
+ * Same `Omit`-rather-than-cast construction as {@link V2Config} and {@link V3Config}, and
+ * the same payoff: `migrateV3ToV4` now returns a document that is NOT a `TournamentDoc` —
+ * it is missing three required fields — and saying so in the type is what makes
+ * {@link migrateV4ToV5} mandatory in the chain rather than something the previous arm can
+ * forget to call. A current `TournamentDoc` is still assignable to {@link V4Doc}, which is
+ * what lets the version 4 arm hand `migrate`'s own argument straight to `migrateV4ToV5`.
+ *
+ * The older aliases are defined in terms of this one rather than of `TournamentConfig`
+ * directly, so that a sixth version widens the chain in one place instead of four.
+ */
+type V4Config = Omit<TournamentConfig, 'matchMetric' | 'roundRobinFormat' | 'bracketFormat'>;
+
+type V4Doc = Omit<TournamentDoc, 'config'> & { config: V4Config };
 
 /**
  * Every version this build can fold.
@@ -62,7 +76,7 @@ type V3Doc = Omit<TournamentDoc, 'config'> & { config: V3Config };
  * is a real possibility and a `>= MIN` check could not express it. Kept in sync with
  * `SCHEMA_VERSION` by test, not by hope.
  */
-export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [1, 2, 3, 4];
+export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [1, 2, 3, 4, 5];
 
 /**
  * What every version 2 config field is worth in a version 1 document.
@@ -127,6 +141,39 @@ export const V2_CONFIG_DEFAULTS = {
 export const V3_CONFIG_DEFAULTS = {
   bansPerPlayer: 0,
   duplicateBanPolicy: 'bothApply',
+} as const;
+
+/**
+ * What every version 5 config field is worth in a version 4 document.
+ *
+ * Same contract as the three tables above: one place, imported by
+ * `import-guard.buildConfig` rather than repeated, because two copies of a default table
+ * is two tables that can disagree about what a Phase 4 tournament was.
+ *
+ * All three values are LOSSLESS rather than merely reasonable, and the argument here is
+ * narrower and stronger than any bump before it. **A version 4 document has no
+ * `tournament/*` entries at all, because nothing in this build before Phase 5 could
+ * originate one.** There is therefore no recorded match anywhere in such a document for a
+ * metric to score or a stage format to describe — which means every value is vacuously
+ * true for every document that exists at version 4, rather than a guess standing in for
+ * one. Nothing is DERIVED here either, unlike `rules` in the version 2 table: no version 4
+ * document is carrying a better answer anywhere for the code to recover.
+ *
+ * **Whether these coincide with the config screen's own defaults is a separate question
+ * from whether they are right here, and the two constants must not be unified.** This
+ * table answers "what did a tournament saved before the field existed do?" — nothing, at
+ * either stage, by any metric. The screen's defaults answer "what should a host who has
+ * just opened the tournament controls see?" As it happens the screen also opens on
+ * `pokemonLeft` and `bo1`, because those are the gentlest starting points for a host who
+ * has not thought about either question — but that is a coincidence of two defensible
+ * answers, not a shared fact. `V3_CONFIG_DEFAULTS.bansPerPlayer` is the precedent for why
+ * that distinction is kept: there the two answers DIFFER, and a shared constant would have
+ * had to be wrong for one of them.
+ */
+export const V4_CONFIG_DEFAULTS = {
+  matchMetric: 'pokemonLeft',
+  roundRobinFormat: 'bo1',
+  bracketFormat: 'bo1',
 } as const;
 
 export type MigrateRejectionReason =
@@ -306,7 +353,7 @@ function migrateV2ToV3(doc: V2Doc): V3Doc {
  * Never mutates its argument. Every object it returns is a fresh literal, because the
  * caller in the persistence path is holding the parsed record and re-reads it afterwards.
  */
-function migrateV3ToV4(doc: V3Doc): TournamentDoc {
+function migrateV3ToV4(doc: V3Doc): V4Doc {
   const { config } = doc;
 
   return {
@@ -325,6 +372,52 @@ function migrateV3ToV4(doc: V3Doc): TournamentDoc {
       megaFormeBans: config.megaFormeBans.map((id) => id),
       bansPerPlayer: V3_CONFIG_DEFAULTS.bansPerPlayer,
       duplicateBanPolicy: V3_CONFIG_DEFAULTS.duplicateBanPolicy,
+    },
+    rng: { seed: doc.rng.seed, cursor: doc.rng.cursor },
+    log: [...doc.log],
+  };
+}
+
+/**
+ * Version 4 to version 5.
+ *
+ * Config only, and now the smallest arm in the file: three scalars, all from
+ * {@link V4_CONFIG_DEFAULTS}, all lossless for the reason stated beside that table — a
+ * version 4 document cannot contain a `tournament/*` entry, so there is no recorded match
+ * for any of them to be wrong about. None of the three is DERIVED, unlike `rules` in the
+ * version 2 arm: no version 4 document is carrying a better answer anywhere.
+ *
+ * **The log is passed through unchanged, entry for entry**, and here that is provable
+ * rather than merely intended. Nothing in schema 5 makes an existing entry unfoldable, and
+ * there is nothing to splice in: the five `tournament/*` types this schema introduces have
+ * no version 4 counterpart to translate from. Synthesising one would need a fresh `seq`
+ * and would describe a match played before the bracket that was supposed to schedule it.
+ *
+ * Never mutates its argument. Every object it returns is a fresh literal and every array
+ * is rebuilt element by element (T-05-02), because the caller in the persistence path is
+ * holding the parsed record and re-reads it afterwards — and because an imported
+ * document's arrays are attacker-supplied objects that must not reach folded state.
+ */
+function migrateV4ToV5(doc: V4Doc): TournamentDoc {
+  const { config } = doc;
+
+  return {
+    schemaVersion: 5,
+    id: doc.id,
+    createdAt: doc.createdAt,
+    config: {
+      ...config,
+      players: config.players.map((player) => ({ id: player.id, name: player.name })),
+      bans: config.bans.map((id) => id),
+      dualMegaChoices: config.dualMegaChoices.map((choice) => ({
+        speciesId: choice.speciesId,
+        forme: choice.forme,
+      })),
+      rules: config.rules.map((rule) => ({ kind: rule.kind, count: rule.count })),
+      megaFormeBans: config.megaFormeBans.map((id) => id),
+      matchMetric: V4_CONFIG_DEFAULTS.matchMetric,
+      roundRobinFormat: V4_CONFIG_DEFAULTS.roundRobinFormat,
+      bracketFormat: V4_CONFIG_DEFAULTS.bracketFormat,
     },
     rng: { seed: doc.rng.seed, cursor: doc.rng.cursor },
     log: [...doc.log],
@@ -353,10 +446,13 @@ export function migrate(doc: TournamentDoc): MigrateResult {
   // gets one arm and one test; the current version is the passthrough, and it returns the
   // document by IDENTITY because a passthrough that rebuilt it would be doing undisclosed
   // work that a caller comparing references would notice.
-  if (version === 4) return { ok: true, doc };
-  if (version === 3) return { ok: true, doc: migrateV3ToV4(doc) };
-  if (version === 2) return { ok: true, doc: migrateV3ToV4(migrateV2ToV3(doc)) };
-  if (version === 1) return { ok: true, doc: migrateV3ToV4(migrateV2ToV3(migrateV1ToV2(doc))) };
+  if (version === 5) return { ok: true, doc };
+  if (version === 4) return { ok: true, doc: migrateV4ToV5(doc) };
+  if (version === 3) return { ok: true, doc: migrateV4ToV5(migrateV3ToV4(doc)) };
+  if (version === 2) return { ok: true, doc: migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(doc))) };
+  if (version === 1) {
+    return { ok: true, doc: migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(migrateV1ToV2(doc)))) };
+  }
 
   // Reachable only by adding a version to the list without giving it an arm. Refusing is
   // the right answer to that: a version this function cannot name is one it cannot fold.

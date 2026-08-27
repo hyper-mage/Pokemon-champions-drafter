@@ -97,7 +97,7 @@
 
 import { MAX_BANS_PER_PLAYER, MAX_SWAP_BUDGET, MAX_SWAP_ROUNDS } from './import-guard';
 import { choiceFor, isMegaEligible } from './mega';
-import type { BanMode, DualMegaChoice } from './model';
+import type { BanMode, DualMegaChoice, TournamentDepth } from './model';
 import type { RosterEntry } from './roster/types';
 
 /**
@@ -142,7 +142,9 @@ export type FeasibilityCode =
   /** Satisfiable but degenerate: the last picker of the last round has one option. */
   | 'poolExactlyMinimum'
   /** Satisfiable but degenerate: swap rounds open on a pool the last pick emptied — D-32. */
-  | 'swapRoundsOnExactPool';
+  | 'swapRoundsOnExactPool'
+  /** Satisfiable but degenerate: a bracket configured for fewer than 4 players — TOUR-01. */
+  | 'bracketNeedsFourPlayers';
 
 export interface FeasibilityProblem {
   code: FeasibilityCode;
@@ -182,6 +184,22 @@ export interface FeasibilityInput {
    * a problem with no next action. See the module header's post-reveal contract.
    */
   banMode: BanMode;
+  /**
+   * How far past the last pick the host says the night runs — TOUR-01.
+   *
+   * Read by this gate for exactly one question: is a bracket being configured for fewer
+   * than 4 players? Nothing else here consults it. The two deeper tiers are the same
+   * question because they configure the same bracket; `'draftOnly'` configures none, so it
+   * asks nothing.
+   *
+   * **A caller whose depth is already settled passes `'draftOnly'`**, whatever the
+   * document's stored depth says, on the same precedent as {@link FeasibilityInput.banMode}
+   * above. The warning is about a tournament that has NOT been created yet — its whole
+   * value is the next action it offers, "choose Draft only, or add players", and neither
+   * half of that is available once a document exists. A post-adoption depth notice would be
+   * a sentence naming two things the host cannot do, which is why there is not one.
+   */
+  depth: TournamentDepth;
   /**
    * Player bans NOT YET reflected in `bannedIds` — D-21. `null` when the field is empty.
    *
@@ -256,6 +274,14 @@ const PRECEDENCE: readonly FeasibilityCode[] = [
   // what that costs the first swapper, so a host reading it needs no second sentence.
   'swapRoundsOnExactPool',
   'poolExactlyMinimum',
+  // LAST, and below both pool warnings. It is a degeneracy warning like its two neighbours
+  // rather than a satisfiability blocker — a three-person bracket runs perfectly well, it
+  // just tells you nothing the round robin did not. Position is a rendering decision as
+  // much as a semantic one, because `FeasibilityBar` renders `problems[0]`: last means a
+  // host whose pool arithmetic is also degenerate reads the pool sentence first, which is
+  // the one that changes what the draft does. This sentence changes only what happens
+  // after it, so it is the one that can wait.
+  'bracketNeedsFourPlayers',
 ];
 
 // ---------------------------------------------------------------------------
@@ -440,6 +466,22 @@ function swapRoundsOnExactPoolMessage(poolSize: number): string {
   return `Warning — the pool is exactly ${poolSize}, so it is empty when the last pick lands. The first player to swap can only take what someone else drops.`;
 }
 
+/**
+ * TOUR-01, and a WARNING for the same reason its two neighbours above are.
+ *
+ * Nothing about a three-person bracket is unsatisfiable — it runs, it produces a winner,
+ * and a host who wants one is entitled to it. What it is, is redundant: at three players
+ * the round robin has already played every pairing, so the bracket re-runs matches whose
+ * answers are known. Saying so once is the entire job. **It must never set `blocked`**, per
+ * `05-UI-SPEC` §1 and the project's warn-rather-than-hard-cap posture.
+ *
+ * Verbatim from `05-UI-SPEC` §1, like every string in this module. If the sentence reads
+ * awkwardly at two players, the fix is in the copy contract, not here.
+ */
+function bracketNeedsFourPlayersMessage(playerCount: number): string {
+  return `A bracket needs at least 4 players to mean much. At ${playerCount} players the round robin already decides it. Choose Draft only, or add players.`;
+}
+
 // ---------------------------------------------------------------------------
 // Module-private helpers
 // ---------------------------------------------------------------------------
@@ -494,7 +536,7 @@ function warning(code: FeasibilityCode, message: string): FeasibilityProblem {
 // ---------------------------------------------------------------------------
 
 export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
-  const { playerNames, rounds, bannedIds, banMode, entries } = input;
+  const { playerNames, rounds, bannedIds, banMode, depth, entries } = input;
 
   // Set membership, never the raw length of the banlist. Two surfaces write one banlist so
   // a duplicate is reachable, and an imported file can carry ids this regulation dropped.
@@ -706,6 +748,22 @@ export function checkFeasibility(input: FeasibilityInput): FeasibilityResult {
   if (poolSize !== null && poolSize === needed && swapRounds !== null && swapRounds > 0) {
     problems.push(
       warning('swapRoundsOnExactPool', swapRoundsOnExactPoolMessage(poolSize)),
+    );
+  }
+
+  // — the bracket, in the two depths that have one —
+  //
+  // Gated on the DEPTH, not on the player count alone: at `draftOnly` there is no bracket
+  // for this to be a warning about. The bound is "fewer than 4"; exactly 4 is the smallest
+  // bracket that is not simply the round robin replayed, so it says nothing.
+  //
+  // There is deliberately NO upper gate here. A 16-player round robin is 120 matches and a
+  // long night, and it is a legitimate choice the config screen already states the size of.
+  // `05-UI-SPEC` §1 records the prohibition explicitly so nobody adds one reflexively, and
+  // a test pins the absence.
+  if (depth !== 'draftOnly' && playerNames.length < 4) {
+    problems.push(
+      warning('bracketNeedsFourPlayers', bracketNeedsFourPlayersMessage(playerNames.length)),
     );
   }
 

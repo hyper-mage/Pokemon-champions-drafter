@@ -1125,6 +1125,10 @@ export function App() {
       // longer exists, which is a problem statement with no next action.
       banMode: 'hostBanlist',
       bansPerPlayer: 0,
+      // `'draftOnly'` REGARDLESS of `state.config.depth`, for the same shape of reason as
+      // the two fields above — see `FeasibilityInput.depth`. This document's depth is
+      // already settled, and the bracket warning's only value is the next action it offers.
+      depth: 'draftOnly',
       entries,
     });
 

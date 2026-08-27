@@ -160,6 +160,9 @@ function configOf(poolSize: number): TournamentConfig {
     swapRounds: 0,
     bansPerPlayer: 0,
     duplicateBanPolicy: 'bothApply',
+    matchMetric: 'pokemonLeft',
+    roundRobinFormat: 'bo1',
+    bracketFormat: 'bo1',
   };
 }
 

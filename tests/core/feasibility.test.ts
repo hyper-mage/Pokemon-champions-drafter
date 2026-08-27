@@ -79,6 +79,11 @@ function base(overrides: Partial<FeasibilityInput> = {}): FeasibilityInput {
     // bans, `q === 0` and all three pessimistic predicates back at Phase 3's rule.
     banMode: 'hostBanlist',
     bansPerPlayer: 0,
+    // The Phase 5 field at the value that neutralises it, so every case written before this
+    // phase reads exactly the tournament it always described. `'draftOnly'` is what a
+    // caller passes when the depth question is already settled — see the field's own doc
+    // block — and it is the only value that asks the bracket gate nothing.
+    depth: 'draftOnly',
     entries: ENTRIES,
     ...overrides,
   };
@@ -1310,5 +1315,129 @@ describe('poolSizeForPreset', () => {
     // rounding rule then.
     expect(poolSizeForPreset(3, 5, 'x1_5')).toBe(23);
     expect(poolSizeForPreset(1, 1, 'x1_5')).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bracketNeedsFourPlayers — 05-UI-SPEC §1. TOUR-01.
+//
+// A degeneracy WARNING, never a blocker. The project's posture is to warn rather than
+// hard-cap, and a host who genuinely wants a three-person bracket is allowed to have
+// one — the sentence exists so nobody arrives at it by accident, not to stop them.
+// ---------------------------------------------------------------------------
+
+describe('bracketNeedsFourPlayers', () => {
+  it('warns at three players configuring a bracket', () => {
+    const result = checkFeasibility(
+      base({ playerNames: ['Ada', 'Bo', 'Cy'], depth: 'draftAndBrackets' }),
+    );
+
+    expect(codes(result)).toContain('bracketNeedsFourPlayers');
+  });
+
+  it('warns at the deepest tier too — the bracket is the same bracket', () => {
+    const result = checkFeasibility(
+      base({ playerNames: ['Ada', 'Bo', 'Cy'], depth: 'draftBracketsAndLog' }),
+    );
+
+    expect(codes(result)).toContain('bracketNeedsFourPlayers');
+  });
+
+  it('says nothing at draftOnly, which configures no bracket at all', () => {
+    const result = checkFeasibility(base({ playerNames: ['Ada', 'Bo', 'Cy'], depth: 'draftOnly' }));
+
+    expect(codes(result)).not.toContain('bracketNeedsFourPlayers');
+  });
+
+  it('is a warning and never blocks — Start draft stays enabled', () => {
+    // The whole point of the ruling. `blocked` is what disables the button, and a host who
+    // meant a three-person bracket must still be able to start one.
+    //
+    // `poolSize` is 24 rather than the fixture's 12, because 12 is the Exact pool for TWO
+    // players and three players need 18. Leaving it would have blocked on `poolTooSmall`
+    // and this assertion would have been passing on an unrelated blocker.
+    const result = checkFeasibility(
+      base({ playerNames: ['Ada', 'Bo', 'Cy'], poolSize: 24, depth: 'draftAndBrackets' }),
+    );
+    const problem = result.problems.find((p) => p.code === 'bracketNeedsFourPlayers');
+
+    expect(problem?.severity).toBe('warning');
+    expect(result.blocked).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // The bound is "fewer than 4", on both sides.
+  // -------------------------------------------------------------------------
+
+  it('says nothing at exactly four players', () => {
+    const result = checkFeasibility(
+      base({ playerNames: ['Ada', 'Bo', 'Cy', 'Di'], poolSize: 24, depth: 'draftAndBrackets' }),
+    );
+
+    expect(codes(result)).not.toContain('bracketNeedsFourPlayers');
+  });
+
+  it('says nothing at four players on the deepest tier either', () => {
+    const result = checkFeasibility(
+      base({
+        playerNames: ['Ada', 'Bo', 'Cy', 'Di'],
+        poolSize: 24,
+        depth: 'draftBracketsAndLog',
+      }),
+    );
+
+    expect(codes(result)).not.toContain('bracketNeedsFourPlayers');
+  });
+
+  it('warns at two players, which is the smallest configuration that reaches this gate', () => {
+    const result = checkFeasibility(base({ playerNames: ['Ada', 'Bo'], depth: 'draftAndBrackets' }));
+
+    expect(codes(result)).toContain('bracketNeedsFourPlayers');
+  });
+
+  // -------------------------------------------------------------------------
+  // The prohibition, pinned. 05-UI-SPEC §1 records it so nobody adds one reflexively.
+  // -------------------------------------------------------------------------
+
+  it('adds NO high-player-count gate — sixteen players is a long night, not a problem', () => {
+    // A 16-player round robin is 120 matches. That is a legitimate choice the host is told
+    // the size of elsewhere, and the project warns rather than hard-caps. This assertion is
+    // what pins the absence: it fails the moment somebody adds the reflexive upper gate.
+    // `poolSize` is 144 rather than the Exact 96, deliberately: 16 × 6 IS 96, so the Exact
+    // preset would fire `poolExactlyMinimum` and this assertion would be passing on an
+    // unrelated warning instead of pinning the absence of a player-count one.
+    const names = Array.from({ length: 16 }, (_unused, index) => `Player ${String(index + 1)}`);
+    const result = checkFeasibility(
+      base({ playerNames: names, poolSize: 144, depth: 'draftBracketsAndLog' }),
+    );
+
+    expect(codes(result)).not.toContain('bracketNeedsFourPlayers');
+    expect(result.problems).toEqual([]);
+    expect(result.blocked).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Copy — byte-for-byte from 05-UI-SPEC §1.
+  // -------------------------------------------------------------------------
+
+  it('reads exactly the contract sentence, with the player count interpolated', () => {
+    // `toBe`, never `toContain`: these strings are contracts down to the full stop, and a
+    // substring assertion would pass against a reworded sentence that merely contains the
+    // old one.
+    const result = checkFeasibility(
+      base({ playerNames: ['Ada', 'Bo', 'Cy'], depth: 'draftAndBrackets' }),
+    );
+
+    expect(messageFor(result, 'bracketNeedsFourPlayers')).toBe(
+      'A bracket needs at least 4 players to mean much. At 3 players the round robin already decides it. Choose Draft only, or add players.',
+    );
+  });
+
+  it('interpolates the count rather than hardcoding three', () => {
+    const result = checkFeasibility(base({ playerNames: ['Ada', 'Bo'], depth: 'draftAndBrackets' }));
+
+    expect(messageFor(result, 'bracketNeedsFourPlayers')).toBe(
+      'A bracket needs at least 4 players to mean much. At 2 players the round robin already decides it. Choose Draft only, or add players.',
+    );
   });
 });

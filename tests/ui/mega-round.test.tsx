@@ -480,6 +480,9 @@ const APP_CONFIG: TournamentConfig = {
   swapRounds: 0,
   bansPerPlayer: 0,
   duplicateBanPolicy: 'bothApply',
+  matchMetric: 'pokemonLeft',
+  roundRobinFormat: 'bo1',
+  bracketFormat: 'bo1',
 };
 
 /** Rounds 1 and 2 Mega, the rest open — what `compile` emits for a two-Mega tournament. */

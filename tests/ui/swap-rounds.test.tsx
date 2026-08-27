@@ -188,6 +188,9 @@ function configOf(options: { swapRounds: number; swapBudget?: number }): Tournam
     swapRounds: options.swapRounds,
     bansPerPlayer: 0,
     duplicateBanPolicy: 'bothApply',
+    matchMetric: 'pokemonLeft',
+    roundRobinFormat: 'bo1',
+    bracketFormat: 'bo1',
   };
 }
 

@@ -93,6 +93,9 @@ function configFor(
     swapRounds: 0,
     bansPerPlayer,
     duplicateBanPolicy: 'bothApply',
+    matchMetric: 'pokemonLeft',
+    roundRobinFormat: 'bo1',
+    bracketFormat: 'bo1',
   };
 }
 
@@ -179,7 +182,7 @@ describe('createBanStage', () => {
       schedule: schedule(),
     });
 
-    expect(doc?.schemaVersion).toBe(4);
+    expect(doc?.schemaVersion).toBe(5);
     expect(doc?.config.banMode).toBe('snake');
     expect(doc?.config.bansPerPlayer).toBe(1);
   });
