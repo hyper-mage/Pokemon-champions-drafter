@@ -310,8 +310,8 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 05-06-PLAN.md — the bracket, its byes, the locked fold and the void cascade (TOUR-03, TOUR-06, TOUR-09)
-- [ ] 05-07-PLAN.md — roster refresh and the staleness banner on screen (REFR-01, REFR-02, REFR-03)
+- [x] 05-06-PLAN.md — the bracket, its byes, the locked fold and the void cascade (TOUR-03, TOUR-06, TOUR-09)
+- [x] 05-07-PLAN.md — roster refresh and the staleness banner on screen (REFR-01, REFR-02, REFR-03)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -352,7 +352,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
-| 5. Full Tournament — Brackets, Standings, Archive | 5/15 | In Progress|  |
+| 5. Full Tournament — Brackets, Standings, Archive | 7/15 | In Progress|  |
 
 ## Requirement Coverage
 
