@@ -598,3 +598,267 @@ export function selectStandings(state: DraftState): readonly StandingsRow[] {
 export function selectSeeding(state: DraftState): readonly string[] {
   return selectStandings(state).map((row) => row.playerId);
 }
+
+/**
+ * One card in the bracket. Derived from the cut's seeds and the recorded results;
+ * stored nowhere, on {@link RoundRobinMatch}'s precedent.
+ *
+ * `upperId` and `lowerId` are `null` for two DIFFERENT reasons, and the pair
+ * `isBye` tells them apart:
+ *
+ *   `isBye: false`  the feeder match has no recorded result yet, so the slot renders
+ *                   `Winner of {roundLabel} {n}` and the card is inert.
+ *   `isBye: true`   the opponent is a phantom — a seed number past the cut — so there
+ *                   is nobody to play and nothing to record.
+ *
+ * A bye always carries its player on `upperId`, because the recursion pairs seed `s`
+ * with `B+1-s` and `s` is always the smaller of the two, so a phantom can only ever
+ * land in the lower slot.
+ */
+export interface BracketMatch {
+  /** `br:{round}:{slot}`, both 1-based. */
+  matchId: string;
+  /** `null` = not known yet, or a phantom (a bye's missing opponent). */
+  upperId: string | null;
+  lowerId: string | null;
+  isBye: boolean;
+  /** `Final` | `Semi-final` | `Quarter-final` | `Round of {n}` — by matches-in-round. */
+  roundLabel: string;
+}
+
+/**
+ * The whole bracket, every value in it a fact about the cut and the results.
+ *
+ * `final` is the same object as `rounds[rounds.length - 1][0]` rather than a copy, so
+ * a caller comparing them by identity gets the answer it expects.
+ */
+export interface Bracket {
+  rounds: readonly (readonly BracketMatch[])[];
+  final: BracketMatch;
+  /** Non-null only once the final is recorded. */
+  championId: string | null;
+}
+
+/**
+ * The bracket size `B` — the next power of two at or above `n`.
+ *
+ * The one place the padding is computed, so {@link byeCountForCut} and
+ * {@link selectBracket} cannot round differently.
+ */
+function bracketSize(n: number): number {
+  let size = 1;
+  while (size < n) size *= 2;
+  return size;
+}
+
+/**
+ * The classic single-elimination seed order, built by doubling.
+ *
+ * `order(1) = [1]`; each doubling maps every `s` to `[s, 2B+1-s]`. Pair adjacent
+ * entries and round one is done. The property that matters is the one that makes this
+ * a SEEDED bracket rather than a shuffled one: seeds 1 and 2 can only meet in the
+ * final, 1 and 3 only in the semi, and so on down.
+ *
+ * Executed by `05-RESEARCH.md` §Seeded Single Elimination on 2026-08-26:
+ *
+ *   `seedOrder(8)`  = 1, 8, 4, 5, 2, 7, 3, 6
+ *   `seedOrder(16)` = 1, 16, 8, 9, 4, 13, 5, 12, 2, 15, 7, 10, 3, 14, 6, 11
+ *
+ * Within every pair the first entry is the smaller seed, because each doubling pushes
+ * `s` before `n + 1 - s` and `s` never exceeds `n / 2`. That is what puts a phantom in
+ * the lower slot without a branch deciding it.
+ */
+function seedOrder(size: number): number[] {
+  let order = [1];
+
+  while (order.length < size) {
+    const n = order.length * 2;
+    const next: number[] = [];
+    for (const s of order) next.push(s, n + 1 - s);
+    order = next;
+  }
+
+  return order;
+}
+
+/**
+ * How many byes a cut of `n` produces — and the ONE place that number is computed.
+ *
+ * It exists so the cut preview line (`Top {n} advance. Seeds 1 to {b} get a bye.`) and
+ * the bracket cannot disagree about how many byes a size produces. A host who reads
+ * "seeds 1 to 3 get a bye" and then counts four bye cards has been lied to by one of
+ * the two, and nothing on screen would say which.
+ *
+ * `B - n`, so a power-of-two cut takes none: 8 → 0, 7 → 1, 6 → 2, 5 → 3, 4 → 0.
+ *
+ * `0` below two seeds, where there is no bracket to put a bye in — see
+ * {@link selectBracket}'s own null.
+ */
+export function byeCountForCut(n: number): number {
+  if (n < 2) return 0;
+  return bracketSize(n) - n;
+}
+
+/**
+ * The label for a round, decided by HOW MANY MATCHES ARE IN IT and never by the round
+ * index.
+ *
+ * RESEARCH's reason, which is the whole reason this is not `rounds[i]` arithmetic: at
+ * `B = 8` round 1 *is* the quarter-final, and at `B = 16` round 1 is the round of 16.
+ * An index-based label would call both of them "round 1" and neither of them what the
+ * room calls it.
+ *
+ *   1 match  → `Final`
+ *   2        → `Semi-final`
+ *   4        → `Quarter-final`
+ *   m >= 8   → `Round of {2m}`
+ */
+function roundLabelFor(matchesInRound: number): string {
+  if (matchesInRound <= 1) return 'Final';
+  if (matchesInRound === 2) return 'Semi-final';
+  if (matchesInRound === 4) return 'Quarter-final';
+  return `Round of ${matchesInRound * 2}`;
+}
+
+/**
+ * The result that currently stands for one match id, highest `seq` winning.
+ *
+ * The same "later beats earlier" rule {@link standingRoundRobinResults} applies to the
+ * round robin (D-09), asked one match at a time because the bracket walks by id rather
+ * than by pair set. `null` when nothing has been recorded.
+ */
+function liveResultFor(
+  results: readonly MatchResult[],
+  matchId: string,
+): MatchResult | null {
+  let live: MatchResult | null = null;
+
+  for (const result of results) {
+    if (result.matchId !== matchId) continue;
+    if (live === null || result.seq > live.seq) live = result;
+  }
+
+  return live;
+}
+
+/**
+ * Who comes out of a match, or `null` while nobody does.
+ *
+ * A BYE is answered first and without consulting the results at all: there is no game,
+ * so the seeded player advances on the strength of the seeding. That ordering also
+ * means a hand-edited document carrying a result for a bye's id cannot promote the
+ * phantom.
+ */
+function winnerOf(match: BracketMatch, results: readonly MatchResult[]): string | null {
+  if (match.isBye) return match.upperId ?? match.lowerId;
+
+  const result = liveResultFor(results, match.matchId);
+  return result === null ? null : result.winnerId;
+}
+
+/**
+ * The bracket — TOUR-03. `null` until a cut is taken.
+ *
+ * ## D-07 needs NO CODE OF ITS OWN, and that is the finding rather than a shortcut
+ *
+ * Pad the seed list to `B`, the next power of two at or above `N`, and treat a seed
+ * number past `N` as a phantom. Seed `s` faces seed `B+1-s`, so a phantom opponent
+ * means `B+1-s > N`, i.e. `s <= B-N` — **the top `B-N` seeds, which is exactly "byes go
+ * to the top seeds, seed 1 first"**. No branch, no sort, no special case: the recursion
+ * IS the bye rule. Any hand-written loop placing byes beside this would be a second
+ * authority on the same fact, free to disagree with the first after a later edit.
+ *
+ * Executed at 5, 6 and 7 seeds — the three counts ROADMAP success criterion 1 names —
+ * this gives 3, 2 and 1 byes, and 4, 5 and 6 real matches. The invariant worth holding
+ * onto is that real matches (byes excluded) always number `N - 1`.
+ *
+ * ## Nothing here is stored
+ *
+ * Participants, advancement, the champion and the round labels are all recomputed from
+ * `state.cut.seeds` and `state.matchResults` on every call. `05-RESEARCH.md`
+ * §Anti-Patterns names a STORED bracket as precisely the mutable-state design D-10 and
+ * D-11 exist to avoid: a stored bracket would have to be walked and patched after every
+ * correction, and a patch that missed a card would leave the document disagreeing with
+ * itself with nothing to recompute the truth from.
+ *
+ * ## Rounds are not collapsed
+ *
+ * Three rounds render at 5 seeds even though round 1 holds a single real match.
+ * Collapsing would put seeds 2 and 3 in a "quarter-final" against each other on one
+ * screen and a "semi-final" on another for the same game, which is worse than a sparse
+ * first round.
+ *
+ * `null` below two seeds as well as with no cut: one player is not a bracket, there is
+ * no final for {@link Bracket.final} to name, and a phantom final would report a
+ * champion nobody played for.
+ *
+ * The bracket and every match in it are FRESH on every call.
+ */
+export function selectBracket(state: DraftState): Bracket | null {
+  if (state.cut === null) return null;
+
+  const seeds = state.cut.seeds;
+  const n = seeds.length;
+  if (n < 2) return null;
+
+  const order = seedOrder(bracketSize(n));
+  const rounds: BracketMatch[][] = [];
+
+  const firstRound: BracketMatch[] = [];
+  for (let i = 0; i < order.length; i += 2) {
+    const upperSeed = order[i];
+    const lowerSeed = order[i + 1];
+    if (upperSeed === undefined || lowerSeed === undefined) continue;
+
+    // A seed number past `n` is a PHANTOM: its slot is a bye, not an empty match.
+    const upperIsPhantom = upperSeed > n;
+    const lowerIsPhantom = lowerSeed > n;
+
+    firstRound.push({
+      matchId: `br:1:${firstRound.length + 1}`,
+      upperId: upperIsPhantom ? null : (seeds[upperSeed - 1] ?? null),
+      lowerId: lowerIsPhantom ? null : (seeds[lowerSeed - 1] ?? null),
+      // Exactly one phantom. Two would mean `B >= 2n`, which the next power of two at
+      // or above `n` is never.
+      isBye: upperIsPhantom !== lowerIsPhantom,
+      roundLabel: roundLabelFor(order.length / 2),
+    });
+  }
+  rounds.push(firstRound);
+
+  // Later rounds. `br:r:s` feeds `br:(r+1):ceil(s/2)`, and SLOT PARITY decides which
+  // half of the parent card the winner lands in: ODD `s` is the upper slot, even `s`
+  // the lower. Read from the parent, feeder `2s-1` is the upper and `2s` the lower —
+  // which is the one place a transposition would stay invisible until a real bracket
+  // ran, because it swaps two names that are both legitimately in the match.
+  for (let roundNumber = 2; ; roundNumber++) {
+    const previous = rounds[rounds.length - 1];
+    if (previous === undefined || previous.length <= 1) break;
+
+    const matchesInRound = previous.length / 2;
+    const roundLabel = roundLabelFor(matchesInRound);
+    const round: BracketMatch[] = [];
+
+    for (let slot = 1; slot <= matchesInRound; slot++) {
+      const upperFeeder = previous[slot * 2 - 2];
+      const lowerFeeder = previous[slot * 2 - 1];
+
+      round.push({
+        matchId: `br:${roundNumber}:${slot}`,
+        upperId: upperFeeder === undefined ? null : winnerOf(upperFeeder, state.matchResults),
+        lowerId: lowerFeeder === undefined ? null : winnerOf(lowerFeeder, state.matchResults),
+        // Never a bye past round 1: a bye's seed has already advanced, so both slots
+        // here are either a real winner or a name that is not known yet.
+        isBye: false,
+        roundLabel,
+      });
+    }
+
+    rounds.push(round);
+  }
+
+  const final = rounds[rounds.length - 1]?.[0];
+  if (final === undefined) return null;
+
+  return { rounds, final, championId: winnerOf(final, state.matchResults) };
+}
