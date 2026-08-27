@@ -1,0 +1,85 @@
+/*
+ * RosterRefresh.css — REFR-01 / REFR-02, 05-UI-SPEC section 2.
+ *
+ * One group inside the config form, not a bar and not a dialog. It must NOT become
+ * either: a modal would put a roster decision in front of a host who came to set up a
+ * tournament, and a pinned bar would compete with the feasibility bar that already owns
+ * the foot of this screen.
+ *
+ * Neither of its two buttons is accent-filled and neither may become so. The accent marks
+ * `Start draft` on this screen; a second filled button would put two primaries on one
+ * form, and the accent's three reservations do not include this one.
+ *
+ * Declares no raw colour and no raw length. Every value comes from tokens.css.
+ */
+
+.roster-refresh {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 60ch;
+}
+
+.roster-refresh__heading {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+/*
+ * At --text-body rather than --text-label. It is the answer the group is about — which
+ * roster this tournament will be created against — not an aside about a control, which is
+ * the same distinction `.config-screen__readout` draws.
+ */
+.roster-refresh__current {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}
+
+/*
+ * --space-3 between the two controls, per section 2's element table. They wrap rather
+ * than shrink: a narrow screen gets two full-width targets, never two clipped ones.
+ */
+.roster-refresh__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/*
+ * Same shape as `.config-screen__reroll`, because they are the same kind of thing — a
+ * secondary action inside a group. Both axes clear --target-min, which section
+ * Interaction's `Target size` row names for these two buttons specifically.
+ */
+.roster-refresh__action {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.roster-refresh__action:hover {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * The result sentence. Full text colour and --text-body, never muted: every one of the
+ * five states is the answer the host pressed a button to get, and a failure among them
+ * names the next action. Muting it would say "minor aside" about the only thing on the
+ * surface that changed.
+ *
+ * NOT danger-toned in the failure state either. No network is not a loss — nothing has
+ * been discarded and the roster on screen still works — and --color-danger is reserved
+ * for the surfaces that own it.
+ */
+.roster-refresh__result {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}

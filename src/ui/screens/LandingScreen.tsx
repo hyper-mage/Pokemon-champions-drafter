@@ -1,8 +1,10 @@
-import { useCallback, useRef } from 'preact/hooks';
+import { useCallback, useRef, useState } from 'preact/hooks';
 
+import { todayIso } from '../../adapters/clock';
 import type { TournamentDoc } from '../../core/model';
 import { fold } from '../../core/reduce';
 import { selectPickCount } from '../../core/selectors';
+import { StalenessBanner } from '../components/StalenessBanner';
 
 import { StorageBlocked } from './StorageBlocked';
 
@@ -85,6 +87,21 @@ export interface LandingScreenProps {
   onResume: () => void;
   /** A file the host chose. Validation and every consequence belong to the caller. */
   onImportFile: (file: File) => void;
+  /**
+   * The DEFAULT roster — the one a new tournament would be created against — or `null`
+   * while it is still loading or failed to load. Only the two fields REFR-03's sentence
+   * names, because that is all this screen does with it.
+   *
+   * Optional so a caller that has nothing to say about rosters still gets a working
+   * landing screen, exactly as `ConfigScreen`'s roster props are.
+   */
+  roster?: { regulationLabel: string; validUntil: string } | null;
+  /**
+   * D-26: route to the config screen and put focus on `Check for a new roster`. This
+   * screen has no refresh control of its own and must never grow one — the whole content
+   * of D-26 is that the tension between D-23 and D-25 is resolved by routing.
+   */
+  onUpdateRoster?: (() => void) | undefined;
 }
 
 export function LandingScreen({
@@ -94,8 +111,16 @@ export function LandingScreen({
   onNewTournament,
   onResume,
   onImportFile,
+  roster = null,
+  onUpdateRoster,
 }: LandingScreenProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  /**
+   * Today, LOCAL, read once per mount. The impure read is here, at the edge; the rule is
+   * `isSnapshotStale` in `src/core`, which is only ever told what day it is.
+   */
+  const [today] = useState(todayIso);
 
   const openFilePicker = useCallback(() => {
     fileInputRef.current?.click();
@@ -127,6 +152,32 @@ export function LandingScreen({
       ) : (
         <>
           <p class="landing__subtitle">{SUBTITLE}</p>
+
+          {/*
+            REFR-03 / D-25, and the second of exactly TWO mount sites in the app — the
+            other is the config screen. 05-UI-SPEC §3 forbids a third: D-24 makes a live or
+            filed tournament's roster a settled fact, so a banner on the draft, ban or
+            completed screens would warn about something that is not a problem and offer an
+            action that would not change that tournament. There are exactly two screens
+            where a night gets started, and this is one of them.
+
+            INSIDE the non-blocked branch, so a failed storage canary still renders
+            `StorageBlocked` and nothing else. That rule is not negotiable for a warning:
+            the host has to read the one that says nothing will be kept first.
+
+            It warns and never blocks — `New tournament` below stays live while it is on
+            screen (D-25), because blocking would also block a host with no network and
+            that breaks the offline premise.
+          */}
+          {roster !== null && (
+            <StalenessBanner
+              variant="landing"
+              regulationLabel={roster.regulationLabel}
+              validUntil={roster.validUntil}
+              today={today}
+              onUpdateRoster={onUpdateRoster}
+            />
+          )}
 
           <div class="landing__actions">
             <button
