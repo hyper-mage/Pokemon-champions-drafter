@@ -499,3 +499,261 @@ describe('loadRoster / resolveSnapshot', () => {
     expect(mod.resolveSnapshot('M-B')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// refreshRoster — REFR-01
+// ---------------------------------------------------------------------------
+
+/** What the origin serves once a newer regulation has been deployed. */
+function nextSnapshot(): Loose {
+  return {
+    ...(committedSnapshot as unknown as Loose),
+    regulation: 'M-C',
+    validFrom: '2026-09-02',
+    validUntil: '2026-11-18',
+    checksum: 'sha256-0000000000000000000000000000000000000000000000000000000000000000',
+  };
+}
+
+function nextIndex(): Loose {
+  return {
+    default: 'mc',
+    regulations: [
+      ...(committedIndex as unknown as { regulations: Loose[] }).regulations,
+      {
+        id: 'mc',
+        label: 'M-C',
+        json: 'roster.mc.json',
+        validFrom: '2026-09-02',
+        validUntil: '2026-11-18',
+        checksum: 'sha256-0000000000000000000000000000000000000000000000000000000000000000',
+        counts: { draftable: 235, megaCapableSpecies: 74 },
+      },
+    ],
+  };
+}
+
+/** The origin after a rotation, with an overridable snapshot body. */
+function rotatedRoutes(snapshot: unknown = nextSnapshot()): Map<string, unknown> {
+  const routes = defaultRoutes();
+  routes.set('roster.index.json', nextIndex());
+  routes.set('roster.mc.json', snapshot);
+  return routes;
+}
+
+describe('refreshRoster', () => {
+  beforeEach(() => {
+    installFetch();
+  });
+
+  it('marks the request so the service worker steps aside, and states its init', async () => {
+    await mod.loadRoster();
+    const before = calls.length;
+
+    await mod.refreshRoster();
+
+    const request = calls[before];
+    expect(request?.url).toContain('roster.index.json?refresh=1');
+    // BOTH are required and neither is sufficient — the marker gets past the service
+    // worker, `reload` gets past the HTTP cache Pages sets to max-age=600.
+    expect(request?.init?.cache).toBe('reload');
+    // Stated rather than inherited from the same-origin default.
+    expect(request?.init?.credentials).toBe('omit');
+  });
+
+  it('reports alreadyCurrent on an unchanged checksum, in exactly one request', async () => {
+    await mod.loadRoster();
+    const before = calls.length;
+
+    expect(await mod.refreshRoster()).toEqual({ kind: 'alreadyCurrent', label: 'M-B' });
+
+    // The common case, and the reason a refresh is usually one 1.8 KB request: the
+    // snapshot itself is never fetched when the manifest says nothing has changed.
+    expect(calls.length - before).toBe(1);
+  });
+
+  it('adopts a newer regulation and reports it', async () => {
+    await mod.loadRoster();
+    installFetch(rotatedRoutes());
+
+    expect(await mod.refreshRoster()).toEqual({
+      kind: 'updated',
+      label: 'M-C',
+      validUntil: '2026-11-18',
+    });
+
+    expect(mod.resolveSnapshot('mc')?.snapshot.regulation).toBe('M-C');
+    expect(mod.resolveSnapshot('M-C')?.snapshot.checksum).toBe(
+      'sha256-0000000000000000000000000000000000000000000000000000000000000000',
+    );
+    // The superseded regulation is still resolvable — a filed M-B night opened after
+    // this refresh is still an M-B night. That is the whole of D-24.
+    expect(mod.resolveSnapshot('mb')?.snapshot.regulation).toBe('M-B');
+  });
+
+  it('serves the new default to a later no-argument load, without the network', async () => {
+    await mod.loadRoster();
+    installFetch(rotatedRoutes());
+    await mod.refreshRoster();
+    const before = calls.length;
+
+    expect((await mod.loadRoster()).snapshot.regulation).toBe('M-C');
+    expect(calls.length).toBe(before);
+  });
+
+  it('fails on a rejected fetch and leaves the registry exactly as it was', async () => {
+    await mod.loadRoster();
+    installFetch(new Map<string, unknown>([['roster.index.json', REJECTS]]));
+
+    expect(await mod.refreshRoster()).toEqual({ kind: 'failed' });
+
+    expect(mod.resolveSnapshot('mb')?.snapshot.regulation).toBe('M-B');
+    expect((await mod.loadRoster()).snapshot.regulation).toBe('M-B');
+  });
+
+  it('fails on a non-ok response', async () => {
+    await mod.loadRoster();
+    installFetch(new Map<string, unknown>([['roster.index.json', NOT_FOUND]]));
+
+    expect(await mod.refreshRoster()).toEqual({ kind: 'failed' });
+    expect(mod.resolveSnapshot('mb')?.snapshot.regulation).toBe('M-B');
+  });
+
+  it('fails when the fetched snapshot is refused, adopting nothing', async () => {
+    await mod.loadRoster();
+    // Structurally wrong in the cheapest way that catches truncation: the declared
+    // draftable count no longer matches the rows that arrived.
+    installFetch(rotatedRoutes({ ...nextSnapshot(), counts: makeCounts(1) }));
+
+    expect(await mod.refreshRoster()).toEqual({ kind: 'failed' });
+
+    expect(mod.resolveSnapshot('mc')).toBeNull();
+    expect(mod.resolveSnapshot('M-C')).toBeNull();
+    expect(mod.resolveSnapshot('mb')?.snapshot.regulation).toBe('M-B');
+  });
+
+  it('compares by checksum, never by size — a byte-identical roster is not a change', async () => {
+    await mod.loadRoster();
+    // The committed file is 147,021 bytes in a Windows checkout and 140,170 on the
+    // origin, with an IDENTICAL checksum: `core.autocrlf` is true and there is no
+    // `.gitattributes`. Any length comparison reports a change on every developer
+    // machine forever and never on CI. This is the same snapshot with different bytes.
+    const reformatted = JSON.parse(JSON.stringify(committedSnapshot)) as Loose;
+    const routes = defaultRoutes();
+    routes.set('roster.mb.json', reformatted);
+
+    installFetch(routes);
+
+    expect(await mod.refreshRoster()).toEqual({ kind: 'alreadyCurrent', label: 'M-B' });
+  });
+
+  it('contacts no origin but this one — every URL it builds starts at the base', async () => {
+    await mod.loadRoster();
+    installFetch(rotatedRoutes());
+    await mod.refreshRoster();
+
+    expect(calls.length).toBeGreaterThan(3);
+    for (const call of calls) {
+      // T-01-25, asserted for the first time. RESEARCH Correction 1 found this
+      // invariant was stated in the doc block and checked by nothing.
+      expect(call.url.startsWith(import.meta.env.BASE_URL)).toBe(true);
+      expect(call.url).not.toContain('://');
+      expect(call.url).not.toContain('raw.githubusercontent.com');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readRosterFile — REFR-02
+// ---------------------------------------------------------------------------
+
+function rosterFile(body: unknown): File {
+  const text = typeof body === 'string' ? body : JSON.stringify(body);
+  return new File([text], 'roster.json', { type: 'application/json' });
+}
+
+describe('readRosterFile', () => {
+  beforeEach(() => {
+    installFetch();
+  });
+
+  it('accepts a roster file and issues no request at all', async () => {
+    await mod.loadRoster();
+    const before = calls.length;
+
+    const bundle = await mod.readRosterFile(rosterFile(nextSnapshot()));
+
+    expect(bundle?.snapshot.regulation).toBe('M-C');
+    // REFR-02's entire point: this is the path that works on a laptop with no network,
+    // which is why the refresh failure copy names it.
+    expect(calls.length).toBe(before);
+  });
+
+  it('carries the sprite map the app already holds', async () => {
+    await mod.loadRoster();
+
+    const bundle = await mod.readRosterFile(rosterFile(nextSnapshot()));
+
+    expect(bundle?.spriteMeta.byRosterId['abomasnow']?.file).toBe('460.png');
+  });
+
+  it('adopts the file, so a document naming that regulation resolves', async () => {
+    await mod.loadRoster();
+
+    await mod.readRosterFile(rosterFile(nextSnapshot()));
+
+    // The recovery D-24 promises: a night filed under a regulation this build never
+    // shipped becomes readable once the host hands the tool its roster.
+    expect(mod.resolveSnapshot('M-C')?.snapshot.regulation).toBe('M-C');
+  });
+
+  it('does not make the imported roster the default', async () => {
+    await mod.loadRoster();
+    await mod.readRosterFile(rosterFile(nextSnapshot()));
+    const before = calls.length;
+
+    // Importing a roster to READ a filed night must not silently re-point new
+    // tournaments at it. 05-07 owns any deliberate switch.
+    expect((await mod.loadRoster()).snapshot.regulation).toBe('M-B');
+    expect(calls.length).toBe(before);
+  });
+
+  it('refuses a file the same validator refuses on the network', async () => {
+    await mod.loadRoster();
+
+    expect(
+      await mod.readRosterFile(rosterFile({ ...nextSnapshot(), counts: makeCounts(1) })),
+    ).toBeNull();
+    expect(mod.resolveSnapshot('M-C')).toBeNull();
+  });
+
+  it('refuses a file that is not JSON', async () => {
+    await mod.loadRoster();
+
+    expect(await mod.readRosterFile(rosterFile('not json at all'))).toBeNull();
+  });
+
+  it('refuses an oversized file WITHOUT reading it', async () => {
+    await mod.loadRoster();
+    let read = false;
+    const huge = {
+      size: 6 * 1024 * 1024,
+      text: async (): Promise<string> => {
+        read = true;
+        return '{}';
+      },
+    } as unknown as File;
+
+    expect(await mod.readRosterFile(huge)).toBeNull();
+    // `File.size` is metadata available before a single byte is read, so a 2 GB file is
+    // never brought into memory at all (`file-io.ts:130-136`).
+    expect(read).toBe(false);
+  });
+
+  it('refuses when no sprite map has been resolved yet', async () => {
+    // Nothing loaded. The sprite map ships with the app and is precached, so this
+    // state means the page-load path itself failed — which importing a roster file
+    // cannot repair.
+    expect(await mod.readRosterFile(rosterFile(nextSnapshot()))).toBeNull();
+  });
+});
