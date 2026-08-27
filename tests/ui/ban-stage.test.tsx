@@ -93,6 +93,9 @@ function configFor(
     swapRounds: 0,
     bansPerPlayer,
     duplicateBanPolicy: 'bothApply',
+    matchMetric: 'pokemonLeft',
+    roundRobinFormat: 'bo1',
+    bracketFormat: 'bo1',
   };
 }
 

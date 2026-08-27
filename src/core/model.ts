@@ -45,13 +45,23 @@ import type { Action, RoundSpec } from './actions';
  * at version 3 rather than a guess standing in for one. `migrate.ts` states the same
  * thing beside the defaults themselves.
  *
+ * Version 5 widens it a fourth time, with the three things Phase 5's tournament makes a
+ * host decision: which metric breaks a tie between two players on the same record (D-04,
+ * TOUR-07), and whether each of the two stages is played best-of-one or best-of-three
+ * (D-08). All three take a lossless default rather than a derivation, and the argument is
+ * narrower and stronger than version 4's: a version 4 document has no `tournament/*`
+ * entries AT ALL, because nothing in this build before Phase 5 could originate one. There
+ * is therefore no recorded match for a metric to score or a format to describe, so every
+ * value is vacuously true for every document that exists at version 4. `migrate.ts`
+ * states the same thing beside `V4_CONFIG_DEFAULTS` itself.
+ *
  * `migrate.ts` owns that upgrade step and is the only module that knows how to perform
  * it. Nothing else compares a document's version against this constant: `store.ts`,
  * `adapters/persistence.ts` and `import-guard.ts` all route through `migrate` instead,
  * so there is one answer to "can this build read this document" rather than three that
  * can drift apart.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export interface PlayerConfig {
   id: string;
@@ -102,16 +112,74 @@ export type DuplicateBanPolicy =
 /**
  * How far past the last pick the tournament runs.
  *
- * Phase 2 only records this. Phase 5 is what consumes it, and recording it early is what
- * keeps a host from having to re-declare the shape of their night halfway through it.
+ * Phase 2 recorded this and nothing read it. Phase 5 is what consumes it, and recording it
+ * early is what kept a host from having to re-declare the shape of their night halfway
+ * through it. Each member now names a set of stages the tournament actually generates,
+ * and the members below say which.
+ *
+ * ## What tier 3's `match log` is, and is not
+ *
+ * RESEARCH open question 4, answered here so it does not reopen: tier 3 adds the numeric
+ * metric field per match and the editable result history, and NOTHING ELSE. It is
+ * `draftAndBrackets` plus a number a host can type and a past result a host can correct.
+ *
+ * TOUR-10's free-text house-rules note is NOT the answer and must not be folded in here.
+ * That is a v2 surface with its own storage question, and attaching it to this member
+ * would make a host choosing "I want to record KO counts" also choose "I want a notes
+ * field", which are not the same want.
  */
 export type TournamentDepth =
-  /** Draft six, export the teams, done. */
+  /** Draft six, export the teams, done. No round robin, no bracket, no recorded match. */
   | 'draftOnly'
-  /** Draft, then play out a single-elimination bracket. */
+  /**
+   * Draft, then a round robin, then a seeded cut into a single-elimination bracket. Every
+   * match is recorded win/loss only — `config.matchMetric` is scored `0` and never read at
+   * this tier (D-01, D-02).
+   */
   | 'draftAndBrackets'
-  /** Draft, bracket, and a match log with standings behind it. */
+  /**
+   * Everything `draftAndBrackets` generates, plus the per-match numeric metric a host
+   * types and the editable history that lets a recorded result be corrected. See the
+   * block above for what this deliberately does not include.
+   */
   | 'draftBracketsAndLog';
+
+/**
+ * What breaks a tie between two players on the same win/loss record. TOUR-07, D-04.
+ *
+ * A string-literal union for exactly {@link BanMode}'s reason, and these are an API rather
+ * than a label: the chosen member is written into every saved document from schema 5
+ * onward and read back by a later build to sort a standings table. Renaming a member
+ * breaks every tournament already on disk, and it breaks it silently — a standings order
+ * has no obvious wrong answer to look at.
+ */
+export type MatchMetric =
+  /**
+   * Pokémon the winner had left standing, summed across their matches. The default, and
+   * the one a host who has not thought about it means.
+   */
+  | 'pokemonLeft'
+  /** KOs scored minus KOs conceded, summed across their matches. */
+  | 'koDifference';
+
+/**
+ * How many games decide one match at a given stage. D-08.
+ *
+ * Per-STAGE rather than per-tournament, because the common shape of a draft night is a
+ * quick best-of-one round robin feeding a best-of-three bracket, and one field for both
+ * would force a host to run the whole night at whichever length they picked.
+ *
+ * A string-literal union rather than the number `1 | 3` for {@link BanMode}'s reason plus
+ * one of its own: `'bo1'` and `'bo3'` are what the host reads on the control, and a stored
+ * `3` would be ambiguous the moment a best-of-five is ever wanted — `3` could be a count of
+ * games or a count of wins. These strings are written into saved documents and renaming a
+ * member breaks every tournament already on disk.
+ */
+export type StageFormat =
+  /** One game decides the match. The default at both stages. */
+  | 'bo1'
+  /** First to two games decides the match. */
+  | 'bo3';
 
 /** Which forme a dual-Mega species may become. */
 export type DualMegaForme =
@@ -255,8 +323,9 @@ export interface TournamentConfig {
   /**
    * BAN-07, D-19/D-20. What happens when two players ban the same Pokémon.
    *
-   * STORED AND READ BY NOTHING in Phase 4, deliberately, and it is exactly the posture
-   * `depth` documents above. Only `'bothApply'` is implemented, `'reBan'` is a reserved
+   * STORED AND READ BY NOTHING in Phase 4, deliberately, and it is the posture `depth`
+   * held until Phase 5 started reading it — recorded early so that no saved tournament
+   * needs migrating on the day something does. Only `'bothApply'` is implemented, `'reBan'` is a reserved
    * value the config screen renders disabled, and D-20 makes the control inert in `snake`
    * regardless. Recording it now costs one field and means no saved tournament needs
    * migrating for it when a later milestone starts reading it.
@@ -266,6 +335,35 @@ export interface TournamentConfig {
    * something does.
    */
   duplicateBanPolicy: DuplicateBanPolicy;
+  /**
+   * TOUR-07, D-04. What breaks a tie between two players on the same win/loss record.
+   *
+   * HAS NO EFFECT AT `depth: 'draftAndBrackets'`, and that is a ruling rather than an
+   * oversight (D-01, D-02): that tier records win/loss only, so every match it stores
+   * carries `metric: 0` and no standings sort ever reads this field. It is still stored on
+   * such a document, because a host who deepens their night to `draftBracketsAndLog`
+   * should not find the question unasked.
+   *
+   * Bounded against `MATCH_METRICS` in `import-guard.ts`, on `duplicateBanPolicy`'s
+   * precedent: a stored value outside the union becomes live the moment something reads it.
+   */
+  matchMetric: MatchMetric;
+  /**
+   * D-08. Whether one round-robin match is best-of-one or best-of-three.
+   *
+   * Separate from {@link TournamentConfig.bracketFormat} because the two stages are
+   * routinely run at different lengths — see {@link StageFormat} for why one field for
+   * both was rejected. Bounded against `STAGE_FORMATS` in `import-guard.ts`.
+   */
+  roundRobinFormat: StageFormat;
+  /**
+   * D-08. Whether one bracket match is best-of-one or best-of-three.
+   *
+   * The sibling of {@link TournamentConfig.roundRobinFormat}, and the one a host is most
+   * likely to raise: a bracket that eliminates somebody on a single game is the complaint
+   * this field exists to answer. Bounded against `STAGE_FORMATS` in `import-guard.ts`.
+   */
+  bracketFormat: StageFormat;
 }
 
 /**
@@ -467,6 +565,98 @@ export interface DraftState {
    * submissions were in it after an undo.
    */
   bansRevealed: { playerId: string; monIds: string[] }[] | null;
+  /**
+   * Every match result that currently stands, in log order, from `tournament/*`. `[]`
+   * until the first result lands, and `[]` forever at `depth: 'draftOnly'`.
+   *
+   * ## Why this exists at all, when "nothing derived is stored"
+   *
+   * It is not derived — it is the only record of the event. A match result is a fact a
+   * host TYPED; there is nothing else in the document it could be recomputed from, unlike
+   * a standings row or a bracket slot, both of which are folds of this array plus the
+   * player list and live in `selectors.ts` where they cannot disagree with it.
+   *
+   * An ARRAY rather than a `Record<matchId, MatchResult>` for {@link CardPlay}'s reason:
+   * sync rule 14 forbids deriving anything order-sensitive from a key set, and "which
+   * result was recorded most recently" is exactly what the correctable history reads. A
+   * record would also quietly make a correction indistinguishable from an original entry,
+   * which is the one distinction the editable history exists to show.
+   */
+  matchResults: MatchResult[];
+  /**
+   * The seeded cut from the round robin into the bracket, recorded by the cut action.
+   * `null` until it is taken.
+   *
+   * `null` and `{ seeds: [], seq }` are DIFFERENT answers, and only one of them is
+   * reachable, on {@link DraftState.bansRevealed}'s precedent. `null` is "no cut has been
+   * taken", which is what the round-robin stage renders for; `{ seeds: [], seq }` would be
+   * "a cut was taken and nobody was in it", which is not a state a bracket can be built
+   * from at all. A field initialised to an empty cut would open every new tournament on an
+   * empty bracket.
+   *
+   * `seeds` is seed order — index `0` is the top seed — so it is order-sensitive and an
+   * array is the only shape that can carry it. Materialized rather than re-derived from
+   * `matchResults` for `bansRevealed`'s reason: the cut is a host act at a point in the
+   * log, and a build that re-derived it would be free to disagree about the seeding after
+   * a result was corrected underneath a bracket already being played.
+   */
+  cut: { seeds: string[]; seq: number } | null;
+  /**
+   * Every host-resolved tie, in log order. `[]` until the metric leaves two players level
+   * and the host orders them by hand.
+   *
+   * An ARRAY of orderings rather than one current ordering, because a later tie does not
+   * invalidate an earlier one and both may be live at once in the same standings table.
+   * `playerIds` is the order the host chose, best first.
+   */
+  tiebreakOrders: { playerIds: string[]; seq: number }[];
+  /**
+   * The `seq` of the most recent reopen, or `-1` when the tournament has never been
+   * reopened.
+   *
+   * `-1` rather than `0`, and that is not a style choice. `store.ts` allocates `max(seq) + 1`
+   * starting from `0`, so `0` is a perfectly legal `seq` belonging to the FIRST action in
+   * the document. A field initialised to `0` would read as "reopened by the first action
+   * in the log" on every tournament that has never been reopened — which is both wrong and
+   * invisible, since it names a real action that really exists.
+   *
+   * `null` would have been the other honest sentinel and was rejected because every reader
+   * compares this against another `seq`, and `null` would force a branch at each of them.
+   * `-1` is below every allocatable value, so the comparison is simply true or false.
+   */
+  lastReopenSeq: number;
+}
+
+/**
+ * One recorded match, in either stage.
+ *
+ * `matchId` is `rr:{i}:{j}` for a round-robin match between the players at standings
+ * indices `i` and `j`, and `br:{round}:{slot}` for a bracket match. It is structured
+ * rather than opaque so a result can be located without a scan, and the pattern constant
+ * that validates it on import lands with the `tournament/*` guard arms.
+ *
+ * `winnerGames` and `loserGames` are game counts within the match, so a best-of-three
+ * decided 2–1 is not confused with two separate matches. `metric` is scored by
+ * `config.matchMetric` and is `0` at `depth: 'draftAndBrackets'`, where nothing reads it.
+ */
+export interface MatchResult {
+  matchId: string;
+  /** A `PlayerConfig.id`, never a display name. */
+  winnerId: string;
+  /** A `PlayerConfig.id`, never a display name. */
+  loserId: string;
+  winnerGames: number;
+  loserGames: number;
+  /** Scored by `config.matchMetric`. `0` where the tier does not record one. */
+  metric: number;
+  /**
+   * The sequence number of the action that recorded this result, taken off the ENVELOPE
+   * and never off the array's length — {@link SwapRecord} and `reduce.ts`'s `cards/played`
+   * arm carry the same rule for the same reason. This is what a compensating action
+   * targets, and `seq` is allocated `max(seq) + 1` rather than `log.length`, so the log
+   * may legally have gaps. An index would address the wrong match the moment it did.
+   */
+  seq: number;
 }
 
 /**
@@ -573,6 +763,13 @@ function copyConfig(config: TournamentConfig): TournamentConfig {
     // compiler's omission check only works against an explicit literal.
     bansPerPlayer: config.bansPerPlayer,
     duplicateBanPolicy: config.duplicateBanPolicy,
+    // All three version 5 fields are scalars, named individually for the same reason as
+    // the two above: a spread would be shorter and would defeat the whole point of writing
+    // this function out, since the compiler's omission check only works against an
+    // explicit literal.
+    matchMetric: config.matchMetric,
+    roundRobinFormat: config.roundRobinFormat,
+    bracketFormat: config.bracketFormat,
   };
 }
 
@@ -595,5 +792,13 @@ export function initialState(config: TournamentConfig): DraftState {
     // `null`, not `[]`. See the field's own doc block: the two are different answers and
     // only `null` means "the reveal has not happened".
     bansRevealed: null,
+    matchResults: [],
+    // `null`, not `{ seeds: [], seq: 0 }`. See the field's own doc block: an empty cut is
+    // a state no bracket can be built from, and only `null` means "no cut has been taken".
+    cut: null,
+    tiebreakOrders: [],
+    // `-1`, not `0`. See the field's own doc block: `0` is a legal `seq` belonging to the
+    // first action in the log, so `0` here would read as "reopened by that action".
+    lastReopenSeq: -1,
   };
 }

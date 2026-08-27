@@ -120,6 +120,9 @@ const CONFIG: TournamentConfig = {
   swapRounds: 0,
   bansPerPlayer: 0,
   duplicateBanPolicy: 'bothApply',
+  matchMetric: 'pokemonLeft',
+  roundRobinFormat: 'bo1',
+  bracketFormat: 'bo1',
 };
 
 function stamp(intent: Intent, seq: number): Action {
