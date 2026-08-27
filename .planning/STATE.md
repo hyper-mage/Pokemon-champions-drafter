@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 5 UI-SPEC approved
-last_updated: "2026-08-26T21:22:06.781Z"
-last_activity: 2026-08-26 -- Phase 05 planning complete
+last_updated: "2026-08-27T01:10:40.582Z"
+last_activity: 2026-08-27 -- Phase 05 execution started
 progress:
   total_phases: 5
   completed_phases: 4
@@ -21,18 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** A group of friends can run an entire draft tournament — rules, bans, picks, swaps, brackets, results — start to finish inside the tool, without anyone reaching for a spreadsheet or a Discord message to track state.
-**Current focus:** Phase 5 — full tournament — brackets, standings, archive
+**Current focus:** Phase 05 — Full Tournament — Brackets, Standings, Archive
 
 ## Current Position
 
-Phase: 5 (full-tournament — brackets, standings, archive) — not started
-Plan: Not started
+Phase: 05 (Full Tournament — Brackets, Standings, Archive) — EXECUTING
+Plan: 1 of 15
 Next: `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
-Status: Ready to execute
+Status: Executing Phase 05
         verification `passed`, and the three-metre human pass approved on a ~24" 1080p screen
         (`04-HUMAN-UAT.md`, status complete, 4 passed / 0 issues). BAN-07 ships Partial by
         owner decision D-19: `bothApply` is built, the `Re-ban` arm is present but disabled.
-Last activity: 2026-08-26 -- Phase 05 planning complete
+Last activity: 2026-08-27 -- Phase 05 execution started
 
 Progress: [████████████████████] 47/47 plans (4 of 5 phases complete)
 

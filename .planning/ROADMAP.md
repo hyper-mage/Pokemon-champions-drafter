@@ -299,8 +299,8 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — schema 5: the metric, both stage formats, four fold fields, and the depth gate (TOUR-01, TOUR-07)
-- [ ] 05-02-PLAN.md — staleness with no network, and the one service-worker line a refresh needs (REFR-03, REFR-01)
+- [x] 05-01-PLAN.md — schema 5: the metric, both stage formats, four fold fields, and the depth gate (TOUR-01, TOUR-07)
+- [x] 05-02-PLAN.md — staleness with no network, and the one service-worker line a refresh needs (REFR-03, REFR-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -352,7 +352,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
-| 5. Full Tournament — Brackets, Standings, Archive | 0/15 | Not started | - |
+| 5. Full Tournament — Brackets, Standings, Archive | 2/15 | In Progress|  |
 
 ## Requirement Coverage
 
