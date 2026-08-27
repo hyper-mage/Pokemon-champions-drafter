@@ -20,8 +20,10 @@ import {
 } from './adapters/persistence';
 import {
   loadRoster,
+  resolveSnapshot,
   ROSTER_LOAD_FAILURE_MESSAGE,
   type RosterBundle,
+  type SpriteMeta,
 } from './adapters/roster-source';
 import { claimOwnership, disposeTabLock, notifyAbandoned } from './adapters/tab-lock';
 import { loadViewPrefs, saveViewPrefs, type PaneState } from './adapters/view-prefs';
@@ -122,6 +124,27 @@ type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; bundle: RosterBundle }
   | { status: 'failed'; message: string };
+
+/**
+ * The OPEN document's own roster — D-24. Separate from `LoadState` above, which is the
+ * DEFAULT roster and stays resolved beside this one.
+ *
+ * Two resolved snapshots at once is the consequence 05-CONTEXT.md spells out under D-24:
+ * the app must be able to hold more than one snapshot resolved at once — the live
+ * document's and the default — rather than assuming the loader's single default answer.
+ * A filed M-B night opening on a build whose default has moved to M-C is the whole point,
+ * and it is not a rare path — Champions regulations rotate roughly every 2.5 months.
+ *
+ * `unresolvable` is a state and not an error, and it is deliberately NOT collapsed into
+ * `none`. The difference is everything the host is told: `none` means no document is open,
+ * `unresolvable` means one is open and this build has never seen the roster it names. The
+ * second gets a sentence; the first gets silence.
+ */
+type DocumentRoster =
+  | { status: 'none' }
+  | { status: 'resolving' }
+  | { status: 'ready'; bundle: RosterBundle }
+  | { status: 'unresolvable'; rosterVersion: string };
 
 /**
  * Which screen the app is showing — D-01.
@@ -313,7 +336,30 @@ function adoptedNotice(reason: string): string {
  * `LandingScreen.savedDraftDescription`: the two sentences differ in three places, and a
  * visible grammar error reads as a tool that was not finished.
  */
-function rosterDriftNotice(missing: number): string {
+function rosterDriftNotice(missing: number, unresolvedRosterVersion: string | null = null): string {
+  /*
+    D-24's other half, and the reason this is a THIRD form of an existing sentence rather
+    than a second surface. Drift is "some of this pool is gone"; this is "the roster this
+    was played on is one this build has never seen", which is the same fact about the same
+    pool taken to its limit — so it belongs in the same notice, in the same place, styled
+    the same way. A separate banner would make the host learn a second visual language for
+    a stricter version of a problem they already know how to read.
+
+    `resolveSnapshot` answers `null` here and MUST NOT fall back to the default. Rendering
+    a completed tournament against a roster that could not have contained its picks would
+    drop the winning team's Pokémon silently, with nothing on screen saying a substitution
+    had happened — the repudiation failure D-24 exists to prevent. So the pool is empty and
+    this sentence says why.
+
+    The recovery is REFR-02's file import rather than `Download JSON`, because unlike drift
+    this IS recoverable: the roster exists, this build simply does not have it. Both are
+    named, in the words they wear on their own controls, and the recoverable one comes
+    first.
+  */
+  if (unresolvedRosterVersion !== null) {
+    return `This tournament was played on roster ${unresolvedRosterVersion}, which this build does not have. Its pool is empty and its board slots show ids instead of names. Use Import roster JSON… on the setup screen to load that roster, or Download JSON to keep the record.`;
+  }
+
   if (missing === 1) {
     return "1 Pokémon in this tournament's pool is not in the current roster. It is missing from the pool, and a board slot holding it shows its id instead. Use Download JSON to keep the record.";
   }
@@ -641,10 +687,71 @@ export function App() {
     };
   }, []);
 
+  /**
+   * The open document's own snapshot — D-24. Resolved by the effect further down, which
+   * needs the document and is therefore declared after it; this only has to exist before
+   * `activeBundle` reads it.
+   */
+  const [documentRoster, setDocumentRoster] = useState<DocumentRoster>({ status: 'none' });
+
+  /**
+   * Bumped whenever the snapshot registry gains a regulation — a refresh or a file import.
+   *
+   * The registry is module state in `roster-source.ts`, so nothing about it can make a
+   * component re-render on its own. This integer is what turns "a roster was adopted" into
+   * a render, and it is the reason the drift notice's advice is true rather than decorative:
+   * a host told to import the roster their document names gets the notice to CLEAR when
+   * they do, in the same session, without reloading.
+   *
+   * A counter and not a boolean, because the second import has to be as visible as the
+   * first.
+   */
+  const [registryGeneration, setRegistryGeneration] = useState(0);
+
+  const noteRosterAdopted = useCallback(() => {
+    setRegistryGeneration((generation) => generation + 1);
+  }, []);
+
+  /**
+   * The roster the SCREEN is rendering against, which is not always the default one.
+   *
+   * With a document open it is that document's, by `config.rosterVersion`. With none open
+   * it is the default, which is what the landing and config screens are about — a new
+   * tournament is created against the current regulation, never against the one the host
+   * happened to open a filed night on last.
+   *
+   * `null` while a document's roster is still resolving AND when it cannot be resolved at
+   * all, and the second of those is the load-bearing one: it must NOT fall through to
+   * `load.bundle`. Substituting the default would render a completed tournament against a
+   * roster that never contained its picks, dropping the winning team's Pokémon with
+   * nothing on screen to say so. `resolveSnapshot`'s own header calls that the repudiation
+   * failure D-24 exists to prevent. An empty pool plus a sentence is the honest answer.
+   */
+  const activeBundle = useMemo<RosterBundle | null>(() => {
+    if (documentRoster.status === 'ready') return documentRoster.bundle;
+    if (documentRoster.status === 'none' && load.status === 'ready') return load.bundle;
+    return null;
+  }, [documentRoster, load]);
+
   const entries = useMemo(
-    () => (load.status === 'ready' ? [...load.bundle.snapshot.entries].sort(byDexOrder) : []),
-    [load],
+    () => (activeBundle === null ? [] : [...activeBundle.snapshot.entries].sort(byDexOrder)),
+    [activeBundle],
   );
+
+  /**
+   * Art, and only art — so unlike `entries` it may fall back to the default.
+   *
+   * A sprite map is keyed by roster id and is a separate committed file from any snapshot;
+   * 05-04's `readRosterFile` already pairs a host-supplied roster with the map the app
+   * holds for exactly this reason, with unknown rows degrading to `_placeholder.png`. The
+   * fallback here is that same trade and carries none of the risk `activeBundle` guards,
+   * because a missing sprite is a missing picture and a substituted ROSTER is a changed
+   * fact about who was drafted.
+   */
+  const spriteMeta = useMemo<SpriteMeta | null>(() => {
+    if (activeBundle !== null) return activeBundle.spriteMeta;
+    return load.status === 'ready' ? load.bundle.spriteMeta : null;
+  }, [activeBundle, load]);
 
   const stopAutosaveRef = useRef<(() => void) | null>(null);
   const autosaveStartedRef = useRef(false);
@@ -782,6 +889,85 @@ export function App() {
   const readOnly = ownership.readOnly;
 
   const state = draftState.value;
+
+  /**
+   * The roster the OPEN document names, or `null` when none is open — D-24.
+   *
+   * Read from `config.rosterVersion`, which every document carries and which `ConfigScreen`
+   * stamps from `snapshot.regulation` at creation. This is the key the effect below
+   * resolves; a string rather than the whole config so that re-folding the log on every
+   * pick does not re-run a roster resolution.
+   */
+  const documentRosterVersion = state === null ? null : state.config.rosterVersion;
+
+  /**
+   * Resolve the open document's own snapshot, holding it alongside the default.
+   *
+   * ## It waits for the default load
+   *
+   * Gated on `load.status === 'ready'` because the default load is what REGISTERS the
+   * current regulation under both of its names. Running first, this would miss a document
+   * naming the regulation the app is about to resolve anyway and report the commonest case
+   * in the app — open a night on the current roster — as unresolvable.
+   *
+   * ## The registry read comes before the fetch, and synchronously
+   *
+   * `resolveSnapshot` is a `Map` lookup over what this process already holds, so the
+   * ordinary case commits in the same tick and the pool never flashes empty on its way to
+   * being correct. `loadRoster(version)` is only reached for a regulation this session has
+   * not resolved yet — a filed M-A night on a build running M-B — and that one really does
+   * have to go and read the manifest.
+   *
+   * ## A failure is `unresolvable`, never the default
+   *
+   * See `activeBundle` above and `resolveSnapshot`'s own header. The whole reason this
+   * state exists is that falling back would be a silent rewrite of what a finished
+   * tournament was played on.
+   */
+  useEffect(() => {
+    if (documentRosterVersion === null) {
+      setDocumentRoster({ status: 'none' });
+      return;
+    }
+
+    if (load.status !== 'ready') return;
+
+    const held = resolveSnapshot(documentRosterVersion);
+    if (held !== null) {
+      setDocumentRoster({ status: 'ready', bundle: held });
+      return;
+    }
+
+    let cancelled = false;
+    setDocumentRoster({ status: 'resolving' });
+
+    loadRoster(documentRosterVersion).then(
+      (bundle) => {
+        if (!cancelled) setDocumentRoster({ status: 'ready', bundle });
+      },
+      () => {
+        // Deliberately silent here: the sentence belongs on screen, beside the pool it
+        // explains, and `announce`-ing it as well would have two things describing one
+        // fact. The notice carries `role="status"` and says it once.
+        if (!cancelled) {
+          setDocumentRoster({ status: 'unresolvable', rosterVersion: documentRosterVersion });
+        }
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+    // `registryGeneration` is in the list so that adopting a roster mid-session re-asks the
+    // question. Without it the notice would keep telling a host to import a file they have
+    // already imported.
+  }, [documentRosterVersion, load.status, registryGeneration]);
+
+  /**
+   * The document names a roster this build has never seen, or `null`. Drives the notice.
+   */
+  const unresolvedRosterVersion =
+    documentRoster.status === 'unresolvable' ? documentRoster.rosterVersion : null;
 
   /**
    * Start autosaving once a tournament EXISTS, and exactly once.
@@ -2228,6 +2414,24 @@ export function App() {
             // branch on `banMode` did not have to grow a second output. A snake start lands
             // on `bans`, a hostBanlist start on `draft`, and one selector decides which.
             onStarted={() => setScreen(screenForState(getState()))}
+            /*
+              REFR-01's consequence, and the whole of it: a newer regulation becomes the
+              roster a NEW tournament is created against. It changes nothing about any
+              document — an open one holds its own bundle by `config.rosterVersion` and the
+              registry never evicts, so a filed M-B night is still an M-B night one second
+              after the app adopts M-C.
+            */
+            onRosterRefreshed={(bundle) => {
+              setLoad({ status: 'ready', bundle });
+              noteRosterAdopted();
+            }}
+            /*
+              REFR-02, and deliberately NOT `setLoad`. 05-04 decided an imported roster is
+              adopted into the registry but does not become the default: a host importing an
+              old regulation in order to read an old night must not silently re-point the
+              next tournament at it. So this only announces that the registry grew.
+            */
+            onRosterImported={noteRosterAdopted}
             // D-26's landing site. `=== true` rather than a bare read because the field is
             // optional on the route and `undefined` is not the prop's type.
             focusRosterRefresh={screen.focusRoster === true}
@@ -2246,7 +2450,10 @@ export function App() {
           <BanStageScreen
             state={state}
             entries={entries}
-            spriteMeta={load.bundle.spriteMeta}
+            // The ACTIVE sprite map, so a document opened on a prior regulation is drawn
+            // with the art that regulation resolved. Falls back inside a `ready` guard
+            // only because the type cannot see that `spriteMeta` is non-null here.
+            spriteMeta={spriteMeta ?? load.bundle.spriteMeta}
             topBar={{
               onDownload: handleDownload,
               onImportFile: handleImportFile,
@@ -2370,10 +2577,24 @@ export function App() {
                 unrelated facts — one is arithmetic the host authored, the other is the
                 roster moving underneath it — and either can hold without the other.
               */}
-              {missingFromRoster > 0 && (
+              {/*
+                One surface, two forms, and never both at once — D-24. An unresolvable
+                roster is not drift plus something; it is the same fact ("this document
+                references what this roster does not contain") at its limit, so it reuses
+                this notice rather than adding a fourth. `missingFromRoster` reads 0 in that
+                state because the pool it compares against is empty, which is exactly why
+                the unresolvable branch is asked FIRST rather than left to fall through.
+              */}
+              {unresolvedRosterVersion !== null ? (
                 <p class="draft-notice" role="status">
-                  {rosterDriftNotice(missingFromRoster)}
+                  {rosterDriftNotice(state.poolIds.length, unresolvedRosterVersion)}
                 </p>
+              ) : (
+                missingFromRoster > 0 && (
+                  <p class="draft-notice" role="status">
+                    {rosterDriftNotice(missingFromRoster)}
+                  </p>
+                )
               )}
 
               {/*
@@ -2461,7 +2682,7 @@ export function App() {
                 ) : (
                   <PoolGrid
                     entries={availableEntries}
-                    spriteMeta={load.bundle.spriteMeta}
+                    spriteMeta={spriteMeta ?? load.bundle.spriteMeta}
                     onPick={handlePoolPick}
                     // Not a ban surface. `null` rather than an empty set, so a draft cell
                     // cannot report an unpressed toggle state it does not have.
@@ -2489,7 +2710,7 @@ export function App() {
                   teams={selectTeams(state)}
                   currentTurn={turn}
                   entryById={entryById}
-                  spriteMeta={load.bundle.spriteMeta}
+                  spriteMeta={spriteMeta ?? load.bundle.spriteMeta}
                   pickCount={selectPickCount(state)}
                   // Names in `board-full`, none in `split`. One expression, so the two
                   // pane states cannot each grow their own answer.

@@ -656,7 +656,24 @@ export async function loadRoster(regulationId?: string): Promise<RosterBundle> {
     const alreadyHeld = registry.get(wanted);
     if (alreadyHeld !== undefined) return alreadyHeld;
 
-    const regulation = index.regulations.find((candidate) => candidate.id === wanted);
+    /*
+      Matched on the id AND on the label, because the only name a DOCUMENT ever carries is
+      the label. `ConfigScreen` stamps `snapshot.regulation` onto `config.rosterVersion`, so
+      a filed night says `M-A` while the manifest says `ma` — and an id-only lookup made
+      D-24's whole case ("a filed M-B night stays an M-B night on a build that has moved
+      on") unreachable for every regulation except the one already registered as the
+      default. The registry above is keyed by both names for exactly this reason; this is
+      the same rule applied one layer out, at the point where the manifest is what is being
+      searched.
+
+      It compares whole published FIELDS and never picks a name apart. `label` is a column
+      the manifest writes and `parseIndex` already validates; deriving `ma` from `M-A` by
+      lowercasing and dropping a hyphen would be the name-parsing CLAUDE.md forbids, and it
+      would break the first time a regulation is called something else.
+    */
+    const regulation = index.regulations.find(
+      (candidate) => candidate.id === wanted || candidate.label === wanted,
+    );
     if (regulation === undefined) {
       throw new Error(`roster index has no regulation "${wanted}"`);
     }

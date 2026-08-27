@@ -27,11 +27,19 @@
  * reject-then-reject-again path.
  */
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { render } from 'preact';
 import { act } from 'preact/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RefreshOutcome, RosterBundle } from '../../src/adapters/roster-source';
+import { save as saveTournament } from '../../src/adapters/persistence';
+import { disposeTabLock } from '../../src/adapters/tab-lock';
+import { draftStarted, poolBuilt } from '../../src/core/actions';
+import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from '../../src/core/model';
+import { App } from '../../src/app';
 
 /**
  * Hoisted so the `vi.mock` factory below can see them — `vi.mock` is lifted above every
@@ -42,6 +50,7 @@ const adapter = vi.hoisted(() => ({
   refreshRoster: vi.fn(),
   readRosterFile: vi.fn(),
   loadRoster: vi.fn(),
+  resolveSnapshot: vi.fn(),
 }));
 
 vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
@@ -51,6 +60,7 @@ vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
     refreshRoster: adapter.refreshRoster,
     readRosterFile: adapter.readRosterFile,
     loadRoster: adapter.loadRoster,
+    resolveSnapshot: adapter.resolveSnapshot,
   };
 });
 
@@ -382,5 +392,296 @@ describe('D-26 routing', () => {
     mount({ focusOnMount: false });
 
     expect(document.activeElement).not.toBe(buttonNamed(CHECK_LABEL));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-24 — a document resolves its OWN roster, and the default stays resolved
+// ---------------------------------------------------------------------------
+
+/**
+ * These run against the REAL adapter, not the stubs above.
+ *
+ * The claim under test is a property of the registry itself — that resolving one
+ * regulation never evicts another — and a stubbed `resolveSnapshot` over a test-owned
+ * `Map` would assert nothing except that the test's own map works. So the module is
+ * imported for real and the network is stubbed one layer lower, over the committed files
+ * in `public/data/`. That also puts the two snapshots this repo actually ships under test:
+ * M-A and M-B, with the real manifest between them.
+ */
+describe('the registry holds a document roster and the default at once', () => {
+  it('resolves a regulation by the LABEL a document carries, and evicts nothing', async () => {
+    const real = await vi.importActual<typeof import('../../src/adapters/roster-source')>(
+      '../../src/adapters/roster-source',
+    );
+
+    const served: string[] = [];
+    const fetchStub = vi.fn((input: string) => {
+      // `fetchJson` prefixes `import.meta.env.BASE_URL`, so the request is
+      // `/Pokemon-champions-drafter/data/roster.index.json` and only the filename after the
+      // last slash identifies the file on disk.
+      const name = input.slice(input.lastIndexOf('/') + 1);
+      served.push(name);
+      const body = readFileSync(resolve(process.cwd(), 'public/data', name), 'utf8');
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(JSON.parse(body)) });
+    });
+
+    vi.stubGlobal('fetch', fetchStub);
+
+    try {
+      const current = await real.loadRoster();
+      expect(current.snapshot.regulation).toBe('M-B');
+
+      // `M-A` and not `ma`. A document only ever carries the LABEL — `ConfigScreen` stamps
+      // `snapshot.regulation` onto `config.rosterVersion` — so an id-only manifest lookup
+      // would make D-24's central case, a filed night on a prior regulation, unreachable.
+      const prior = await real.loadRoster('M-A');
+      expect(prior.snapshot.regulation).toBe('M-A');
+
+      // BOTH, at once, and by either name. This is the sentence 05-CONTEXT.md writes under
+      // D-24: the app must hold more than one snapshot resolved rather than assuming
+      // `loadRoster()`'s single answer.
+      expect(real.resolveSnapshot('M-B')).toBe(current);
+      expect(real.resolveSnapshot('mb')).toBe(current);
+      expect(real.resolveSnapshot('M-A')).toBe(prior);
+      expect(real.resolveSnapshot('ma')).toBe(prior);
+
+      // The two are different rosters, so "both resolved" is a real claim rather than one
+      // bundle answering to four names.
+      expect(prior.snapshot.entries.length).not.toBe(current.snapshot.entries.length);
+
+      // A regulation this build has never seen answers `null` and does NOT fall back to
+      // the default. Substituting it would render a finished tournament against a roster
+      // that could not have contained its picks.
+      expect(real.resolveSnapshot('M-Z')).toBeNull();
+      await expect(real.loadRoster('M-Z')).rejects.toThrow();
+
+      // Still resolved after the failure: a refused load leaves the registry alone.
+      expect(real.resolveSnapshot('M-B')).toBe(current);
+      expect(served).toContain('roster.ma.json');
+
+      // A refresh cycle changes what a NEW tournament is created against and evicts
+      // nothing, so a document already resolved against M-A is untouched by it.
+      await real.refreshRoster();
+      expect(real.resolveSnapshot('M-A')).toBe(prior);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-24 in the shell — a document opens against the roster it names
+// ---------------------------------------------------------------------------
+
+/**
+ * The registry is stubbed here, and the shell is real.
+ *
+ * The question is no longer "does the registry hold two snapshots" — the test above proves
+ * that against the real adapter and the committed files — but "does the SHELL render a
+ * document against its own one". So the seam moves up: `resolveSnapshot` and `loadRoster`
+ * answer from a map this file owns, and what is under test is which of their answers ends
+ * up on screen.
+ *
+ * The unresolvable case is the one worth the setup. Its failure mode is silent: an M-A
+ * night rendered against M-B would show the wrong pool, with every species that rotated out
+ * replaced by nothing and no sentence anywhere saying a substitution had happened.
+ */
+describe('the shell renders a document against the roster it names', () => {
+  const DEFAULT_REGULATION = 'M-B';
+  const PRIOR_REGULATION = 'M-A';
+
+  function rosterOf(regulation: string, prefix: string, label: string): RosterBundle {
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      id: `${prefix}-${index}`,
+      name: `${label} ${index}`,
+      num: index + 1,
+      types: ['Normal'],
+      baseStats: { hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1 },
+      baseSpeciesId: `${prefix}-${index}`,
+      forme: null,
+      megaCapable: false,
+      megaFormes: [],
+      spriteId: `${prefix}-${index}`,
+      spriteMissing: true,
+    }));
+
+    return {
+      snapshot: {
+        schemaVersion: 1,
+        regulation,
+        validFrom: '2026-01-01',
+        validUntil: '2026-12-31',
+        upstreamRef: 'test',
+        generatedAt: '2026-01-01T00:00:00Z',
+        counts: {
+          legalEntries: rows.length,
+          draftable: rows.length,
+          megaFormes: 0,
+          baseSpecies: rows.length,
+        },
+        entries: rows,
+        checksum: `checksum-${prefix}`,
+      },
+      spriteMeta: { nativeWidth: 96, nativeHeight: 96, byRosterId: {} },
+    } as unknown as RosterBundle;
+  }
+
+  const DEFAULT_BUNDLE = rosterOf(DEFAULT_REGULATION, 'mb', 'Beta');
+  const PRIOR_BUNDLE = rosterOf(PRIOR_REGULATION, 'ma', 'Alpha');
+
+  /** What this build has resolved. `M-Z` is deliberately absent. */
+  const registry = new Map<string, RosterBundle>([
+    [DEFAULT_REGULATION, DEFAULT_BUNDLE],
+    [PRIOR_REGULATION, PRIOR_BUNDLE],
+  ]);
+
+  function seedSavedDraft(rosterVersion: string, poolPrefix: string): void {
+    const config: TournamentConfig = {
+      formatLabel: `Champions ${rosterVersion}`,
+      players: [
+        { id: 'p1', name: 'Ada' },
+        { id: 'p2', name: 'Bo' },
+      ],
+      rounds: 6,
+      rosterVersion,
+      rosterChecksum: `checksum-${poolPrefix}`,
+      poolSize: 12,
+      bans: [],
+      banMode: 'hostBanlist',
+      megasRequiredPerTeam: 0,
+      dualMegaChoices: [],
+      depth: 'draftOnly',
+      rules: [{ kind: 'mega', count: 0 }],
+      megaFormeBans: [],
+      swapBudget: 0,
+      swapRounds: 0,
+      bansPerPlayer: 0,
+      duplicateBanPolicy: 'bothApply',
+      matchMetric: 'pokemonLeft',
+      roundRobinFormat: 'bo1',
+      bracketFormat: 'bo1',
+    };
+
+    const doc: TournamentDoc = {
+      schemaVersion: SCHEMA_VERSION,
+      id: `roster-fixture-${poolPrefix}`,
+      createdAt: 1_770_000_000_000,
+      config,
+      rng: { seed: 0x5f3a91c2, cursor: 0 },
+      log: [
+        {
+          ...poolBuilt(
+            Array.from({ length: 12 }, (_, index) => `${poolPrefix}-${index}`),
+            rosterVersion,
+            `checksum-${poolPrefix}`,
+            11,
+            0,
+          ),
+          seq: 0,
+          at: 1_770_000_000_000,
+          actorId: 'host',
+        },
+        {
+          ...draftStarted(['p1', 'p2'], 13),
+          seq: 1,
+          at: 1_770_000_000_001,
+          actorId: 'host',
+        },
+      ],
+    };
+
+    expect(saveTournament(doc)).toBe(true);
+  }
+
+  async function mountAndResume(): Promise<void> {
+    await act(async () => {
+      render(<App />, host);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const resume = buttonNamed('Resume saved draft');
+    expect(resume).not.toBeNull();
+
+    await act(async () => {
+      resume?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+
+    adapter.loadRoster.mockImplementation((regulationId?: string) => {
+      if (regulationId === undefined) return Promise.resolve(DEFAULT_BUNDLE);
+      const held = registry.get(regulationId);
+      return held === undefined
+        ? Promise.reject(new Error(`roster index has no regulation "${regulationId}"`))
+        : Promise.resolve(held);
+    });
+
+    adapter.resolveSnapshot.mockImplementation(
+      (rosterVersion: string) => registry.get(rosterVersion) ?? null,
+    );
+  });
+
+  afterEach(() => {
+    disposeTabLock();
+    localStorage.clear();
+  });
+
+  it('renders a prior regulation document against that regulation, not the default', async () => {
+    seedSavedDraft(PRIOR_REGULATION, 'ma');
+    await mountAndResume();
+
+    const shown = host.textContent ?? '';
+
+    // M-A's rows, which is the whole of D-24: a filed night on last regulation stays a
+    // night on last regulation after the app's default has moved on.
+    expect(shown).toContain('Alpha 0');
+
+    // And emphatically NOT the default's, which is the silent substitution that would
+    // rewrite what this tournament was played on.
+    expect(shown).not.toContain('Beta 0');
+  });
+
+  it('keeps the default resolved while a prior regulation document is open', async () => {
+    seedSavedDraft(PRIOR_REGULATION, 'ma');
+    await mountAndResume();
+
+    // Both snapshots, held at once — the consequence 05-CONTEXT.md spells out under D-24.
+    // The document's is on screen; the default is still the answer for a NEW tournament.
+    expect(adapter.resolveSnapshot(DEFAULT_REGULATION)).toBe(DEFAULT_BUNDLE);
+    expect(adapter.resolveSnapshot(PRIOR_REGULATION)).toBe(PRIOR_BUNDLE);
+
+    // Resolving the document's roster never asked for the default to be replaced.
+    expect(adapter.loadRoster).toHaveBeenCalledWith();
+  });
+
+  it('states the problem and names the file import when the roster cannot be resolved', async () => {
+    seedSavedDraft('M-Z', 'mz');
+    await mountAndResume();
+
+    const shown = host.textContent ?? '';
+
+    expect(shown).toContain(
+      'This tournament was played on roster M-Z, which this build does not have.',
+    );
+
+    // The recovery is REFR-02's import, named in the words its own control wears, and
+    // `Download JSON` stays as the way to keep the record either way.
+    expect(shown).toContain('Import roster JSON…');
+    expect(shown).toContain('Download JSON');
+
+    // The load-bearing negative: the default roster's rows are NOT substituted in. An
+    // empty pool with a sentence is honest; a full pool from the wrong regulation is not.
+    expect(shown).not.toContain('Beta 0');
+    expect(shown).not.toContain('Alpha 0');
   });
 });
