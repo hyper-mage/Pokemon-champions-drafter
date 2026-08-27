@@ -862,3 +862,119 @@ export function selectBracket(state: DraftState): Bracket | null {
 
   return { rounds, final, championId: winnerOf(final, state.matchResults) };
 }
+
+/**
+ * Whether the tournament is finished and therefore read-only — D-17.
+ *
+ * A final with a recorded result and no reopen after it. That is the whole definition:
+ * a SECOND FOLD over the same document, computed on demand like everything else here.
+ *
+ * ## Why this is not a fourth {@link TournamentStage} member
+ *
+ * D-18 keeps the bracket on screen when this fires. A finished tournament is still
+ * showing its bracket — with the champion named and every result control inert — so
+ * being read-only is a PROPERTY of a tournament that is still in the `bracket` stage
+ * rather than a stage of its own. Making it a stage member would force
+ * {@link selectTournamentStage} to choose between naming the surface and naming the
+ * state, and the surface is what that function exists to answer.
+ *
+ * ## Why a fold rather than a stored flag, which is the part worth the words
+ *
+ * Four properties, none of which a `finished: true` field would have:
+ *
+ *   It survives reload.        The document is the only input, so a refresh recomputes
+ *                              the same answer rather than restoring a cached one.
+ *   It travels with the JSON.  An exported file carries the final result, so it opens
+ *                              locked on another machine with nothing extra to persist.
+ *   Two tabs cannot disagree.  Both fold the same log, so neither can hold a flag the
+ *                              other never saw set.
+ *   It cannot be claimed.      An imported document cannot declare itself unlocked
+ *                              while carrying a recorded final, and cannot declare
+ *                              itself locked without one (T-05-25). There is no field
+ *                              to forge, because the answer is not stored anywhere.
+ *
+ * ## Undo needs no inverse here
+ *
+ * `undo.ts`'s module header — "the entire implementation is remove the action and fold
+ * again" — means undoing a reopen restores `lastReopenSeq` to whatever the remaining
+ * log implies, and this function simply answers differently on the next call. There is
+ * nothing to reverse, because there was nothing to set.
+ *
+ * `state.lastReopenSeq` starts at `-1`, which is below every allocatable `seq`
+ * including `0`, so a tournament that has never been reopened locks on its final
+ * without a special case.
+ */
+export function selectTournamentLocked(state: DraftState): boolean {
+  const bracket = selectBracket(state);
+  if (bracket === null) return false;
+
+  const result = liveResultFor(state.matchResults, bracket.final.matchId);
+  if (result === null) return false;
+
+  return result.seq > state.lastReopenSeq;
+}
+
+/**
+ * Whether a cut of the top `n` would slice through a block nobody has ordered —
+ * Pitfall 4.
+ *
+ * ## The failure this prevents
+ *
+ * The round robin completes. Seeds 3, 4 and 5 are still tied, the automatic chain has
+ * run out of links, and no host override names them. The host cuts to the top 4.
+ * Whoever the bracket puts at seed 4 is arbitrary — it is whichever of the three the
+ * fold happened to list first — and the room will notice, because the standings table
+ * on the same screen reads `3 3 3` beside a bracket that just picked one of them.
+ *
+ * **Completeness does not imply resolution.** `05-UI-SPEC.md` §8 gates the cut on
+ * completeness alone (`{k} matches are still to play. Record them all before you
+ * cut.`), and a complete round robin can be tied. This is the second condition, and it
+ * is about resolution.
+ *
+ * The warning sign that it has been got wrong is specific: a bracket whose seeds 3 and
+ * 4 swap between two folds of the same document (T-05-26).
+ *
+ * ## `'hostOrder'` is a resolution, and that is why this reads `decidedBy`
+ *
+ * A hand-ordered block IS in an order — the host put it in one (D-13) — so a cut
+ * through it is fine and this returns `false`. Reading only `position` could not tell
+ * the two apart, because a resolved block renumbers `3 4 5` while an unresolved one
+ * shares `3 3 3`; reading `decidedBy` states the distinction rather than inferring it
+ * from a numbering that a later change to {@link selectStandings} could alter.
+ *
+ * ## Two consumers, and they must agree
+ *
+ * 05-11 renders `Take the cut` inert with the sentence
+ *
+ *     The cut at {n} splits a tie. Order the tied players yourself before you take it.
+ *
+ * and 05-08's `canApply` refuses `tournament/cutTaken` with `cutSplitsTiedBlock`. That
+ * is `reduce.ts:592-600`'s stated model — constraint upstream of the click, enforced
+ * twice, so the reducer arm is a backstop rather than the mechanism. If it ever fires
+ * for a real host, the two have disagreed and the inert control is the bug.
+ *
+ * An incomplete round robin answers `false`. Incompleteness has §8's own separate
+ * reason, and a control carrying two reasons at once would be the tool arguing with
+ * itself about which problem the host should fix first.
+ */
+export function selectCutSplitsTiedBlock(state: DraftState, n: number): boolean {
+  // The tie question only. Incompleteness is §8's reason, not this one.
+  if (selectRemainingMatchCount(state) > 0) return false;
+
+  const rows = selectStandings(state);
+  // `n === rows.length` is the whole field: there is no row `n + 1` to split against.
+  if (n < 1 || n >= rows.length) return false;
+
+  const lastIn = rows[n - 1];
+  const firstOut = rows[n];
+  if (lastIn === undefined || firstOut === undefined) return false;
+
+  // Different places, so the line falls between two blocks rather than inside one.
+  if (lastIn.position !== firstOut.position) return false;
+
+  // Explicit, and not merely unreachable: a host-ordered block is RESOLVED, so a cut
+  // through it is allowed however the numbering happens to read.
+  if (lastIn.decidedBy === 'hostOrder' || firstOut.decidedBy === 'hostOrder') return false;
+
+  return lastIn.decidedBy === 'tied' && firstOut.decidedBy === 'tied';
+}
