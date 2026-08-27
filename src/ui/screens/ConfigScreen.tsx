@@ -20,6 +20,8 @@ import type {
   DualMegaChoice,
   DualMegaForme,
   DuplicateBanPolicy,
+  MatchMetric,
+  StageFormat,
   TournamentConfig,
   TournamentDepth,
 } from '../../core/model';
@@ -29,6 +31,7 @@ import { createBanStage, createTournament } from '../../store';
 import {
   CLEAR_BANLIST_CONFIRM,
   CLEAR_MEGA_FORME_BANLIST_CONFIRM,
+  matches,
   REMOVE_PLAYER_CONFIRM,
   REROLL_ORDER_CONFIRM,
   REROLL_POOL_CONFIRM,
@@ -124,9 +127,15 @@ const INITIAL_PLAYERS = 4;
  *
  * All three depth options are ENABLED, deliberately unlike ban mode where two are
  * disabled (D-12). ROADMAP criterion 1 says the host "enters … a tournament depth", and a
- * disabled depth would make that criterion unmeetable. What is not yet built is the
- * screens the deeper options lead to, and the note below the group says so rather than
- * the control pretending the choice does not exist.
+ * disabled depth would make that criterion unmeetable.
+ *
+ * Phase 2 shipped this block saying the screens the deeper options lead to were not built
+ * yet, and pointed at a single note that said so. THIS PHASE IS THOSE SCREENS, so both
+ * halves of that sentence stopped being true and are corrected here rather than left for
+ * the next reader to trust — 05-UI-SPEC §Amendments: a stale contract comment is worse than
+ * no comment. What replaces the promise is {@link DEPTH_NOTES}, one sentence per option,
+ * because D-01 makes the difference between the two deeper tiers a SPECIFIC one — the
+ * numeric field and the editable history — and one sentence cannot state three outcomes.
  */
 const DEPTH_OPTIONS: readonly SegmentedOption<TournamentDepth>[] = [
   { value: 'draftOnly', label: 'Draft only' },
@@ -134,8 +143,80 @@ const DEPTH_OPTIONS: readonly SegmentedOption<TournamentDepth>[] = [
   { value: 'draftBracketsAndLog', label: 'Draft, brackets and match log' },
 ];
 
-const DEPTH_NOTE =
-  'Depth is recorded now. Round robin and brackets arrive with the tournament screens.';
+/**
+ * The note under the depth control — 05-UI-SPEC §Amendment 2, one per option.
+ *
+ * Module constants rather than inline JSX prose, for `ReadOnlyBanner.tsx:42-51`'s stated
+ * reason: JSX collapses whitespace between text lines and these are contracts down to the
+ * full stop. Keyed by {@link TournamentDepth} rather than a switch, so a member added to
+ * the union fails the build here instead of rendering an empty note.
+ */
+const DEPTH_NOTES: Readonly<Record<TournamentDepth, string>> = {
+  draftOnly: 'The night ends when the draft ends.',
+  draftAndBrackets:
+    'After the draft: a round robin, a cut you choose, and a single-elimination bracket. Winners only — no scores.',
+  draftBracketsAndLog:
+    'Everything in Draft and brackets, plus one number per match that breaks ties in the standings.',
+};
+
+/**
+ * The three depth tiers that run matches after the draft — D-01.
+ *
+ * `draftOnly` is the one tier with nothing after the draft, so it is the one the round-robin
+ * size line and both format controls are absent or inert at. Derived from the depth rather
+ * than from a second piece of state, so the two cannot disagree.
+ */
+function hasMatches(value: TournamentDepth): boolean {
+  return value !== 'draftOnly';
+}
+
+/**
+ * `A round robin at {p} players is {n} matches.` — 05-UI-SPEC §Copywriting → Config screen.
+ *
+ * A PLAIN FACT and not a warning: it is not routed through `FeasibilityBar` and takes no
+ * warning styling. `feasibility.ts` is the single authority on what is satisfiable, and a
+ * round robin of any size is satisfiable — this line only says how long the night is.
+ *
+ * `p(p−1)/2`, the count of unordered pairs, which is exactly one match per pair of players.
+ * The plural goes through `confirm-copy.ts`'s helper rather than a second one declared here:
+ * at two players this reads `1 match`, and 05-UI-SPEC requires every interpolated count to
+ * take a helper.
+ */
+function roundRobinSizeLine(playerCount: number): string {
+  return `A round robin at ${playerCount} players is ${matches((playerCount * (playerCount - 1)) / 2)}.`;
+}
+
+/**
+ * `Match result`'s two options — TOUR-07, D-04. Verbatim from 05-UI-SPEC §Copywriting →
+ * Config screen, accent included: the first label carries an acute e, not a bare `e`.
+ *
+ * The VALUES are {@link MatchMetric}'s members and the labels are what the host reads. The
+ * two are deliberately not the same string: the members are written into every saved
+ * document from schema 5 onward, so renaming one breaks every tournament already on disk,
+ * while a label is free to be reworded.
+ *
+ * The three LEGENDS are inline at the render site rather than constants here, matching
+ * `legend="Tournament depth"` directly above them. `ReadOnlyBanner.tsx:42-51`'s
+ * constants-not-prose rule is about multi-line sentences whose whitespace JSX collapses;
+ * a two-word attribute value has no whitespace to lose.
+ */
+const MATCH_METRIC_OPTIONS: readonly SegmentedOption<MatchMetric>[] = [
+  { value: 'pokemonLeft', label: 'Pokémon left' },
+  { value: 'koDifference', label: 'KO difference' },
+];
+
+/**
+ * `Round robin format` and `Bracket format` share these two — D-08.
+ *
+ * TWO controls over ONE options list, and the split is the decision `model.ts`'s
+ * {@link StageFormat} doc block records: the common shape of a draft night is a quick
+ * best-of-one round robin feeding a best-of-three bracket, and one field for both would
+ * force the whole night to run at whichever length was picked.
+ */
+const STAGE_FORMAT_OPTIONS: readonly SegmentedOption<StageFormat>[] = [
+  { value: 'bo1', label: 'Best of one' },
+  { value: 'bo3', label: 'Best of three' },
+];
 
 /**
  * Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen.
@@ -449,6 +530,29 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
 
   const [formatLabel, setFormatLabel] = useState(`Champions ${snapshot.regulation}`);
   const [depth, setDepth] = useState<TournamentDepth>('draftOnly');
+
+  /**
+   * TOUR-07's metric and D-08's two stage formats — pre-document form state like everything
+   * else on this screen, resolved into the config `handleStart` writes exactly once.
+   *
+   * Seeded from `V4_CONFIG_DEFAULTS` rather than from three restated literals, so a
+   * tournament created here and a schema 4 tournament migrated forward say the same thing
+   * about a host who never touched these controls. `migrate.ts:167-171` records that the two
+   * agreeing is a coincidence of two defensible answers rather than a shared fact — which is
+   * exactly why the constant is imported rather than copied.
+   *
+   * The state SURVIVES a depth change that makes a control inert. A host who chose
+   * `KO difference`, dropped to `Draft and brackets` to read the note and came back should
+   * find their answer where they left it; clearing it on the way down would silently discard
+   * a choice they made and never told anyone about.
+   */
+  const [matchMetric, setMatchMetric] = useState<MatchMetric>(V4_CONFIG_DEFAULTS.matchMetric);
+  const [roundRobinFormat, setRoundRobinFormat] = useState<StageFormat>(
+    V4_CONFIG_DEFAULTS.roundRobinFormat,
+  );
+  const [bracketFormat, setBracketFormat] = useState<StageFormat>(
+    V4_CONFIG_DEFAULTS.bracketFormat,
+  );
 
   /**
    * The RAW text of `Megas required per team`, not a number — D-06.
@@ -1265,15 +1369,20 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       // `feasibility.blocked` is false: at `snake` a null field is itself a blocker.
       bansPerPlayer: hasPlayerBans ? (bansPerPlayer ?? 0) : 0,
       duplicateBanPolicy,
-      // Version 5's three fields, written at the migration defaults because THIS PLAN ADDS
-      // NO CONTROL FOR THEM — 05-05 is what renders the `Match result`, `Round robin format`
-      // and `Bracket format` segmented controls and replaces these three lines with the
-      // host's own choices. Seeded from `V4_CONFIG_DEFAULTS` rather than from three
-      // restated literals so that until then, a tournament created here and a schema 4
-      // tournament migrated forward say the same thing.
-      matchMetric: V4_CONFIG_DEFAULTS.matchMetric,
-      roundRobinFormat: V4_CONFIG_DEFAULTS.roundRobinFormat,
-      bracketFormat: V4_CONFIG_DEFAULTS.bracketFormat,
+      // Version 5's three fields, now the host's own answers — TOUR-04, TOUR-07, D-04, D-08.
+      // 03-11 wrote `V4_CONFIG_DEFAULTS` on these three lines because no control produced
+      // them yet, and named this plan as the one that would replace them; it does, and the
+      // note saying otherwise went with it.
+      //
+      // Written UNCONDITIONALLY, including at the depths where the matching control is
+      // inert. The alternative — forcing the default in when the tier does not use the value
+      // — would be this screen deciding a rule, and `05-UI-SPEC` §Pure-core boundary says no
+      // component owns one. A `draftOnly` document carries a metric nothing reads, exactly
+      // as it already carries `swapRounds: 0`, and the day a host deepens a tournament the
+      // answer they gave is the one that is there.
+      matchMetric,
+      roundRobinFormat,
+      bracketFormat,
     };
 
     // D-01's two seams, and the branch is the whole of the routing decision. `hostBanlist`
@@ -1334,6 +1443,9 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     schedule,
     dualMegaChoicesForConfig,
     depth,
+    matchMetric,
+    roundRobinFormat,
+    bracketFormat,
     swapBudget,
     swapRounds,
     hasPlayerBans,
@@ -1390,7 +1502,55 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
           onChange={setDepth}
         />
 
-        <p class="config-screen__note">{DEPTH_NOTE}</p>
+        {/*
+          The note is a function of the SELECTION, per 05-UI-SPEC §Amendment 2 — each tier
+          states what it actually generates, so the difference between the two deeper ones
+          is on screen rather than inferred.
+        */}
+        <p class="config-screen__note">{DEPTH_NOTES[depth]}</p>
+
+        {/*
+          Directly beneath the note and only at the tiers that run a round robin, following
+          the group's "field, then its visible consequence" placement rule. It is a plain
+          fact rather than a warning — `.config-screen__note`, not a feasibility treatment —
+          because a round robin of any size is satisfiable and `feasibility.ts` is the only
+          thing on this screen allowed to say otherwise.
+        */}
+        {hasMatches(depth) && (
+          <p class="config-screen__note">{roundRobinSizeLine(players.length)}</p>
+        )}
+
+        {/*
+          `Match result`, `Round robin format` and `Bracket format` — 05-UI-SPEC §1, in the
+          contract's order. All three are in the `Tournament` group rather than a group of
+          their own: they are the same question the depth control asks, at a finer grain, and
+          a host who has to scroll to find them has to hold the depth in their head to answer.
+
+          The inert treatment lands in the next change; these three render live here.
+        */}
+        <SegmentedControl
+          legend="Match result"
+          name="match-metric"
+          options={MATCH_METRIC_OPTIONS}
+          value={matchMetric}
+          onChange={setMatchMetric}
+        />
+
+        <SegmentedControl
+          legend="Round robin format"
+          name="round-robin-format"
+          options={STAGE_FORMAT_OPTIONS}
+          value={roundRobinFormat}
+          onChange={setRoundRobinFormat}
+        />
+
+        <SegmentedControl
+          legend="Bracket format"
+          name="bracket-format"
+          options={STAGE_FORMAT_OPTIONS}
+          value={bracketFormat}
+          onChange={setBracketFormat}
+        />
       </fieldset>
 
       <fieldset class="config-screen__group">

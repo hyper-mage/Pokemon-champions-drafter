@@ -48,6 +48,22 @@ function bans(count: number): string {
 }
 
 /**
+ * The fourth, and Phase 5's — 05-UI-SPEC §Copywriting names `matches` as one of the two
+ * helpers this phase adds, "here and nowhere else".
+ *
+ * EXPORTED like {@link swaps} and for the same stated reason rather than as a new default:
+ * the count is read by more than one surface — the config screen's
+ * `A round robin at {p} players is {n} matches.` and the round robin's own
+ * `{k} of {n} matches still to play.` — and a second private copy is how two surfaces end up
+ * disagreeing about the singular. One match is reachable on both: a two-player round robin
+ * is exactly one match, and a round robin with one game left is the state that ends every
+ * complete night.
+ */
+export function matches(count: number): string {
+  return count === 1 ? '1 match' : `${count} matches`;
+}
+
+/**
  * 1. Abandoning a draft — D-36.
  *
  * `danger` toned, and one of only two of the six that qualify. This is genuine data loss

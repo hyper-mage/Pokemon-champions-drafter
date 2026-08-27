@@ -159,6 +159,16 @@
 /*
  * The note under a group. Muted and at --text-label, so it reads as an aside about the
  * control above it rather than as a second field.
+ *
+ * Since 05-05 the `Tournament` group renders TWO of these in a row — the per-option depth
+ * note (05-UI-SPEC §Amendment 2) and, at the two deeper tiers, the round-robin size line.
+ * Both take this one class deliberately. The size line is a plain fact about how long the
+ * night is, not a warning and not a second severity: `feasibility.ts` is the single
+ * authority on what is satisfiable, and giving this line its own treatment would make it
+ * look like a second opinion.
+ *
+ * The consecutive pair is spaced by the group's own --space-3 stack rather than by a rule
+ * here, so two notes read as two sentences at one level rather than as a sub-section.
  */
 .config-screen__note {
   margin: 0;
