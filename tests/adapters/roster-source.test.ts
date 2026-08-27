@@ -16,19 +16,32 @@
  * a working network is the case that needs no test.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import committedIndex from '../../public/data/roster.index.json';
+import committedSnapshotMa from '../../public/data/roster.ma.json';
 import committedSnapshot from '../../public/data/roster.mb.json';
+import committedSpriteMeta from '../../public/data/sprite-meta.json';
 import type { RosterSnapshot } from '../../src/core/roster/types';
 
 type RosterSource = typeof import('../../src/adapters/roster-source');
 
 let mod: RosterSource;
 
+const realFetch = globalThis.fetch;
+
 beforeEach(async () => {
   vi.resetModules();
   mod = await import('../../src/adapters/roster-source');
+  calls = [];
+});
+
+afterEach(() => {
+  Object.defineProperty(globalThis, 'fetch', {
+    value: realFetch,
+    configurable: true,
+    writable: true,
+  });
 });
 
 /**
@@ -121,6 +134,65 @@ function snapshotWithRowMissing(field: string): Loose {
 /** A one-row snapshot carrying a caller-supplied row. */
 function snapshotWithRow(entry: Loose): Loose {
   return makeSnapshot({ entries: [entry], counts: makeCounts(1) });
+}
+
+// ---------------------------------------------------------------------------
+// The fetch stub
+// ---------------------------------------------------------------------------
+
+/**
+ * Recorded so the same-origin assertion can read every URL the module ever built. That
+ * assertion is the point of the whole harness — see the file header.
+ */
+interface FetchCall {
+  url: string;
+  init: RequestInit | undefined;
+}
+
+let calls: FetchCall[];
+
+/** A route that answers with a non-`ok` response. */
+const NOT_FOUND = Symbol('not found');
+/** A route whose fetch rejects outright — offline, DNS failure, a killed radio. */
+const REJECTS = Symbol('rejects');
+
+/** The committed files, which is what the origin actually serves. */
+function defaultRoutes(): Map<string, unknown> {
+  return new Map<string, unknown>([
+    ['roster.index.json', committedIndex],
+    ['roster.mb.json', committedSnapshot],
+    ['roster.ma.json', committedSnapshotMa],
+    ['sprite-meta.json', committedSpriteMeta],
+  ]);
+}
+
+/**
+ * Install a `fetch` that serves the routes and records every call.
+ *
+ * Routed by filename rather than by whole URL on purpose: the refresh path appends a
+ * query marker, and a route table keyed on the exact URL would quietly stop matching the
+ * moment that marker was added — which is the behaviour under test.
+ */
+function installFetch(routes: Map<string, unknown> = defaultRoutes()): void {
+  const stub = async (input: unknown, init?: RequestInit): Promise<unknown> => {
+    const url = String(input);
+    calls.push({ url, init });
+
+    for (const [name, body] of routes) {
+      if (!url.includes(name)) continue;
+      if (body === REJECTS) throw new TypeError('Failed to fetch');
+      if (body === NOT_FOUND) return { ok: false, status: 404, statusText: 'Not Found' };
+      return { ok: true, status: 200, statusText: 'OK', json: async () => body };
+    }
+
+    return { ok: false, status: 404, statusText: 'Not Found' };
+  };
+
+  Object.defineProperty(globalThis, 'fetch', {
+    value: stub,
+    configurable: true,
+    writable: true,
+  });
 }
 
 /** Attach a poison key as an OWN property. Object literals cannot express this. */
@@ -350,5 +422,80 @@ describe('parseSnapshotStrict', () => {
 
     expect(snapshot['$doNotEditByHand']).toBeUndefined();
     expect(snapshot['$generator']).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The snapshot registry — D-24
+// ---------------------------------------------------------------------------
+
+describe('loadRoster / resolveSnapshot', () => {
+  beforeEach(() => {
+    installFetch();
+  });
+
+  it('resolves the index default when called with no argument', async () => {
+    const bundle = await mod.loadRoster();
+
+    expect(bundle.snapshot.regulation).toBe('M-B');
+    expect(bundle.spriteMeta.byRosterId['abomasnow']?.file).toBe('460.png');
+  });
+
+  it('holds both regulations at once — resolving one does not evict the other', async () => {
+    await mod.loadRoster();
+    await mod.loadRoster('ma');
+
+    expect(mod.resolveSnapshot('mb')?.snapshot.regulation).toBe('M-B');
+    expect(mod.resolveSnapshot('ma')?.snapshot.regulation).toBe('M-A');
+  });
+
+  it('returns null before the regulation has been resolved, and the bundle after', async () => {
+    expect(mod.resolveSnapshot('mb')).toBeNull();
+
+    await mod.loadRoster('mb');
+
+    expect(mod.resolveSnapshot('mb')?.snapshot.regulation).toBe('M-B');
+  });
+
+  it('never falls back to the default for a regulation this build has not resolved', async () => {
+    await mod.loadRoster();
+
+    // The whole of D-24 in one assertion: a filed M-C night opened on a build that ships
+    // only M-A and M-B is told so, rather than rendered against a roster that could not
+    // have contained its picks.
+    expect(mod.resolveSnapshot('mc')).toBeNull();
+  });
+
+  it('serves a second call for the same regulation from the registry', async () => {
+    await mod.loadRoster('mb');
+    const afterFirst = calls.length;
+    expect(afterFirst).toBeGreaterThan(0);
+
+    await mod.loadRoster('mb');
+
+    expect(calls.length).toBe(afterFirst);
+  });
+
+  it('answers to the regulation label a document actually stores', async () => {
+    await mod.loadRoster();
+
+    // `ConfigScreen.tsx:1233` stamps `config.rosterVersion` from `snapshot.regulation`,
+    // which is `M-B` — the manifest's own id for the same regulation is `mb`. Both names
+    // reach the same bundle, because `resolveSnapshot`'s caller holds the former.
+    expect(mod.resolveSnapshot('M-B')?.snapshot.regulation).toBe('M-B');
+    expect(mod.resolveSnapshot('mb')).toBe(mod.resolveSnapshot('M-B'));
+  });
+
+  it('fails through RosterLoadError for an unknown regulation id', async () => {
+    await expect(mod.loadRoster('mc')).rejects.toBeInstanceOf(mod.RosterLoadError);
+  });
+
+  it('does not poison the registry with a partial entry when a load fails', async () => {
+    installFetch(new Map<string, unknown>([['roster.index.json', committedIndex]]));
+
+    await expect(mod.loadRoster('mb')).rejects.toBeInstanceOf(mod.RosterLoadError);
+
+    expect(mod.resolveSnapshot('mb')).toBeNull();
+    expect(mod.resolveSnapshot('M-B')).toBeNull();
   });
 });
