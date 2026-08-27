@@ -304,9 +304,9 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-03-PLAN.md — the pair set, the stage fold, and standings by partition refinement (TOUR-02, TOUR-08)
-- [ ] 05-04-PLAN.md — the snapshot registry: refresh, strict parse, and a tournament's own roster (REFR-01, REFR-02, REFR-03)
-- [ ] 05-05-PLAN.md — config screen: depth, the metric and the two formats (TOUR-01, TOUR-04, TOUR-07)
+- [x] 05-03-PLAN.md — the pair set, the stage fold, and standings by partition refinement (TOUR-02, TOUR-08)
+- [x] 05-04-PLAN.md — the snapshot registry: refresh, strict parse, and a tournament's own roster (REFR-01, REFR-02, REFR-03)
+- [x] 05-05-PLAN.md — config screen: depth, the metric and the two formats (TOUR-01, TOUR-04, TOUR-07)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -352,7 +352,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
-| 5. Full Tournament — Brackets, Standings, Archive | 2/15 | In Progress|  |
+| 5. Full Tournament — Brackets, Standings, Archive | 5/15 | In Progress|  |
 
 ## Requirement Coverage
 
