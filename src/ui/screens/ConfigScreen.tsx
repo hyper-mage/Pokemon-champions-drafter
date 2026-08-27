@@ -20,6 +20,8 @@ import type {
   DualMegaChoice,
   DualMegaForme,
   DuplicateBanPolicy,
+  MatchMetric,
+  StageFormat,
   TournamentConfig,
   TournamentDepth,
 } from '../../core/model';
@@ -29,6 +31,7 @@ import { createBanStage, createTournament } from '../../store';
 import {
   CLEAR_BANLIST_CONFIRM,
   CLEAR_MEGA_FORME_BANLIST_CONFIRM,
+  matches,
   REMOVE_PLAYER_CONFIRM,
   REROLL_ORDER_CONFIRM,
   REROLL_POOL_CONFIRM,
@@ -41,7 +44,11 @@ import { NumericField, parseNumericField } from '../components/NumericField';
 import { PlayerList, type PlayerDraft } from '../components/PlayerList';
 import { PoolGrid } from '../components/PoolGrid';
 import { SchedulePreview, type MoveDirection } from '../components/SchedulePreview';
-import { SegmentedControl, type SegmentedOption } from '../components/SegmentedControl';
+import {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentedOption,
+} from '../components/SegmentedControl';
 import { TypeaheadField } from '../components/TypeaheadField';
 
 import './ConfigScreen.css';
@@ -124,9 +131,15 @@ const INITIAL_PLAYERS = 4;
  *
  * All three depth options are ENABLED, deliberately unlike ban mode where two are
  * disabled (D-12). ROADMAP criterion 1 says the host "enters … a tournament depth", and a
- * disabled depth would make that criterion unmeetable. What is not yet built is the
- * screens the deeper options lead to, and the note below the group says so rather than
- * the control pretending the choice does not exist.
+ * disabled depth would make that criterion unmeetable.
+ *
+ * Phase 2 shipped this block saying the screens the deeper options lead to were not built
+ * yet, and pointed at a single note that said so. THIS PHASE IS THOSE SCREENS, so both
+ * halves of that sentence stopped being true and are corrected here rather than left for
+ * the next reader to trust — 05-UI-SPEC §Amendments: a stale contract comment is worse than
+ * no comment. What replaces the promise is {@link DEPTH_NOTES}, one sentence per option,
+ * because D-01 makes the difference between the two deeper tiers a SPECIFIC one — the
+ * numeric field and the editable history — and one sentence cannot state three outcomes.
  */
 const DEPTH_OPTIONS: readonly SegmentedOption<TournamentDepth>[] = [
   { value: 'draftOnly', label: 'Draft only' },
@@ -134,8 +147,201 @@ const DEPTH_OPTIONS: readonly SegmentedOption<TournamentDepth>[] = [
   { value: 'draftBracketsAndLog', label: 'Draft, brackets and match log' },
 ];
 
-const DEPTH_NOTE =
-  'Depth is recorded now. Round robin and brackets arrive with the tournament screens.';
+/**
+ * The note under the depth control — 05-UI-SPEC §Amendment 2, one per option.
+ *
+ * Module constants rather than inline JSX prose, for `ReadOnlyBanner.tsx:42-51`'s stated
+ * reason: JSX collapses whitespace between text lines and these are contracts down to the
+ * full stop. Keyed by {@link TournamentDepth} rather than a switch, so a member added to
+ * the union fails the build here instead of rendering an empty note.
+ */
+const DEPTH_NOTES: Readonly<Record<TournamentDepth, string>> = {
+  draftOnly: 'The night ends when the draft ends.',
+  draftAndBrackets:
+    'After the draft: a round robin, a cut you choose, and a single-elimination bracket. Winners only — no scores.',
+  draftBracketsAndLog:
+    'Everything in Draft and brackets, plus one number per match that breaks ties in the standings.',
+};
+
+/**
+ * The three depth tiers that run matches after the draft — D-01.
+ *
+ * `draftOnly` is the one tier with nothing after the draft, so it is the one the round-robin
+ * size line and both format controls are absent or inert at. Derived from the depth rather
+ * than from a second piece of state, so the two cannot disagree.
+ */
+function hasMatches(value: TournamentDepth): boolean {
+  return value !== 'draftOnly';
+}
+
+/**
+ * `A round robin at {p} players is {n} matches.` — 05-UI-SPEC §Copywriting → Config screen.
+ *
+ * A PLAIN FACT and not a warning: it is not routed through `FeasibilityBar` and takes no
+ * warning styling. `feasibility.ts` is the single authority on what is satisfiable, and a
+ * round robin of any size is satisfiable — this line only says how long the night is.
+ *
+ * `p(p−1)/2`, the count of unordered pairs, which is exactly one match per pair of players.
+ * The plural goes through `confirm-copy.ts`'s helper rather than a second one declared here:
+ * at two players this reads `1 match`, and 05-UI-SPEC requires every interpolated count to
+ * take a helper.
+ */
+function roundRobinSizeLine(playerCount: number): string {
+  return `A round robin at ${playerCount} players is ${matches((playerCount * (playerCount - 1)) / 2)}.`;
+}
+
+/**
+ * `Match result`'s two options — TOUR-07, D-04. Verbatim from 05-UI-SPEC §Copywriting →
+ * Config screen, accent included: the first label carries an acute e, not a bare `e`.
+ *
+ * The VALUES are {@link MatchMetric}'s members and the labels are what the host reads. The
+ * two are deliberately not the same string: the members are written into every saved
+ * document from schema 5 onward, so renaming one breaks every tournament already on disk,
+ * while a label is free to be reworded.
+ *
+ * The three LEGENDS are inline at the render site rather than constants here, matching
+ * `legend="Tournament depth"` directly above them. `ReadOnlyBanner.tsx:42-51`'s
+ * constants-not-prose rule is about multi-line sentences whose whitespace JSX collapses;
+ * a two-word attribute value has no whitespace to lose.
+ */
+const MATCH_METRIC_OPTIONS: readonly SegmentedOption<MatchMetric>[] = [
+  { value: 'pokemonLeft', label: 'Pokémon left' },
+  { value: 'koDifference', label: 'KO difference' },
+];
+
+/**
+ * `Round robin format` and `Bracket format` share these two — D-08.
+ *
+ * TWO controls over ONE options list, and the split is the decision `model.ts`'s
+ * {@link StageFormat} doc block records: the common shape of a draft night is a quick
+ * best-of-one round robin feeding a best-of-three bracket, and one field for both would
+ * force the whole night to run at whichever length was picked.
+ */
+const STAGE_FORMAT_OPTIONS: readonly SegmentedOption<StageFormat>[] = [
+  { value: 'bo1', label: 'Best of one' },
+  { value: 'bo3', label: 'Best of three' },
+];
+
+/**
+ * `Match result`'s reason at the two lighter depths — 05-UI-SPEC §1 and §Copywriting →
+ * Config screen, and it EXCLUDES the `— ` separator for `DUPLICATE_BANS_SNAKE_REASON`'s
+ * stated reason: the separator is markup, so the copy contract, this constant and the test
+ * assertion stay one value (WR-03).
+ *
+ * It names the depth that WOULD make the control live. D-01/D-02 make `Draft and brackets`
+ * a winners-only tier, so there is no number for a metric to give a meaning to — and a
+ * reason that only said "unavailable" would leave the host with nothing to do about it.
+ */
+const MATCH_METRIC_REASON =
+  'Draft and brackets records winners only. Choose Draft, brackets and match log to record a number per match.';
+
+/**
+ * Both format controls' reason at `draftOnly` — ONE constant, read from two call sites.
+ *
+ * Two constants holding the same sentence would be two places to amend it, and 05-UI-SPEC
+ * §Copywriting gives it once as `Format inert reason` for both rows of the control table.
+ */
+const STAGE_FORMAT_REASON = 'Draft only has no matches.';
+
+/**
+ * The ids the three inert-able controls name as their description.
+ *
+ * Module constants rather than generated ones, on `FeasibilityBar.tsx:42-48`'s reasoning:
+ * there is exactly one config screen and exactly one of each control on it, so a pinned id
+ * is the answer and a generated one would be a second answer to one question.
+ *
+ * THREE ids even though two of them label the same sentence. Two elements sharing one id is
+ * invalid markup and `aria-describedby` resolves to whichever the parser saw first, so the
+ * bracket control would be described by the round robin's copy of the reason — correct by
+ * accident, and silently wrong the day the two sentences diverge.
+ */
+const MATCH_METRIC_REASON_ID = 'config-match-metric-reason';
+const ROUND_ROBIN_FORMAT_REASON_ID = 'config-round-robin-format-reason';
+const BRACKET_FORMAT_REASON_ID = 'config-bracket-format-reason';
+
+/**
+ * A `SegmentedControl` that can be inert, with its reason visible beneath it.
+ *
+ * ## `aria-disabled` WITHOUT native `disabled`, on the WHOLE control — do not "fix" it
+ *
+ * `SegmentedControl` has a per-OPTION `disabled` mechanism (`:73-79`) and this deliberately
+ * does not use it: 05-UI-SPEC §1 is explicit that at these depths EVERY member of the
+ * control is unavailable rather than one of them. So it takes `Start draft`'s pattern
+ * instead — `FeasibilityBar.tsx:18-25`: a natively disabled control is not focusable, so a
+ * keyboard user could never reach the explanation, and the explanation is the entire point
+ * of rendering an unusable control at all.
+ *
+ * ## The attribute is shed, never set to `'false'`
+ *
+ * `undefined` when live, so the attribute is ABSENT from the markup. Setting it to the
+ * string false instead is not the same thing, and plenty of assistive technology reports
+ * that as disabled anyway (WR-04, of which this phase adds seven consumers and this
+ * component is two of them). `aria-describedby` sheds with it: a live control has no
+ * description to point at, and a dangling id reference is a promise the DOM does not keep.
+ *
+ * This block DESCRIBES the attribute values rather than quoting them, following the
+ * repository pattern `FeasibilityBar`'s doc block states: the acceptance checks here are
+ * plain text searches, and a comment that quotes what it forbids makes the gate match its
+ * own documentation.
+ *
+ * ## One vnode shape across the boundary
+ *
+ * The wrapper, the control and its radios render identically in both states; only the reason
+ * appears. Rendering a different element in the inert branch would unmount the focused radio
+ * and drop focus to `<body>` — the regression 02-11 fixed on `SplitPanes`.
+ */
+function InertibleSegmentedControl<T extends string>({
+  legend,
+  name,
+  options,
+  value,
+  onChange,
+  inert,
+  reason,
+  reasonId,
+}: SegmentedControlProps<T> & {
+  inert: boolean;
+  reason: string;
+  reasonId: string;
+}) {
+  return (
+    <div
+      class="config-screen__inert-control"
+      aria-disabled={inert ? 'true' : undefined}
+      aria-describedby={inert ? reasonId : undefined}
+    >
+      <SegmentedControl
+        legend={legend}
+        name={name}
+        options={options}
+        value={value}
+        onChange={(next) => {
+          // The early return IS the refusal, and it is what keeps the ARIA honest: without
+          // it the attribute would claim the control is inert while an interaction still
+          // changed the config the host is about to commit to. Same guard the `Duplicate
+          // bans` control carries, for the same reason.
+          if (inert) return;
+          onChange(next);
+        }}
+      />
+
+      {inert && (
+        <span class="config-screen__inert-reason" id={reasonId}>
+          {/*
+            The `— ` separator is MARKUP rather than `::before` content — a dash generated
+            by a stylesheet is half a visible line that no test reads (WR-03) — and it is
+            `aria-hidden` so the description `aria-describedby` resolves to is the sentence
+            alone. An expression container holding a string literal, not bare JSX text,
+            because JSX collapses trailing whitespace and the space is half of the two
+            characters.
+          */}
+          <span aria-hidden="true">{'— '}</span>
+          {reason}
+        </span>
+      )}
+    </div>
+  );
+}
 
 /**
  * Verbatim from 02-UI-SPEC §Copywriting Contract → Config screen.
@@ -449,6 +655,46 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
 
   const [formatLabel, setFormatLabel] = useState(`Champions ${snapshot.regulation}`);
   const [depth, setDepth] = useState<TournamentDepth>('draftOnly');
+
+  /**
+   * TOUR-07's metric and D-08's two stage formats — pre-document form state like everything
+   * else on this screen, resolved into the config `handleStart` writes exactly once.
+   *
+   * Seeded from `V4_CONFIG_DEFAULTS` rather than from three restated literals, so a
+   * tournament created here and a schema 4 tournament migrated forward say the same thing
+   * about a host who never touched these controls. `migrate.ts:167-171` records that the two
+   * agreeing is a coincidence of two defensible answers rather than a shared fact — which is
+   * exactly why the constant is imported rather than copied.
+   *
+   * The state SURVIVES a depth change that makes a control inert. A host who chose
+   * `KO difference`, dropped to `Draft and brackets` to read the note and came back should
+   * find their answer where they left it; clearing it on the way down would silently discard
+   * a choice they made and never told anyone about.
+   */
+  const [matchMetric, setMatchMetric] = useState<MatchMetric>(V4_CONFIG_DEFAULTS.matchMetric);
+  const [roundRobinFormat, setRoundRobinFormat] = useState<StageFormat>(
+    V4_CONFIG_DEFAULTS.roundRobinFormat,
+  );
+  const [bracketFormat, setBracketFormat] = useState<StageFormat>(
+    V4_CONFIG_DEFAULTS.bracketFormat,
+  );
+
+  /**
+   * Which of the three controls above the host can actually answer right now — 05-UI-SPEC
+   * §1's "Inert when" column, and the two conditions are deliberately different.
+   *
+   * `Match result` is live at ONE tier: D-01/D-02 make `draftBracketsAndLog` the only depth
+   * that records a number per match, so at both lighter tiers the metric has nothing to give
+   * a meaning to. Both stage formats are live at TWO, because `draftOnly` is the one tier
+   * that runs no matches at all and a best-of is a length for a match that exists.
+   *
+   * DERIVED from `depth` rather than mirrored into state, so the ARIA is shed in the same
+   * render the depth changes (WR-04) and there is no second value free to disagree with the
+   * first. `hasMatches` rather than a second `!== 'draftOnly'` here: it is the same question
+   * the round-robin size line asks, and one predicate cannot answer it two ways.
+   */
+  const matchMetricInert = depth !== 'draftBracketsAndLog';
+  const stageFormatInert = !hasMatches(depth);
 
   /**
    * The RAW text of `Megas required per team`, not a number — D-06.
@@ -1265,15 +1511,20 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       // `feasibility.blocked` is false: at `snake` a null field is itself a blocker.
       bansPerPlayer: hasPlayerBans ? (bansPerPlayer ?? 0) : 0,
       duplicateBanPolicy,
-      // Version 5's three fields, written at the migration defaults because THIS PLAN ADDS
-      // NO CONTROL FOR THEM — 05-05 is what renders the `Match result`, `Round robin format`
-      // and `Bracket format` segmented controls and replaces these three lines with the
-      // host's own choices. Seeded from `V4_CONFIG_DEFAULTS` rather than from three
-      // restated literals so that until then, a tournament created here and a schema 4
-      // tournament migrated forward say the same thing.
-      matchMetric: V4_CONFIG_DEFAULTS.matchMetric,
-      roundRobinFormat: V4_CONFIG_DEFAULTS.roundRobinFormat,
-      bracketFormat: V4_CONFIG_DEFAULTS.bracketFormat,
+      // Version 5's three fields, now the host's own answers — TOUR-04, TOUR-07, D-04, D-08.
+      // 03-11 wrote `V4_CONFIG_DEFAULTS` on these three lines because no control produced
+      // them yet, and named this plan as the one that would replace them; it does, and the
+      // note saying otherwise went with it.
+      //
+      // Written UNCONDITIONALLY, including at the depths where the matching control is
+      // inert. The alternative — forcing the default in when the tier does not use the value
+      // — would be this screen deciding a rule, and `05-UI-SPEC` §Pure-core boundary says no
+      // component owns one. A `draftOnly` document carries a metric nothing reads, exactly
+      // as it already carries `swapRounds: 0`, and the day a host deepens a tournament the
+      // answer they gave is the one that is there.
+      matchMetric,
+      roundRobinFormat,
+      bracketFormat,
     };
 
     // D-01's two seams, and the branch is the whole of the routing decision. `hostBanlist`
@@ -1334,6 +1585,9 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
     schedule,
     dualMegaChoicesForConfig,
     depth,
+    matchMetric,
+    roundRobinFormat,
+    bracketFormat,
     swapBudget,
     swapRounds,
     hasPlayerBans,
@@ -1390,7 +1644,74 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
           onChange={setDepth}
         />
 
-        <p class="config-screen__note">{DEPTH_NOTE}</p>
+        {/*
+          The note is a function of the SELECTION, per 05-UI-SPEC §Amendment 2 — each tier
+          states what it actually generates, so the difference between the two deeper ones
+          is on screen rather than inferred.
+        */}
+        <p class="config-screen__note">{DEPTH_NOTES[depth]}</p>
+
+        {/*
+          Directly beneath the note and only at the tiers that run a round robin, following
+          the group's "field, then its visible consequence" placement rule. It is a plain
+          fact rather than a warning — `.config-screen__note`, not a feasibility treatment —
+          because a round robin of any size is satisfiable and `feasibility.ts` is the only
+          thing on this screen allowed to say otherwise.
+        */}
+        {hasMatches(depth) && (
+          <p class="config-screen__note">{roundRobinSizeLine(players.length)}</p>
+        )}
+
+        {/*
+          `Match result`, `Round robin format` and `Bracket format` — 05-UI-SPEC §1, in the
+          contract's order. All three are in the `Tournament` group rather than a group of
+          their own: they are the same question the depth control asks, at a finer grain, and
+          a host who has to scroll to find them has to hold the depth in their head to answer.
+
+          All three go through `InertibleSegmentedControl`, whose doc block states which of
+          the two available mechanisms was chosen and why: the WHOLE control takes
+          `aria-disabled` without native `disabled`, NOT `SegmentedControl`'s per-option
+          `disabled`, because §1 says every member is unavailable at these depths rather than
+          one of them. They stay in the tab order and their reasons are reachable by keyboard.
+
+          There is deliberately NO sentence here about player counts and brackets. The one
+          thing this screen says about a three-player bracket is `feasibility.ts`'s
+          `bracketNeedsFourPlayers`, rendered by `FeasibilityBar` from `checkFeasibility`'s
+          `problems` — one authority, and a second one in this file would be free to disagree
+          with it. It is a WARNING, so `Start draft` stays enabled at three players.
+        */}
+        <InertibleSegmentedControl
+          legend="Match result"
+          name="match-metric"
+          options={MATCH_METRIC_OPTIONS}
+          value={matchMetric}
+          onChange={setMatchMetric}
+          inert={matchMetricInert}
+          reason={MATCH_METRIC_REASON}
+          reasonId={MATCH_METRIC_REASON_ID}
+        />
+
+        <InertibleSegmentedControl
+          legend="Round robin format"
+          name="round-robin-format"
+          options={STAGE_FORMAT_OPTIONS}
+          value={roundRobinFormat}
+          onChange={setRoundRobinFormat}
+          inert={stageFormatInert}
+          reason={STAGE_FORMAT_REASON}
+          reasonId={ROUND_ROBIN_FORMAT_REASON_ID}
+        />
+
+        <InertibleSegmentedControl
+          legend="Bracket format"
+          name="bracket-format"
+          options={STAGE_FORMAT_OPTIONS}
+          value={bracketFormat}
+          onChange={setBracketFormat}
+          inert={stageFormatInert}
+          reason={STAGE_FORMAT_REASON}
+          reasonId={BRACKET_FORMAT_REASON_ID}
+        />
       </fieldset>
 
       <fieldset class="config-screen__group">

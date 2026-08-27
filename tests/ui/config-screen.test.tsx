@@ -917,12 +917,20 @@ describe('the Tournament group', () => {
     expect(radios[0]?.checked).toBe(true);
   });
 
-  it('says what recording a depth does and does not do', () => {
+  /**
+   * 05-UI-SPEC §Amendment 2 superseded the sentence this case used to assert. The promise
+   * it made — that round robin and brackets were still to come — stopped being true when
+   * Phase 5 built them, so the assertion is inverted rather than deleted: a note that
+   * re-appeared would be a contract the next reader trusts and that is false.
+   *
+   * What the note says NOW is per-option, and `config-tournament.test.tsx` owns all three
+   * sentences plus the round-robin size line beside them.
+   */
+  it('no longer promises the tournament screens are still to come', () => {
     mount();
 
-    expect(host.textContent).toContain(
-      'Depth is recorded now. Round robin and brackets arrive with the tournament screens.',
-    );
+    expect(host.textContent).not.toContain('Depth is recorded now.');
+    expect(host.textContent).toContain('The night ends when the draft ends.');
   });
 });
 
