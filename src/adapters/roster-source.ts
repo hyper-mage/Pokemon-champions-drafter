@@ -518,19 +518,105 @@ function parseSpriteMeta(value: unknown): SpriteMeta {
 }
 
 /**
- * Read the committed roster snapshot for the default regulation, plus the sprite map.
+ * Every regulation this process has resolved, held at once. D-24.
  *
- * The index is read first so the default regulation is named in data rather than
- * hardcoded here — ROST-06 keeps the prior regulation's frozen snapshot alongside the
- * current one, and which is current is the manifest's decision, not this module's.
+ * ## Why a `Map` here does not contradict CLAUDE.md §Serializability
+ *
+ * That rule governs the tournament DOCUMENT — the thing that is stringified into
+ * `localStorage`, exported to a file, and folded by the reducer. This is module-local
+ * process state that never enters the document, never crosses `dispatch`, and dies with
+ * the tab. A `Map` in this codebase otherwise reads as a mistake, so: it is not one, and
+ * the reason is that nothing here is ever persisted.
+ *
+ * ## It is keyed by BOTH names for a regulation
+ *
+ * The manifest calls the current regulation `mb`; the snapshot inside it calls itself
+ * `M-B`; and `ConfigScreen` stamps the LATTER onto `config.rosterVersion`. A document
+ * therefore arrives holding `M-B` while the manifest only ever says `mb`. Both keys point
+ * at the same bundle OBJECT — not a copy — so a caller holding either name gets the same
+ * snapshot and an identity comparison between them holds.
  */
-export async function loadRoster(): Promise<RosterBundle> {
+const registry = new Map<string, RosterBundle>();
+
+/**
+ * The regulation id the manifest last named as its default, or `null` before any load.
+ *
+ * Read at the top of `loadRoster` so that a no-argument REPEAT call is as free as an
+ * explicit one: without it, `loadRoster()` could not name what it already holds and would
+ * re-fetch the manifest to be told a regulation it had resolved a moment ago. Written
+ * again by `refreshRoster` when a newer regulation is adopted, which is what makes the
+ * next no-argument call return the new default rather than the superseded one.
+ */
+let defaultRegulationId: string | null = null;
+
+/**
+ * Adopt a bundle under both of its names. The only writer of the registry.
+ *
+ * Called only after a snapshot has fully resolved — a failed load must leave nothing
+ * behind, because a half-registered regulation would be indistinguishable from a
+ * complete one at every later read.
+ */
+function register(id: string, bundle: RosterBundle): void {
+  registry.set(id, bundle);
+  const label = bundle.snapshot.regulation;
+  if (isNonEmptyString(label)) registry.set(label, bundle);
+}
+
+/**
+ * The registry read: the bundle for a `rosterVersion`, or `null`.
+ *
+ * ## It returns `null` and MUST NOT fall back to the default
+ *
+ * Substituting the current roster for the one a document names would render a completed
+ * tournament against a roster that could not have contained its picks — silently. A
+ * Pokémon drafted under M-B and dropped in M-C would simply vanish from the team it won
+ * with, and nothing on screen would say a substitution had happened. That is the
+ * repudiation failure D-24 exists to prevent, so the honest answer is "this build has
+ * never seen that regulation", every time.
+ *
+ * The caller's recovery is REFR-02's roster-file import, and the SURFACE for saying so
+ * already exists: `rosterDriftNotice` and `missingFromRoster` in `src/app.tsx:2325-2345`
+ * are the established way this app states "this document references something this roster
+ * does not contain". 05-07 wires that existing sentence rather than inventing a second
+ * one; this plan does not modify `app.tsx`.
+ */
+export function resolveSnapshot(rosterVersion: string): RosterBundle | null {
+  return registry.get(rosterVersion) ?? null;
+}
+
+/**
+ * Resolve one regulation's snapshot, plus the sprite map.
+ *
+ * With no argument this reads the manifest's `default`, so which regulation is current is
+ * data's decision rather than this module's — ROST-06 keeps the prior regulation's frozen
+ * snapshot committed alongside it. With an argument it resolves that regulation instead,
+ * and BOTH remain resolvable afterwards: resolving one never evicts another, which is the
+ * whole point of D-24. A filed M-B night stays an M-B night on a build that has moved on.
+ *
+ * A regulation already in the registry is returned without touching the network. The
+ * manifest is still read when the requested id is not yet held, because an id that is not
+ * in the registry may not be in the manifest either, and that has to be found out.
+ */
+export async function loadRoster(regulationId?: string): Promise<RosterBundle> {
+  const requested = regulationId ?? defaultRegulationId;
+  if (requested !== null) {
+    const held = registry.get(requested);
+    if (held !== undefined) return held;
+  }
+
   try {
     const index = parseIndex(await fetchJson(`${DATA_DIRECTORY}${INDEX_FILE}`));
+    const wanted = regulationId ?? index.default;
+    // Recorded before the snapshot fetch so that the manifest is read at most once per
+    // process for the default, even when the first call named it explicitly.
+    if (regulationId === undefined) defaultRegulationId = index.default;
 
-    const regulation = index.regulations.find((candidate) => candidate.id === index.default);
+    const alreadyHeld = registry.get(wanted);
+    if (alreadyHeld !== undefined) return alreadyHeld;
+
+    const regulation = index.regulations.find((candidate) => candidate.id === wanted);
     if (regulation === undefined) {
-      throw new Error(`roster index default "${index.default}" names no listed regulation`);
+      throw new Error(`roster index has no regulation "${wanted}"`);
     }
     if (!SNAPSHOT_FILE_PATTERN.test(regulation.json)) {
       throw new Error(`roster index snapshot filename is not well formed: ${regulation.json}`);
@@ -541,7 +627,9 @@ export async function loadRoster(): Promise<RosterBundle> {
       fetchJson(`${DATA_DIRECTORY}${SPRITE_META_FILE}`).then(parseSpriteMeta),
     ]);
 
-    return { snapshot, spriteMeta };
+    const bundle: RosterBundle = { snapshot, spriteMeta };
+    register(regulation.id, bundle);
+    return bundle;
   } catch (cause) {
     throw new RosterLoadError(cause);
   }
