@@ -59,14 +59,22 @@
  */
 
 import type { Action, RoundKind, RoundSpec } from './actions';
-import { migrate, V1_CONFIG_DEFAULTS, V2_CONFIG_DEFAULTS, V3_CONFIG_DEFAULTS } from './migrate';
+import {
+  migrate,
+  V1_CONFIG_DEFAULTS,
+  V2_CONFIG_DEFAULTS,
+  V3_CONFIG_DEFAULTS,
+  V4_CONFIG_DEFAULTS,
+} from './migrate';
 import type {
   BanMode,
   CompositionRule,
   DualMegaChoice,
   DualMegaForme,
   DuplicateBanPolicy,
+  MatchMetric,
   PlayerConfig,
+  StageFormat,
   TournamentConfig,
   TournamentDepth,
   TournamentDoc,
@@ -307,6 +315,14 @@ const BAN_MODES: readonly BanMode[] = ['hostBanlist', 'blind', 'snake'];
  */
 export const DUPLICATE_BAN_POLICIES: readonly DuplicateBanPolicy[] = ['bothApply', 'reBan'];
 const DEPTHS: readonly TournamentDepth[] = ['draftOnly', 'draftAndBrackets', 'draftBracketsAndLog'];
+/**
+ * Exported for {@link DUPLICATE_BAN_POLICIES}' reason: 05-05's tournament controls render
+ * one option per member, and a second hand-written list would be a second thing that can
+ * drift from the union.
+ */
+export const MATCH_METRICS: readonly MatchMetric[] = ['pokemonLeft', 'koDifference'];
+/** Exported for {@link MATCH_METRICS}' reason — 05-05 renders one option per member. */
+export const STAGE_FORMATS: readonly StageFormat[] = ['bo1', 'bo3'];
 const DUAL_MEGA_FORMES: readonly DualMegaForme[] = ['x', 'y', 'either'];
 const COMPOSITION_RULE_KINDS: readonly CompositionRule['kind'][] = ['mega'];
 const ROUND_KINDS: readonly RoundKind[] = ['mega', 'open'];
@@ -680,6 +696,35 @@ function buildConfig(value: unknown): TournamentConfig | null {
     duplicateBanPolicy = raw['duplicateBanPolicy'];
   }
 
+  // T-05-01. All three version 5 fields take `depth`'s arm above rather than
+  // `duplicateBanPolicy`'s: REFUSED on a value outside the union, not coerced onto the
+  // default. The difference is whether anything reads the field. `duplicateBanPolicy` has
+  // no reader, so a wrong string can only sit there; these three are read by the standings
+  // sort and by the match recorder, so a silently substituted value produces a tournament
+  // scored by a metric the file never named — and says nothing about having done it.
+  //
+  // ABSENT is a different question from MALFORMED and gets the different answer: seeded
+  // from `V4_CONFIG_DEFAULTS`, because `buildConfig` runs BEFORE `migrate` and requiring
+  // these keys would refuse every schema 4 document one step before the migration that
+  // exists to upgrade it.
+  let matchMetric: MatchMetric = V4_CONFIG_DEFAULTS.matchMetric;
+  if (raw['matchMetric'] !== undefined) {
+    if (!isOneOf(raw['matchMetric'], MATCH_METRICS)) return null;
+    matchMetric = raw['matchMetric'];
+  }
+
+  let roundRobinFormat: StageFormat = V4_CONFIG_DEFAULTS.roundRobinFormat;
+  if (raw['roundRobinFormat'] !== undefined) {
+    if (!isOneOf(raw['roundRobinFormat'], STAGE_FORMATS)) return null;
+    roundRobinFormat = raw['roundRobinFormat'];
+  }
+
+  let bracketFormat: StageFormat = V4_CONFIG_DEFAULTS.bracketFormat;
+  if (raw['bracketFormat'] !== undefined) {
+    if (!isOneOf(raw['bracketFormat'], STAGE_FORMATS)) return null;
+    bracketFormat = raw['bracketFormat'];
+  }
+
   return {
     formatLabel,
     players,
@@ -698,6 +743,9 @@ function buildConfig(value: unknown): TournamentConfig | null {
     swapRounds,
     bansPerPlayer,
     duplicateBanPolicy,
+    matchMetric,
+    roundRobinFormat,
+    bracketFormat,
   };
 }
 
