@@ -411,7 +411,7 @@ describe('a draft saved by Phase 1', () => {
     storage.backing.set(STORAGE_KEY, v1Record());
 
     expect(load()?.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(load()?.schemaVersion).toBe(4);
+    expect(load()?.schemaVersion).toBe(5);
   });
 
   it('lands with the pool size its log actually recorded', () => {
@@ -439,21 +439,21 @@ describe('a draft saved by Phase 1', () => {
     const imported = parseTournamentFile(text, text.length);
     expect(imported.ok).toBe(true);
     if (!imported.ok) return;
-    expect(imported.doc.schemaVersion).toBe(4);
+    expect(imported.doc.schemaVersion).toBe(5);
 
     storage.backing.set(STORAGE_KEY, v1Record());
     const restored = load();
-    expect(restored?.schemaVersion).toBe(4);
+    expect(restored?.schemaVersion).toBe(5);
 
     expect(adoptTournament(imported.doc)).toBe(true);
-    expect(getDoc()?.schemaVersion).toBe(4);
+    expect(getDoc()?.schemaVersion).toBe(5);
   });
 
   it('adopts an un-migrated v1 document rather than refusing it', () => {
     // `adoptTournament` is reachable with a raw v1 document, so it migrates rather than
     // comparing — and the state it publishes is the fold of the MIGRATED document.
     expect(adoptTournament(v1Doc() as TournamentDoc)).toBe(true);
-    expect(getDoc()?.schemaVersion).toBe(4);
+    expect(getDoc()?.schemaVersion).toBe(5);
     expect(getState()?.poolIds).toHaveLength(4);
   });
 
@@ -539,7 +539,7 @@ describe('a draft saved by Phase 2', () => {
     storage.backing.set(STORAGE_KEY, v2Record());
 
     expect(load()?.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(load()?.schemaVersion).toBe(4);
+    expect(load()?.schemaVersion).toBe(5);
   });
 
   it('comes back with a rule list derived from the Megas it required', () => {
@@ -572,7 +572,7 @@ describe('a draft saved by Phase 2', () => {
   it('does not offer a wrapper at a version this build has never supported', () => {
     storage.backing.set(
       STORAGE_KEY,
-      JSON.stringify({ schemaVersion: 5, generation: 1, savedAt: 0, doc: v2Doc() }),
+      JSON.stringify({ schemaVersion: 6, generation: 1, savedAt: 0, doc: v2Doc() }),
     );
 
     expect(load()).toBeNull();
@@ -667,7 +667,7 @@ describe('a draft saved by Phase 3', () => {
     storage.backing.set(STORAGE_KEY, v3Record());
 
     expect(load()?.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(load()?.schemaVersion).toBe(4);
+    expect(load()?.schemaVersion).toBe(5);
   });
 
   it('comes back with the ban fields at their lossless defaults', () => {
@@ -707,7 +707,7 @@ describe('a draft saved by Phase 3', () => {
   it('does not offer a wrapper at a version this build has never supported', () => {
     storage.backing.set(
       STORAGE_KEY,
-      JSON.stringify({ schemaVersion: 5, generation: 1, savedAt: 0, doc: v3Doc() }),
+      JSON.stringify({ schemaVersion: 6, generation: 1, savedAt: 0, doc: v3Doc() }),
     );
 
     expect(load()).toBeNull();

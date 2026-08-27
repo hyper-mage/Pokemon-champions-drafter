@@ -34,10 +34,7 @@ import { SCHEMA_VERSION, type TournamentConfig, type TournamentDoc } from './mod
  * `TournamentDoc` is still assignable to {@link V2Doc}, which is what lets the version 2
  * arm hand `migrate`'s own argument straight to `migrateV2ToV3`.
  */
-type V2Config = Omit<
-  TournamentConfig,
-  'rules' | 'megaFormeBans' | 'swapBudget' | 'swapRounds' | 'bansPerPlayer' | 'duplicateBanPolicy'
->;
+type V2Config = Omit<V3Config, 'rules' | 'megaFormeBans' | 'swapBudget' | 'swapRounds'>;
 
 type V2Doc = Omit<TournamentDoc, 'config'> & { config: V2Config };
 

@@ -182,7 +182,7 @@ describe('createBanStage', () => {
       schedule: schedule(),
     });
 
-    expect(doc?.schemaVersion).toBe(4);
+    expect(doc?.schemaVersion).toBe(5);
     expect(doc?.config.banMode).toBe('snake');
     expect(doc?.config.bansPerPlayer).toBe(1);
   });

@@ -11,6 +11,7 @@ import {
   type PoolPreset,
 } from '../../core/feasibility';
 import { MAX_BANS_PER_PLAYER } from '../../core/import-guard';
+import { V4_CONFIG_DEFAULTS } from '../../core/migrate';
 import { bannedMegaFormes, choiceFor, isMegaEligible, megaFormeRows } from '../../core/mega';
 import type { RoundSpec } from '../../core/actions';
 import type {
@@ -989,6 +990,11 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
         // line would be that second check, free to disagree with the first.
         banMode,
         bansPerPlayer,
+        // The screen's OWN depth state, unlike the two adopted-document call sites which
+        // pass `'draftOnly'` — see `FeasibilityInput.depth`. This is the one caller whose
+        // depth is still a question, and the one where "choose Draft only, or add players"
+        // names two things the host can actually do right now.
+        depth,
         entries,
       }),
     [
@@ -1002,6 +1008,7 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       swapRounds,
       banMode,
       bansPerPlayer,
+      depth,
       entries,
     ],
   );
@@ -1258,6 +1265,15 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
       // `feasibility.blocked` is false: at `snake` a null field is itself a blocker.
       bansPerPlayer: hasPlayerBans ? (bansPerPlayer ?? 0) : 0,
       duplicateBanPolicy,
+      // Version 5's three fields, written at the migration defaults because THIS PLAN ADDS
+      // NO CONTROL FOR THEM — 05-05 is what renders the `Match result`, `Round robin format`
+      // and `Bracket format` segmented controls and replaces these three lines with the
+      // host's own choices. Seeded from `V4_CONFIG_DEFAULTS` rather than from three
+      // restated literals so that until then, a tournament created here and a schema 4
+      // tournament migrated forward say the same thing.
+      matchMetric: V4_CONFIG_DEFAULTS.matchMetric,
+      roundRobinFormat: V4_CONFIG_DEFAULTS.roundRobinFormat,
+      bracketFormat: V4_CONFIG_DEFAULTS.bracketFormat,
     };
 
     // D-01's two seams, and the branch is the whole of the routing decision. `hostBanlist`

@@ -1352,8 +1352,12 @@ describe('bracketNeedsFourPlayers', () => {
   it('is a warning and never blocks — Start draft stays enabled', () => {
     // The whole point of the ruling. `blocked` is what disables the button, and a host who
     // meant a three-person bracket must still be able to start one.
+    //
+    // `poolSize` is 24 rather than the fixture's 12, because 12 is the Exact pool for TWO
+    // players and three players need 18. Leaving it would have blocked on `poolTooSmall`
+    // and this assertion would have been passing on an unrelated blocker.
     const result = checkFeasibility(
-      base({ playerNames: ['Ada', 'Bo', 'Cy'], depth: 'draftAndBrackets' }),
+      base({ playerNames: ['Ada', 'Bo', 'Cy'], poolSize: 24, depth: 'draftAndBrackets' }),
     );
     const problem = result.problems.find((p) => p.code === 'bracketNeedsFourPlayers');
 

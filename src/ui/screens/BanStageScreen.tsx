@@ -943,6 +943,10 @@ export function BanStageScreen({
       swapRounds: state.config.swapRounds,
       banMode: 'hostBanlist',
       bansPerPlayer: 0,
+      // `'draftOnly'` for the same reason the two lines above pass neutralising values —
+      // see `FeasibilityInput.depth`. The reveal happens inside an existing tournament, so
+      // "choose Draft only, or add players" names two things the host can no longer do.
+      depth: 'draftOnly',
       entries,
     });
 
