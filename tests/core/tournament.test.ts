@@ -628,3 +628,152 @@ describe('selectSeeding', () => {
     expect(selectSeeding(state)).toEqual(selectStandings(state).map((row) => row.playerId));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Link 4 — the host override, and why it invalidates itself (D-13)
+// ---------------------------------------------------------------------------
+
+/**
+ * `threeWayCycle` with ONE result corrected: p1 beat p4 after all.
+ *
+ * That single change drops p4 from the 2-win block to the 1-win block, so the tied block
+ * the host once ordered by hand — `{p2, p3, p4}` — is now `{p2, p3}`. No void action, and
+ * no edit to `tiebreakOrders`: the override simply stops matching anything.
+ */
+function cycleAfterCorrection(config: TournamentConfig): MatchResult[] {
+  return [
+    won(config, 'p2', 'p1'),
+    won(config, 'p3', 'p1'),
+    won(config, 'p1', 'p4'),
+    won(config, 'p2', 'p3'),
+    won(config, 'p3', 'p4'),
+    won(config, 'p4', 'p2'),
+  ];
+}
+
+describe('selectStandings — the host override', () => {
+  it('orders a block whose members are exactly the set the host named', () => {
+    const config = configFor(4);
+    const state = completeState(config, {
+      matchResults: threeWayCycle(config),
+      tiebreakOrders: [{ playerIds: ['p3', 'p2', 'p4'], seq: 10 }],
+    });
+
+    const rows = selectStandings(state);
+
+    expect(rows.map((row) => row.playerId)).toEqual(['p3', 'p2', 'p4', 'p1']);
+    expect(by(rows, (row) => row.decidedBy)).toEqual({
+      p3: 'hostOrder',
+      p2: 'hostOrder',
+      p4: 'hostOrder',
+      p1: 'record',
+    });
+  });
+
+  it('matches by SET, so the order the host typed is not the order it must be stored in', () => {
+    const config = configFor(4);
+    const state = completeState(config, {
+      matchResults: threeWayCycle(config),
+      tiebreakOrders: [{ playerIds: ['p4', 'p2', 'p3'], seq: 10 }],
+    });
+
+    expect(selectStandings(state).map((row) => row.playerId)).toEqual(['p4', 'p2', 'p3', 'p1']);
+  });
+
+  it('does not apply when the named players are a strict SUBSET of the block', () => {
+    const config = configFor(4);
+    const state = completeState(config, {
+      matchResults: threeWayCycle(config),
+      tiebreakOrders: [{ playerIds: ['p2', 'p3'], seq: 10 }],
+    });
+
+    const rows = selectStandings(state);
+
+    expect(by(rows, (row) => row.decidedBy)).toEqual({
+      p2: 'tied',
+      p3: 'tied',
+      p4: 'tied',
+      p1: 'record',
+    });
+    expect(by(rows, (row) => row.position)).toEqual({ p2: 1, p3: 1, p4: 1, p1: 4 });
+  });
+
+  it('does not apply when the named players are a strict SUPERSET of the block', () => {
+    const config = configFor(4);
+    const state = completeState(config, {
+      matchResults: threeWayCycle(config),
+      tiebreakOrders: [{ playerIds: ['p1', 'p2', 'p3', 'p4'], seq: 10 }],
+    });
+
+    expect(by(selectStandings(state), (row) => row.decidedBy)).toEqual({
+      p2: 'tied',
+      p3: 'tied',
+      p4: 'tied',
+      p1: 'record',
+    });
+  });
+
+  it('takes the highest `seq` when two entries name the same set, not the last in the array', () => {
+    const config = configFor(4);
+    const state = completeState(config, {
+      matchResults: threeWayCycle(config),
+      tiebreakOrders: [
+        { playerIds: ['p2', 'p3', 'p4'], seq: 30 },
+        { playerIds: ['p4', 'p3', 'p2'], seq: 10 },
+      ],
+    });
+
+    expect(selectStandings(state).map((row) => row.playerId)).toEqual(['p2', 'p3', 'p4', 'p1']);
+  });
+
+  it('self-invalidates when a correction changes the block, with no void action anywhere', () => {
+    const config = configFor(4);
+    const override = [{ playerIds: ['p3', 'p2', 'p4'], seq: 10 }];
+
+    const before = completeState(config, {
+      matchResults: threeWayCycle(config),
+      tiebreakOrders: override,
+    });
+    expect(selectStandings(before).map((row) => row.playerId)).toEqual(['p3', 'p2', 'p4', 'p1']);
+    expect(by(selectStandings(before), (row) => row.decidedBy)['p3']).toBe('hostOrder');
+
+    // The SAME override, untouched, against a fold where the block is now {p2, p3}.
+    const after = completeState(config, {
+      matchResults: cycleAfterCorrection(config),
+      tiebreakOrders: override,
+    });
+
+    const rows = selectStandings(after);
+    // p1 beat p4 in the correction, so the 1-win block resolves p1 ahead of p4.
+    expect(rows.map((row) => row.playerId)).toEqual(['p2', 'p3', 'p1', 'p4']);
+    expect(by(rows, (row) => row.decidedBy)).toEqual({
+      p2: 'headToHead',
+      p3: 'headToHead',
+      p4: 'headToHead',
+      p1: 'headToHead',
+    });
+    expect(rows.some((row) => row.decidedBy === 'hostOrder')).toBe(false);
+  });
+
+  it('never touches a row outside the set it named, and renumbers the block sequentially', () => {
+    const config = configFor(6);
+    const state = completeState(config, {
+      matchResults: tiedForThird(config),
+      tiebreakOrders: [{ playerIds: ['p5', 'p3', 'p4'], seq: 10 }],
+    });
+
+    const rows = selectStandings(state);
+
+    expect(rows.map((row) => row.playerId)).toEqual(['p1', 'p2', 'p5', 'p3', 'p4', 'p6']);
+    // Resolved, so 3-4-5 rather than the 3-3-3 the same block reads without an override.
+    expect(by(rows, (row) => row.position)).toEqual({ p1: 1, p2: 2, p5: 3, p3: 4, p4: 5, p6: 6 });
+    expect(by(rows, (row) => row.decidedBy)).toEqual({
+      p1: 'record',
+      p2: 'record',
+      p5: 'hostOrder',
+      p3: 'hostOrder',
+      p4: 'hostOrder',
+      p6: 'record',
+    });
+  });
+});
