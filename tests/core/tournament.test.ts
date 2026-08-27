@@ -36,6 +36,7 @@ import {
   selectStandings,
   selectTournamentLocked,
   selectTournamentStage,
+  selectVoidCascade,
   type Bracket,
   type BracketMatch,
   type RoundRobinMatch,
@@ -1132,5 +1133,145 @@ describe('selectCutSplitsTiedBlock', () => {
     const first = selectCutSplitsTiedBlock(state, 4);
     expect(selectCutSplitsTiedBlock(state, 4)).toBe(first);
     expect(state.tiebreakOrders).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// selectVoidCascade — D-09, D-10, D-11, computed BEFORE the dispatch
+// ---------------------------------------------------------------------------
+
+describe('selectVoidCascade', () => {
+  /** Four players, a complete round robin, a cut at seq 500, and a played-out bracket. */
+  function afterTheCut(overrides: Partial<DraftState> = {}): DraftState {
+    const config = configFor(4);
+    return completeState(config, {
+      matchResults: [...distinctRecords(config), ...playedOutFour()],
+      cut: { seeds: ['p1', 'p2', 'p3', 'p4'], seq: 500 },
+      ...overrides,
+    });
+  }
+
+  it('is empty for a round-robin correction before any cut is taken', () => {
+    const config = configFor(4);
+    const state = completeState(config, { matchResults: distinctRecords(config) });
+
+    expect(selectVoidCascade(state, 'rr:0:1', 'p2')).toEqual({
+      targetSeqs: [],
+      matchCount: 0,
+      voidsCut: false,
+    });
+  });
+
+  it('voids the cut and the whole bracket for a round-robin correction after the cut', () => {
+    const cascade = selectVoidCascade(afterTheCut(), 'rr:0:1', 'p2');
+
+    expect(cascade.voidsCut).toBe(true);
+    expect([...cascade.targetSeqs].sort((a, b) => a - b)).toEqual([500, 2_101, 2_102, 2_201]);
+  });
+
+  it('voids the bracket even when ONLY the metric changed (D-11 is unconditional)', () => {
+    // p1 already won rr:0:1. Re-recording it with the same winner is a metric-only
+    // correction — and at tier 3 that can still reorder standings and reseed.
+    const state = afterTheCut();
+    const cascade = selectVoidCascade(state, 'rr:0:1', 'p1');
+
+    expect(cascade.voidsCut).toBe(true);
+    expect(cascade.targetSeqs).toContain(500);
+    expect(cascade.matchCount).toBe(3);
+  });
+
+  it('counts only match results, so the cut own seq is outside matchCount', () => {
+    const cascade = selectVoidCascade(afterTheCut(), 'rr:0:1', 'p2');
+
+    expect(cascade.targetSeqs.length).toBe(4);
+    expect(cascade.matchCount).toBe(3);
+  });
+
+  it('is empty for a bracket correction that keeps the same winner', () => {
+    const state = cutState(4, { matchResults: playedOutFour() });
+
+    expect(selectVoidCascade(state, 'br:1:1', 'p1')).toEqual({
+      targetSeqs: [],
+      matchCount: 0,
+      voidsCut: false,
+    });
+  });
+
+  it('targets exactly the final when a semi-final winner changes in a 4-seed bracket', () => {
+    const state = cutState(4, { matchResults: playedOutFour() });
+    const cascade = selectVoidCascade(state, 'br:1:1', 'p4');
+
+    // br:1:2 is NOT on the forward path — it is a sibling, not a descendant.
+    expect(cascade.targetSeqs).toEqual([2_201]);
+    expect(cascade.matchCount).toBe(1);
+    expect(cascade.voidsCut).toBe(false);
+  });
+
+  it('walks past an unrecorded match on the path rather than stopping at it', () => {
+    // 8 seeds: br:1:1 → br:2:1 → br:3:1. Only br:1:1 and the FINAL are recorded, so a
+    // walk that stopped at the gap would report nothing and the host would be told a
+    // correction was free when it takes the final with it.
+    const nothingDownstream = cutState(8, { matchResults: [br(1, 1, 'p1', 'p8')] });
+    expect(selectVoidCascade(nothingDownstream, 'br:1:1', 'p8')).toEqual({
+      targetSeqs: [],
+      matchCount: 0,
+      voidsCut: false,
+    });
+
+    const finalOnly = cutState(8, {
+      matchResults: [br(1, 1, 'p1', 'p8'), br(3, 1, 'p1', 'p2', 0, 7_777)],
+    });
+    const cascade = selectVoidCascade(finalOnly, 'br:1:1', 'p8');
+    expect(cascade.targetSeqs).toEqual([7_777]);
+    expect(cascade.matchCount).toBe(1);
+  });
+
+  it('stops at the final and never revisits a match', () => {
+    const state = cutState(8, {
+      matchResults: [
+        br(1, 1, 'p1', 'p8'),
+        br(2, 1, 'p1', 'p4'),
+        br(3, 1, 'p1', 'p2'),
+      ],
+    });
+    const cascade = selectVoidCascade(state, 'br:1:1', 'p8');
+
+    expect(cascade.targetSeqs).toEqual([2_201, 2_301]);
+    expect(new Set(cascade.targetSeqs).size).toBe(cascade.targetSeqs.length);
+  });
+
+  it('never targets a tiebreak ordering — the override self-invalidates instead', () => {
+    const state = afterTheCut({ tiebreakOrders: [{ playerIds: ['p2', 'p3'], seq: 501 }] });
+    const cascade = selectVoidCascade(state, 'rr:0:1', 'p2');
+
+    expect(cascade.targetSeqs).not.toContain(501);
+    expect([...cascade.targetSeqs].sort((a, b) => a - b)).toEqual([500, 2_101, 2_102, 2_201]);
+  });
+
+  it('is empty for an unknown match id rather than throwing', () => {
+    const state = afterTheCut();
+
+    expect(() => selectVoidCascade(state, 'br:9:9', 'p1')).not.toThrow();
+    expect(selectVoidCascade(state, 'br:9:9', 'p1').targetSeqs).toEqual([]);
+    // A well-formed rr id naming a pairing this player list does not have.
+    expect(selectVoidCascade(state, 'rr:9:9', 'p1').voidsCut).toBe(false);
+    expect(selectVoidCascade(state, 'not-a-match-id', 'p1').targetSeqs).toEqual([]);
+  });
+
+  it('is empty for a bye, which has no result anyone could correct', () => {
+    const state = cutState(5);
+    expect(selectVoidCascade(state, 'br:1:1', 'p1').targetSeqs).toEqual([]);
+  });
+
+  it('mutates nothing and answers deep-equal on a second call', () => {
+    const state = afterTheCut();
+    const before = JSON.stringify(state);
+
+    const first = selectVoidCascade(state, 'rr:0:1', 'p2');
+    const second = selectVoidCascade(state, 'rr:0:1', 'p2');
+
+    expect(first).toEqual(second);
+    expect(first).not.toBe(second);
+    expect(JSON.stringify(state)).toBe(before);
   });
 });
