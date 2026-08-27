@@ -10,6 +10,23 @@
  * fixed template prefixed with `import.meta.env.BASE_URL`; a path that merely starts
  * with `/` would resolve to the domain root and 404 on the deployed project sub-path
  * while working perfectly on localhost.
+ *
+ * ## `?refresh=1`, and why the invariant above is undisturbed by it
+ *
+ * REFR-01 adds a second fetch path that deliberately bypasses the precache, and it is
+ * still the same origin: the marker is a fixed literal appended to the same three fixed
+ * template paths, never a URL from data. `public/sw.js` looks for that marker and steps
+ * aside, because the precache holds — by construction — exactly the roster the app is
+ * already running, so a refresh answered from it would report "already current" forever.
+ *
+ * Off-origin was considered and rejected on its merits rather than on this invariant:
+ * GitHub's raw-content host would serve the manifest with permissive CORS and need no
+ * service-worker change at all, but it cannot bring the 300-plus sprite PNGs, so it
+ * cannot deliver a USABLE new regulation. Same-origin follows as a consequence.
+ *
+ * Offline the refresh request simply fails, and that failure is correct rather than a
+ * gap: REFR-02's `readRosterFile` is the alternative, it needs no network whatsoever,
+ * and the failure copy names it.
  */
 
 import type {
@@ -19,6 +36,7 @@ import type {
   RosterEntry,
   RosterSnapshot,
 } from '../core/roster/types';
+import { readJsonFile } from './file-io';
 
 /**
  * The roster-load failure copy, verbatim from the UI Design Contract's copywriting
@@ -103,6 +121,15 @@ export interface RosterIndex {
 const DATA_DIRECTORY = 'data/';
 const INDEX_FILE = 'roster.index.json';
 const SPRITE_META_FILE = 'sprite-meta.json';
+
+/**
+ * REFR-01. The `?refresh` marker is what `public/sw.js` looks for to step aside; the
+ * `cache: 'reload'` is what steps past the HTTP cache Pages sets to `max-age=600`.
+ * BOTH are required and neither is sufficient — a service worker intercepts a
+ * `reload` request like any other, and `ignoreSearch: true` makes the query alone
+ * invisible to the cache lookup.
+ */
+const REFRESH_MARKER = '?refresh=1';
 
 /**
  * A snapshot filename must look exactly like the generator emits. The manifest is a
@@ -337,11 +364,12 @@ function buildCounts(value: unknown): RosterCounts | null {
   return counts as unknown as RosterCounts;
 }
 
-async function fetchJson(path: string): Promise<unknown> {
+async function fetchJson(path: string, init?: RequestInit): Promise<unknown> {
   const url = `${import.meta.env.BASE_URL}${path}`;
   // Same-origin static assets. `credentials: 'omit'` states that plainly rather than
-  // relying on the same-origin default staying the default.
-  const response = await fetch(url, { credentials: 'omit' });
+  // relying on the same-origin default staying the default. It leads the spread so a
+  // caller adding `cache: 'reload'` cannot quietly drop it.
+  const response = await fetch(url, { credentials: 'omit', ...init });
   if (!response.ok) {
     throw new Error(`${url} responded ${response.status} ${response.statusText}`);
   }
@@ -560,7 +588,21 @@ function register(id: string, bundle: RosterBundle): void {
   registry.set(id, bundle);
   const label = bundle.snapshot.regulation;
   if (isNonEmptyString(label)) registry.set(label, bundle);
+  resolvedSpriteMeta = bundle.spriteMeta;
 }
+
+/**
+ * The sprite map most recently resolved, or `null` before any load.
+ *
+ * `readRosterFile` reads it, because a host-supplied roster JSON carries rows and no art
+ * — the sprite map is a separate committed file, keyed by roster id, and REFR-02 must
+ * not put a request on the wire to go and get one. Pairing the imported snapshot with
+ * the map the app already holds is honest rather than approximate: rows the map does not
+ * know fall back to `_placeholder.png` through `handleSpriteError`
+ * (`src/ui/sprite-src.ts:88-102`), which is the same degradation a refreshed regulation
+ * already has offline.
+ */
+let resolvedSpriteMeta: SpriteMeta | null = null;
 
 /**
  * The registry read: the bundle for a `rosterVersion`, or `null`.
@@ -633,4 +675,134 @@ export async function loadRoster(regulationId?: string): Promise<RosterBundle> {
   } catch (cause) {
     throw new RosterLoadError(cause);
   }
+}
+
+/**
+ * What a refresh did. Three outcomes, and `05-UI-SPEC.md` §2 maps a sentence onto each.
+ *
+ * `failed` carries no reason on purpose: the copy the host reads does not branch on
+ * whether GitHub was unreachable or the file was malformed, because the next action is
+ * the same either way — try again later, or import a roster file.
+ */
+export type RefreshOutcome =
+  | { kind: 'alreadyCurrent'; label: string }
+  | { kind: 'updated'; label: string; validUntil: string }
+  | { kind: 'failed' };
+
+/**
+ * REFR-01. Go and ask the origin whether a newer regulation has been deployed.
+ *
+ * ## The comparison reads `checksum` and `regulation`, never a size
+ *
+ * `roster.mb.json` is 147,021 bytes in a Windows checkout and 140,170 on the origin,
+ * with an IDENTICAL checksum. `core.autocrlf` is `true` and there is no `.gitattributes`,
+ * so the working copy has CRLF line endings and the deployed file has LF. Any comparison
+ * that read a byte count, a content-length header or a string length would therefore
+ * report a change on every developer machine forever and never on CI — the worst
+ * possible split.
+ * The checksum is computed over `canonicalJson(entries)` from PARSED values, so it is
+ * line-ending independent by construction, and it is the only thing worth comparing.
+ *
+ * ## Usually one 1.8 KB request
+ *
+ * The manifest alone answers the common case. When its default regulation and checksum
+ * match what is already resolved, this returns before the snapshot is ever requested —
+ * which is why a host tapping the refresh button on a mobile connection costs almost
+ * nothing, and why tapping it repeatedly is harmless.
+ *
+ * ## Sprites, offline, stated rather than discovered
+ *
+ * A refreshed regulation adds species whose PNGs are on the origin but NOT in the current
+ * precache: the worker only gains them when a new deploy changes the content hash and the
+ * new worker activates on a later load. Offline, those rows fall back to the committed
+ * `_placeholder.png` through `handleSpriteError` (`src/ui/sprite-src.ts:88-102`). That is
+ * an accepted degradation, written down here so nobody debugs it later as a bug.
+ *
+ * ## Nothing is adopted until everything parses
+ *
+ * A transport failure, a non-`ok` response, or a snapshot `parseSnapshotStrict` refuses
+ * all return `failed` and leave the registry byte-for-byte as it was. A half-adopted
+ * regulation would be indistinguishable from a complete one at every later read.
+ */
+export async function refreshRoster(): Promise<RefreshOutcome> {
+  try {
+    const index = parseIndex(
+      await fetchJson(`${DATA_DIRECTORY}${INDEX_FILE}${REFRESH_MARKER}`, { cache: 'reload' }),
+    );
+
+    const regulation = index.regulations.find((candidate) => candidate.id === index.default);
+    if (regulation === undefined) return { kind: 'failed' };
+
+    const current = defaultRegulationId === null ? undefined : registry.get(defaultRegulationId);
+    if (
+      current !== undefined &&
+      defaultRegulationId === regulation.id &&
+      current.snapshot.checksum === regulation.checksum
+    ) {
+      return { kind: 'alreadyCurrent', label: regulation.label };
+    }
+
+    // `regulation.json` already passed `SNAPSHOT_FILE_PATTERN` inside `parseIndex`, which
+    // is why that gate lives there rather than in the one caller that existed when it was
+    // written. `REFRESH_MARKER` is a fixed literal and is never interpolated from data.
+    const [snapshot, spriteMeta] = await Promise.all([
+      fetchJson(`${DATA_DIRECTORY}${regulation.json}${REFRESH_MARKER}`, { cache: 'reload' }),
+      fetchJson(`${DATA_DIRECTORY}${SPRITE_META_FILE}${REFRESH_MARKER}`, { cache: 'reload' }),
+    ]);
+
+    const parsed = parseSnapshotStrict(snapshot);
+    if (parsed === null) return { kind: 'failed' };
+
+    register(regulation.id, { snapshot: parsed, spriteMeta: parseSpriteMeta(spriteMeta) });
+    defaultRegulationId = regulation.id;
+
+    return { kind: 'updated', label: regulation.label, validUntil: regulation.validUntil };
+  } catch {
+    // Offline, mid-deploy, or a manifest that no longer parses. The caller states the
+    // problem and offers `readRosterFile` as the recovery; there is nothing to retry here.
+    return { kind: 'failed' };
+  }
+}
+
+/**
+ * REFR-02. Take a roster the host chose in a file picker. No network, at all.
+ *
+ * This is the path that works on a laptop with no connection, which is why the refresh
+ * failure copy names it, and it is also the recovery D-24 promises: a night filed under a
+ * regulation this build has never shipped becomes readable the moment the host hands the
+ * tool the roster it was drafted against. The parsed snapshot is therefore ADOPTED into
+ * the registry under its own `regulation`, so `resolveSnapshot` stops answering `null`
+ * for it.
+ *
+ * It does NOT become the default. A host importing a roster to read an old night must not
+ * silently re-point new tournaments at it; 05-07 owns any deliberate switch.
+ *
+ * Validation is `parseSnapshotStrict` — the SAME validator the fetch path uses. One
+ * validator with two entry points, because a second one would be free to disagree about
+ * what a roster is, and this input is the least trusted of the two.
+ */
+export async function readRosterFile(file: File): Promise<RosterBundle | null> {
+  const spriteMeta = resolvedSpriteMeta;
+  // The sprite map ships with the app and is precached, so an empty one here means the
+  // page-load path itself failed — which importing a roster file cannot repair.
+  if (spriteMeta === null) return null;
+
+  // The size gate runs on metadata, before a single byte is read (`file-io.ts:130-140`).
+  const read = await readJsonFile(file);
+  if (!read.ok) return null;
+
+  let value: unknown;
+  try {
+    // No reviver, exactly as on the fetch path.
+    value = JSON.parse(read.text) as unknown;
+  } catch {
+    return null;
+  }
+
+  const snapshot = parseSnapshotStrict(value);
+  if (snapshot === null) return null;
+
+  const bundle: RosterBundle = { snapshot, spriteMeta };
+  register(snapshot.regulation, bundle);
+  return bundle;
 }
