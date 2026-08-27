@@ -14,7 +14,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { migrate, SUPPORTED_SCHEMA_VERSIONS } from '../../src/core/migrate';
+import {
+  migrate,
+  SUPPORTED_SCHEMA_VERSIONS,
+  V4_CONFIG_DEFAULTS,
+} from '../../src/core/migrate';
 import { SCHEMA_VERSION, type TournamentDoc } from '../../src/core/model';
 import { fold } from '../../src/core/reduce';
 
@@ -41,10 +45,54 @@ function docAtVersion(schemaVersion: number): TournamentDoc {
       swapRounds: 0,
       bansPerPlayer: 0,
       duplicateBanPolicy: 'bothApply',
+      matchMetric: 'pokemonLeft',
+      roundRobinFormat: 'bo1',
+      bracketFormat: 'bo1',
     },
     rng: { seed: 1, cursor: 0 },
     log: [],
   };
+}
+
+/**
+ * A version 4 document: everything a schema 4 build wrote, and none of the three fields
+ * version 5 adds.
+ *
+ * Cast for {@link v3Doc}'s reason — this shape is deliberately NOT a `TournamentConfig`
+ * once version 5 makes three more fields required, which is the whole point of the `V4Doc`
+ * alias in the module under test. Every value is set away from its version 5 default so a
+ * field the migration dropped on the way is visible rather than plausible.
+ */
+function v4Doc(log: readonly unknown[]): TournamentDoc {
+  return {
+    schemaVersion: 4,
+    id: 'a1b2c3d4-0000-4000-8000-000000000000',
+    createdAt: 1_770_000_000_000,
+    config: {
+      formatLabel: 'Champions MB',
+      players: [
+        { id: 'p1', name: 'Player 1' },
+        { id: 'p2', name: 'Player 2' },
+      ],
+      rounds: 6,
+      rosterVersion: 'mb',
+      rosterChecksum: 'sha256-abc',
+      poolSize: 48,
+      bans: ['charizard'],
+      banMode: 'blind',
+      megasRequiredPerTeam: 2,
+      dualMegaChoices: [{ speciesId: 'raichu', forme: 'x' }],
+      depth: 'draftAndBrackets',
+      rules: [{ kind: 'mega', count: 2 }],
+      megaFormeBans: ['charizardmegax'],
+      swapBudget: 3,
+      swapRounds: 1,
+      bansPerPlayer: 4,
+      duplicateBanPolicy: 'reBan',
+    },
+    rng: { seed: 1, cursor: 0 },
+    log: [...log],
+  } as unknown as TournamentDoc;
 }
 
 /**
@@ -208,7 +256,7 @@ describe('SUPPORTED_SCHEMA_VERSIONS', () => {
     // A list rather than a floor. Versions 1 and 2 stay on it after each bump because
     // this build upgrades those documents rather than refusing them, and a `>= MIN` check
     // could not express a future build that reads 1 but not 2.
-    expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([1, 2, 3, 4]);
+    expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([1, 2, 3, 4, 5]);
   });
 
   it('includes the version this build writes', () => {
@@ -285,7 +333,7 @@ describe('migrateV1ToV2', () => {
     // `migrate` call. Asserting the CURRENT version rather than `2` is the point: a chain
     // that stopped after the first arm would return a document this build refuses to fold.
     expect(migrated(v1Doc([v1PoolBuilt(4)])).schemaVersion).toBe(SCHEMA_VERSION);
-    expect(migrated(v1Doc([v1PoolBuilt(4)])).schemaVersion).toBe(4);
+    expect(migrated(v1Doc([v1PoolBuilt(4)])).schemaVersion).toBe(5);
   });
 
   it('leaves the input byte-identical — T-02-08', () => {
@@ -374,7 +422,7 @@ describe('migrateV2ToV3', () => {
     // 2 document now arrives at 4 — and asserting the literal beside the constant is what
     // makes the next bump a deliberate edit rather than a silent pass.
     expect(migrated(v2Doc(2, [v2PoolBuilt(48)])).schemaVersion).toBe(SCHEMA_VERSION);
-    expect(migrated(v2Doc(2, [v2PoolBuilt(48)])).schemaVersion).toBe(4);
+    expect(migrated(v2Doc(2, [v2PoolBuilt(48)])).schemaVersion).toBe(5);
   });
 
   it('leaves the input byte-identical', () => {
@@ -458,7 +506,7 @@ describe('migrateV2ToV3', () => {
 describe('migrateV3ToV4', () => {
   it('returns a document at version 4', () => {
     expect(migrated(v3Doc([v2PoolBuilt(48)])).schemaVersion).toBe(SCHEMA_VERSION);
-    expect(migrated(v3Doc([v2PoolBuilt(48)])).schemaVersion).toBe(4);
+    expect(migrated(v3Doc([v2PoolBuilt(48)])).schemaVersion).toBe(5);
   });
 
   it('leaves the input byte-identical', () => {
@@ -532,18 +580,179 @@ describe('migrateV3ToV4', () => {
     expect(state.order).toEqual(['p1', 'p2']);
   });
 
-  it('leaves a document that is already at version 4 alone, by identity', () => {
-    const doc = docAtVersion(4);
+  it('leaves a document that is already at version 5 alone, by identity', () => {
+    const doc = docAtVersion(5);
     expect(migrated(doc)).toBe(doc);
   });
 
-  it('refuses version 5 rather than reading it optimistically', () => {
-    expect(migrate(docAtVersion(5))).toEqual({ ok: false, reason: 'newerSchema' });
+  it('refuses version 6 rather than reading it optimistically', () => {
+    expect(migrate(docAtVersion(6))).toEqual({ ok: false, reason: 'newerSchema' });
   });
 
   it('still refuses an unlisted lower version as unknown rather than as newer', () => {
     // The two refusals are different sentences to the host, and the boundary between them
     // is `SCHEMA_VERSION` rather than the list's last entry.
     expect(migrate(docAtVersion(0))).toEqual({ ok: false, reason: 'unknownSchema' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Version 4 to 5 — TOUR-07 (`matchMetric`, D-04) and D-08 (`roundRobinFormat`,
+// `bracketFormat`). Config only; the log is not touched, and this bump is the one
+// where "the log is not touched" is provable rather than merely intended.
+// ---------------------------------------------------------------------------
+
+describe('migrateV4ToV5', () => {
+  it('returns a document at version 5', () => {
+    expect(migrated(v4Doc([v2PoolBuilt(48)])).schemaVersion).toBe(SCHEMA_VERSION);
+    expect(migrated(v4Doc([v2PoolBuilt(48)])).schemaVersion).toBe(5);
+  });
+
+  it('lands all three new fields on the version 4 defaults', () => {
+    // Lossless rather than guessed, and the argument is stronger than any bump before it:
+    // a version 4 document has no `tournament/*` entries AT ALL, because nothing in this
+    // build before Phase 5 could originate one. There is no recorded match for a metric to
+    // score or a format to describe, so every value is vacuously true.
+    const { config } = migrated(v4Doc([]));
+
+    expect(config.matchMetric).toBe('pokemonLeft');
+    expect(config.roundRobinFormat).toBe('bo1');
+    expect(config.bracketFormat).toBe('bo1');
+  });
+
+  it('reads those defaults from V4_CONFIG_DEFAULTS rather than from a restated literal', () => {
+    // One table, imported by `import-guard.buildConfig` rather than repeated. Two copies
+    // of a default table is two tables that can disagree about what a Phase 4 tournament
+    // was, and the disagreement would only surface on a file written by the other one.
+    const { config } = migrated(v4Doc([]));
+
+    expect(config.matchMetric).toBe(V4_CONFIG_DEFAULTS.matchMetric);
+    expect(config.roundRobinFormat).toBe(V4_CONFIG_DEFAULTS.roundRobinFormat);
+    expect(config.bracketFormat).toBe(V4_CONFIG_DEFAULTS.bracketFormat);
+  });
+
+  it('keeps every field the version 4 config already had', () => {
+    const { config } = migrated(v4Doc([]));
+
+    expect(config.formatLabel).toBe('Champions MB');
+    expect(config.players).toEqual([
+      { id: 'p1', name: 'Player 1' },
+      { id: 'p2', name: 'Player 2' },
+    ]);
+    expect(config.rounds).toBe(6);
+    expect(config.rosterVersion).toBe('mb');
+    expect(config.rosterChecksum).toBe('sha256-abc');
+    expect(config.poolSize).toBe(48);
+    expect(config.bans).toEqual(['charizard']);
+    expect(config.banMode).toBe('blind');
+    expect(config.megasRequiredPerTeam).toBe(2);
+    expect(config.dualMegaChoices).toEqual([{ speciesId: 'raichu', forme: 'x' }]);
+    expect(config.depth).toBe('draftAndBrackets');
+    expect(config.rules).toEqual([{ kind: 'mega', count: 2 }]);
+    expect(config.megaFormeBans).toEqual(['charizardmegax']);
+    expect(config.swapBudget).toBe(3);
+    expect(config.swapRounds).toBe(1);
+    // Both version 4 fields are set away from their own migration defaults in the fixture,
+    // so an arm that re-defaulted them on the way past would be visible here.
+    expect(config.bansPerPlayer).toBe(4);
+    expect(config.duplicateBanPolicy).toBe('reBan');
+  });
+
+  it('leaves the input byte-identical', () => {
+    // Fresh literals, never a mutation in place — the persistence path is holding the
+    // parsed `localStorage` record itself and re-reads it afterwards.
+    const doc = v4Doc([v2PoolBuilt(48), V2_DRAFT_STARTED]);
+    const before = JSON.stringify(doc);
+
+    migrate(doc);
+
+    expect(JSON.stringify(doc)).toBe(before);
+  });
+
+  it('shares no array reference with its input — T-05-02', () => {
+    // An imported document's arrays are attacker-supplied objects. A migrated document
+    // that aliased one would let a later mutation of the parsed record reach into folded
+    // state, so every array is rebuilt element by element rather than assigned.
+    const doc = v4Doc([v2PoolBuilt(48)]);
+    const source = doc.config as unknown as Record<string, unknown>;
+    const { config } = migrated(doc);
+
+    expect(config.bans).not.toBe(source['bans']);
+    expect(config.players).not.toBe(source['players']);
+    expect(config.rules).not.toBe(source['rules']);
+    expect(config.megaFormeBans).not.toBe(source['megaFormeBans']);
+    expect(config.dualMegaChoices).not.toBe(source['dualMegaChoices']);
+  });
+
+  it('copies the log array rather than aliasing it', () => {
+    const doc = v4Doc([v2PoolBuilt(48), V2_DRAFT_STARTED]);
+    const result = migrated(doc);
+
+    expect(result.log).not.toBe(doc.log);
+    expect(result.log).toEqual(doc.log);
+  });
+
+  it('does not rewrite the log — no entry gains, loses or changes a field', () => {
+    // Nothing in schema 5 makes an existing entry unfoldable, and there is nothing to
+    // splice: a version 4 log cannot contain a `tournament/*` entry, which is the same
+    // fact the defaults above are lossless because of.
+    const doc = v4Doc([v2PoolBuilt(48), V2_DRAFT_STARTED]);
+
+    expect(migrated(doc).log).toEqual(doc.log);
+  });
+
+  it('folds to a populated pool, exactly as it did before the upgrade', () => {
+    const state = fold(migrated(v4Doc([v2PoolBuilt(48), V2_DRAFT_STARTED])));
+
+    expect(state.poolIds).toHaveLength(48);
+    expect(state.order).toEqual(['p1', 'p2']);
+  });
+
+  it('gives a version 4 document the empty tournament fold', () => {
+    // The four fold fields have nowhere to come from on a document with no `tournament/*`
+    // entries, and the sentinels are what say so. `cut` in particular must be `null` and
+    // not an empty cut, or every migrated document opens on a bracket nobody seeded.
+    const state = fold(migrated(v4Doc([v2PoolBuilt(48), V2_DRAFT_STARTED])));
+
+    expect(state.matchResults).toEqual([]);
+    expect(state.cut).toBeNull();
+    expect(state.tiebreakOrders).toEqual([]);
+    expect(state.lastReopenSeq).toBe(-1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The whole chain — a version 1 document has to reach 5 in ONE call.
+// ---------------------------------------------------------------------------
+
+describe('the migration chain', () => {
+  it('takes a version 1 document all the way to schema 5 in one call', () => {
+    // A chain that only works one step at a time strands the oldest saves the moment a
+    // fifth version ships, and it strands them silently: the document loads, and the
+    // fields the last arm would have added are simply absent.
+    const { config, schemaVersion } = migrated(v1Doc([v1PoolBuilt(4)]));
+
+    expect(schemaVersion).toBe(5);
+    expect(config.matchMetric).toBe('pokemonLeft');
+    expect(config.roundRobinFormat).toBe('bo1');
+    expect(config.bracketFormat).toBe('bo1');
+  });
+
+  it('lands the version 5 fields on a version 2 document too', () => {
+    const { config, schemaVersion } = migrated(v2Doc(2, [v2PoolBuilt(48)]));
+
+    expect(schemaVersion).toBe(5);
+    expect(config.matchMetric).toBe('pokemonLeft');
+    expect(config.roundRobinFormat).toBe('bo1');
+    expect(config.bracketFormat).toBe('bo1');
+  });
+
+  it('lands the version 5 fields on a version 3 document too', () => {
+    const { config, schemaVersion } = migrated(v3Doc([v2PoolBuilt(48)]));
+
+    expect(schemaVersion).toBe(5);
+    expect(config.matchMetric).toBe('pokemonLeft');
+    expect(config.roundRobinFormat).toBe('bo1');
+    expect(config.bracketFormat).toBe('bo1');
   });
 });

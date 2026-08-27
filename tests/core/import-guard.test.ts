@@ -39,7 +39,7 @@ import {
   MAX_SWAP_ROUNDS,
   parseTournamentFile,
 } from '../../src/core/import-guard';
-import { V3_CONFIG_DEFAULTS } from '../../src/core/migrate';
+import { V3_CONFIG_DEFAULTS, V4_CONFIG_DEFAULTS } from '../../src/core/migrate';
 import { SCHEMA_VERSION, type TournamentDoc } from '../../src/core/model';
 import { fold } from '../../src/core/reduce';
 
@@ -89,6 +89,9 @@ function validDoc(): TournamentDoc {
       swapRounds: 0,
       bansPerPlayer: 0,
       duplicateBanPolicy: 'bothApply',
+      matchMetric: 'pokemonLeft',
+      roundRobinFormat: 'bo1',
+      bracketFormat: 'bo1',
     },
     rng: { seed: 12345, cursor: 0 },
     log: [
@@ -2374,5 +2377,159 @@ describe('isBansRevealedAction', () => {
       expect(isBansRevealedAction(bansRevealedEntry({ bans: [record] }))).toBe(false);
     }
     expect(isBansRevealedAction(bansRevealedEntry({ bans: [{ monIds: ['kommoo'] }] }))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Version 5 config fields — TOUR-07 (`matchMetric`, D-04) and D-08
+// (`roundRobinFormat`, `bracketFormat`). T-05-01.
+//
+// Three string-literal unions arriving from an untrusted file. The posture is the
+// allow-list rebuild `depth` and `duplicateBanPolicy` already use: absent is seeded
+// from the defaults table, present-and-in-union is carried through, and
+// present-and-outside-the-union is REFUSED rather than repaired. A value the guard
+// quietly corrected would be a document this build disagrees with the file about.
+// ---------------------------------------------------------------------------
+
+/**
+ * A document with all three version 5 keys removed — what a schema 4 file looks like.
+ *
+ * The keys are OPTIONAL for `v4AbsentText`'s stated reason: `buildConfig` runs BEFORE
+ * `migrate`, so requiring them would refuse every schema 4 document one step before the
+ * migration that exists to upgrade it.
+ */
+function v5AbsentText(overrides: Record<string, unknown> = {}): string {
+  const doc = validDoc() as unknown as Record<string, unknown>;
+  const config = doc['config'] as Record<string, unknown>;
+  delete config['matchMetric'];
+  delete config['roundRobinFormat'];
+  delete config['bracketFormat'];
+  Object.assign(config, overrides);
+  return JSON.stringify(doc);
+}
+
+describe('version 5 config fields', () => {
+  it('lands the absent keys on the version 4 defaults, not on undefined', () => {
+    const result = parse(v5AbsentText());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const { config } = result.doc;
+    expect(config.matchMetric).toBe(V4_CONFIG_DEFAULTS.matchMetric);
+    expect(config.matchMetric).toBe('pokemonLeft');
+    expect(config.roundRobinFormat).toBe(V4_CONFIG_DEFAULTS.roundRobinFormat);
+    expect(config.roundRobinFormat).toBe('bo1');
+    expect(config.bracketFormat).toBe(V4_CONFIG_DEFAULTS.bracketFormat);
+    expect(config.bracketFormat).toBe('bo1');
+  });
+
+  it('seeds them from V4_CONFIG_DEFAULTS rather than from a restated literal', () => {
+    // The guard rebuilds a config for a document whose version it has not asked about
+    // yet, so it has to know these values. Two copies of a default table is two tables
+    // that can disagree about what a Phase 4 tournament was.
+    const result = parse(v5AbsentText());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config).toMatchObject({
+      matchMetric: V4_CONFIG_DEFAULTS.matchMetric,
+      roundRobinFormat: V4_CONFIG_DEFAULTS.roundRobinFormat,
+      bracketFormat: V4_CONFIG_DEFAULTS.bracketFormat,
+    });
+  });
+
+  it('returns all three fields unchanged when the file carries them', () => {
+    const result = parse(
+      configuredText({
+        matchMetric: 'koDifference',
+        roundRobinFormat: 'bo3',
+        bracketFormat: 'bo3',
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.matchMetric).toBe('koDifference');
+    expect(result.doc.config.roundRobinFormat).toBe('bo3');
+    expect(result.doc.config.bracketFormat).toBe('bo3');
+  });
+
+  it('carries a bo1 round robin beside a bo3 bracket, which is the common shape', () => {
+    // The two fields are separate precisely so this configuration exists. A guard that
+    // collapsed them would be silently rewriting the most ordinary draft night there is.
+    const result = parse(configuredText({ roundRobinFormat: 'bo1', bracketFormat: 'bo3' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.doc.config.roundRobinFormat).toBe('bo1');
+    expect(result.doc.config.bracketFormat).toBe('bo3');
+  });
+
+  // -------------------------------------------------------------------------
+  // T-05-01 — a value outside the union is MALFORMED, not absent.
+  // -------------------------------------------------------------------------
+
+  it('refuses a matchMetric outside the union rather than defaulting it', () => {
+    // `'kos'` is the plausible near-miss: it reads like the field it is not. Refused
+    // rather than repaired, because a guard that silently substituted `'pokemonLeft'`
+    // would produce a standings order the file never asked for and never mention it.
+    expect(rejection(parse(configuredText({ matchMetric: 'kos' })))).toBe('wrongShape');
+  });
+
+  it('refuses a roundRobinFormat outside the union rather than defaulting it', () => {
+    expect(rejection(parse(configuredText({ roundRobinFormat: 'bo5' })))).toBe('wrongShape');
+  });
+
+  it('refuses a bracketFormat given as a number rather than coercing it', () => {
+    // `3` is the shape a hand-edited file is most likely to carry, and it is exactly the
+    // ambiguity `StageFormat` is a string union to avoid: `3` could be a game count or a
+    // win count. The guard does not guess which.
+    expect(rejection(parse(configuredText({ bracketFormat: 3 })))).toBe('wrongShape');
+  });
+
+  it('refuses null for any of the three, which is a value and not an absence', () => {
+    expect(rejection(parse(configuredText({ matchMetric: null })))).toBe('wrongShape');
+    expect(rejection(parse(configuredText({ roundRobinFormat: null })))).toBe('wrongShape');
+    expect(rejection(parse(configuredText({ bracketFormat: null })))).toBe('wrongShape');
+  });
+
+  it('produces no document at all when it refuses', () => {
+    // Refused, never clamped, so there is no half-repaired config to inspect.
+    const result = parse(configuredText({ matchMetric: 'kos' }));
+
+    expect('doc' in result).toBe(false);
+  });
+
+  it('survives an export, re-import and fold with the three fields intact', () => {
+    // D-04 and D-08 are only kept if they survive the round trip — the host's choice of
+    // metric and of best-of-three has to still be there after the file comes back.
+    const source = validDoc() as unknown as Record<string, unknown>;
+    Object.assign(source['config'] as Record<string, unknown>, {
+      matchMetric: 'koDifference',
+      roundRobinFormat: 'bo3',
+      bracketFormat: 'bo3',
+    });
+
+    const result = parse(JSON.stringify(source));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const state = fold(result.doc);
+    expect(state.config.matchMetric).toBe('koDifference');
+    expect(state.config.roundRobinFormat).toBe('bo3');
+    expect(state.config.bracketFormat).toBe('bo3');
+    expect(fold(result.doc)).toEqual(state);
+  });
+
+  it('gives a re-imported schema 5 document the empty tournament fold', () => {
+    const result = parse(JSON.stringify(validDoc()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const state = fold(result.doc);
+    expect(state.matchResults).toEqual([]);
+    expect(state.cut).toBeNull();
+    expect(state.tiebreakOrders).toEqual([]);
+    expect(state.lastReopenSeq).toBe(-1);
   });
 });
