@@ -60,6 +60,24 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   if (new URL(request.url).origin !== self.location.origin) return;
 
+  // REFR-01. An explicit refresh is the one request that must never be answered from
+  // the precache: the precache holds, by construction, exactly the roster the app is
+  // already running, so a refresh served from it reports "already current" forever.
+  // Returning without calling respondWith leaves the request entirely to the browser.
+  // Offline it fails, which is correct — that is what REFR-02's file import exists
+  // for, and the failure copy names it.
+  //
+  // Third on purpose. Sitting below both guards above, this bypass is reachable only
+  // by a same-origin GET — the narrowest set of requests that still contains the
+  // refresh. Hoisted above them it would hand the same early return to non-GET and
+  // cross-origin traffic on the strength of a query string alone.
+  //
+  // A query marker rather than `request.cache === 'reload'`: a hard reload gives every
+  // SUBRESOURCE cache mode 'reload', so that test would take the whole page off the
+  // precache and break an offline hard reload. No other URL in this build carries a
+  // query string.
+  if (new URL(request.url).searchParams.has('refresh')) return;
+
   event.respondWith(
     caches
       .open(CACHE_NAME)
