@@ -598,3 +598,573 @@ export function selectStandings(state: DraftState): readonly StandingsRow[] {
 export function selectSeeding(state: DraftState): readonly string[] {
   return selectStandings(state).map((row) => row.playerId);
 }
+
+/**
+ * One card in the bracket. Derived from the cut's seeds and the recorded results;
+ * stored nowhere, on {@link RoundRobinMatch}'s precedent.
+ *
+ * `upperId` and `lowerId` are `null` for two DIFFERENT reasons, and the pair
+ * `isBye` tells them apart:
+ *
+ *   `isBye: false`  the feeder match has no recorded result yet, so the slot renders
+ *                   `Winner of {roundLabel} {n}` and the card is inert.
+ *   `isBye: true`   the opponent is a phantom — a seed number past the cut — so there
+ *                   is nobody to play and nothing to record.
+ *
+ * A bye always carries its player on `upperId`, because the recursion pairs seed `s`
+ * with `B+1-s` and `s` is always the smaller of the two, so a phantom can only ever
+ * land in the lower slot.
+ */
+export interface BracketMatch {
+  /** `br:{round}:{slot}`, both 1-based. */
+  matchId: string;
+  /** `null` = not known yet, or a phantom (a bye's missing opponent). */
+  upperId: string | null;
+  lowerId: string | null;
+  isBye: boolean;
+  /** `Final` | `Semi-final` | `Quarter-final` | `Round of {n}` — by matches-in-round. */
+  roundLabel: string;
+}
+
+/**
+ * The whole bracket, every value in it a fact about the cut and the results.
+ *
+ * `final` is the same object as `rounds[rounds.length - 1][0]` rather than a copy, so
+ * a caller comparing them by identity gets the answer it expects.
+ */
+export interface Bracket {
+  rounds: readonly (readonly BracketMatch[])[];
+  final: BracketMatch;
+  /** Non-null only once the final is recorded. */
+  championId: string | null;
+}
+
+/**
+ * The bracket size `B` — the next power of two at or above `n`.
+ *
+ * The one place the padding is computed, so {@link byeCountForCut} and
+ * {@link selectBracket} cannot round differently.
+ */
+function bracketSize(n: number): number {
+  let size = 1;
+  while (size < n) size *= 2;
+  return size;
+}
+
+/**
+ * The classic single-elimination seed order, built by doubling.
+ *
+ * `order(1) = [1]`; each doubling maps every `s` to `[s, 2B+1-s]`. Pair adjacent
+ * entries and round one is done. The property that matters is the one that makes this
+ * a SEEDED bracket rather than a shuffled one: seeds 1 and 2 can only meet in the
+ * final, 1 and 3 only in the semi, and so on down.
+ *
+ * Executed by `05-RESEARCH.md` §Seeded Single Elimination on 2026-08-26:
+ *
+ *   `seedOrder(8)`  = 1, 8, 4, 5, 2, 7, 3, 6
+ *   `seedOrder(16)` = 1, 16, 8, 9, 4, 13, 5, 12, 2, 15, 7, 10, 3, 14, 6, 11
+ *
+ * Within every pair the first entry is the smaller seed, because each doubling pushes
+ * `s` before `n + 1 - s` and `s` never exceeds `n / 2`. That is what puts a phantom in
+ * the lower slot without a branch deciding it.
+ */
+function seedOrder(size: number): number[] {
+  let order = [1];
+
+  while (order.length < size) {
+    const n = order.length * 2;
+    const next: number[] = [];
+    for (const s of order) next.push(s, n + 1 - s);
+    order = next;
+  }
+
+  return order;
+}
+
+/**
+ * How many byes a cut of `n` produces — and the ONE place that number is computed.
+ *
+ * It exists so the cut preview line (`Top {n} advance. Seeds 1 to {b} get a bye.`) and
+ * the bracket cannot disagree about how many byes a size produces. A host who reads
+ * "seeds 1 to 3 get a bye" and then counts four bye cards has been lied to by one of
+ * the two, and nothing on screen would say which.
+ *
+ * `B - n`, so a power-of-two cut takes none: 8 → 0, 7 → 1, 6 → 2, 5 → 3, 4 → 0.
+ *
+ * `0` below two seeds, where there is no bracket to put a bye in — see
+ * {@link selectBracket}'s own null.
+ */
+export function byeCountForCut(n: number): number {
+  if (n < 2) return 0;
+  return bracketSize(n) - n;
+}
+
+/**
+ * The label for a round, decided by HOW MANY MATCHES ARE IN IT and never by the round
+ * index.
+ *
+ * RESEARCH's reason, which is the whole reason this is not `rounds[i]` arithmetic: at
+ * `B = 8` round 1 *is* the quarter-final, and at `B = 16` round 1 is the round of 16.
+ * An index-based label would call both of them "round 1" and neither of them what the
+ * room calls it.
+ *
+ *   1 match  → `Final`
+ *   2        → `Semi-final`
+ *   4        → `Quarter-final`
+ *   m >= 8   → `Round of {2m}`
+ */
+function roundLabelFor(matchesInRound: number): string {
+  if (matchesInRound <= 1) return 'Final';
+  if (matchesInRound === 2) return 'Semi-final';
+  if (matchesInRound === 4) return 'Quarter-final';
+  return `Round of ${matchesInRound * 2}`;
+}
+
+/**
+ * The result that currently stands for one match id, highest `seq` winning.
+ *
+ * The same "later beats earlier" rule {@link standingRoundRobinResults} applies to the
+ * round robin (D-09), asked one match at a time because the bracket walks by id rather
+ * than by pair set. `null` when nothing has been recorded.
+ */
+function liveResultFor(
+  results: readonly MatchResult[],
+  matchId: string,
+): MatchResult | null {
+  let live: MatchResult | null = null;
+
+  for (const result of results) {
+    if (result.matchId !== matchId) continue;
+    if (live === null || result.seq > live.seq) live = result;
+  }
+
+  return live;
+}
+
+/**
+ * Who comes out of a match, or `null` while nobody does.
+ *
+ * A BYE is answered first and without consulting the results at all: there is no game,
+ * so the seeded player advances on the strength of the seeding. That ordering also
+ * means a hand-edited document carrying a result for a bye's id cannot promote the
+ * phantom.
+ */
+function winnerOf(match: BracketMatch, results: readonly MatchResult[]): string | null {
+  if (match.isBye) return match.upperId ?? match.lowerId;
+
+  const result = liveResultFor(results, match.matchId);
+  return result === null ? null : result.winnerId;
+}
+
+/**
+ * The bracket — TOUR-03. `null` until a cut is taken.
+ *
+ * ## D-07 needs NO CODE OF ITS OWN, and that is the finding rather than a shortcut
+ *
+ * Pad the seed list to `B`, the next power of two at or above `N`, and treat a seed
+ * number past `N` as a phantom. Seed `s` faces seed `B+1-s`, so a phantom opponent
+ * means `B+1-s > N`, i.e. `s <= B-N` — **the top `B-N` seeds, which is exactly "byes go
+ * to the top seeds, seed 1 first"**. No branch, no sort, no special case: the recursion
+ * IS the bye rule. Any hand-written loop placing byes beside this would be a second
+ * authority on the same fact, free to disagree with the first after a later edit.
+ *
+ * Executed at 5, 6 and 7 seeds — the three counts ROADMAP success criterion 1 names —
+ * this gives 3, 2 and 1 byes, and 4, 5 and 6 real matches. The invariant worth holding
+ * onto is that real matches (byes excluded) always number `N - 1`.
+ *
+ * ## Nothing here is stored
+ *
+ * Participants, advancement, the champion and the round labels are all recomputed from
+ * `state.cut.seeds` and `state.matchResults` on every call. `05-RESEARCH.md`
+ * §Anti-Patterns names a STORED bracket as precisely the mutable-state design D-10 and
+ * D-11 exist to avoid: a stored bracket would have to be walked and patched after every
+ * correction, and a patch that missed a card would leave the document disagreeing with
+ * itself with nothing to recompute the truth from.
+ *
+ * ## Rounds are not collapsed
+ *
+ * Three rounds render at 5 seeds even though round 1 holds a single real match.
+ * Collapsing would put seeds 2 and 3 in a "quarter-final" against each other on one
+ * screen and a "semi-final" on another for the same game, which is worse than a sparse
+ * first round.
+ *
+ * `null` below two seeds as well as with no cut: one player is not a bracket, there is
+ * no final for {@link Bracket.final} to name, and a phantom final would report a
+ * champion nobody played for.
+ *
+ * The bracket and every match in it are FRESH on every call.
+ */
+export function selectBracket(state: DraftState): Bracket | null {
+  if (state.cut === null) return null;
+
+  const seeds = state.cut.seeds;
+  const n = seeds.length;
+  if (n < 2) return null;
+
+  const order = seedOrder(bracketSize(n));
+  const rounds: BracketMatch[][] = [];
+
+  const firstRound: BracketMatch[] = [];
+  for (let i = 0; i < order.length; i += 2) {
+    const upperSeed = order[i];
+    const lowerSeed = order[i + 1];
+    if (upperSeed === undefined || lowerSeed === undefined) continue;
+
+    // A seed number past `n` is a PHANTOM: its slot is a bye, not an empty match.
+    const upperIsPhantom = upperSeed > n;
+    const lowerIsPhantom = lowerSeed > n;
+
+    firstRound.push({
+      matchId: `br:1:${firstRound.length + 1}`,
+      upperId: upperIsPhantom ? null : (seeds[upperSeed - 1] ?? null),
+      lowerId: lowerIsPhantom ? null : (seeds[lowerSeed - 1] ?? null),
+      // Exactly one phantom. Two would mean `B >= 2n`, which the next power of two at
+      // or above `n` is never.
+      isBye: upperIsPhantom !== lowerIsPhantom,
+      roundLabel: roundLabelFor(order.length / 2),
+    });
+  }
+  rounds.push(firstRound);
+
+  // Later rounds. `br:r:s` feeds `br:(r+1):ceil(s/2)`, and SLOT PARITY decides which
+  // half of the parent card the winner lands in: ODD `s` is the upper slot, even `s`
+  // the lower. Read from the parent, feeder `2s-1` is the upper and `2s` the lower —
+  // which is the one place a transposition would stay invisible until a real bracket
+  // ran, because it swaps two names that are both legitimately in the match.
+  for (let roundNumber = 2; ; roundNumber++) {
+    const previous = rounds[rounds.length - 1];
+    if (previous === undefined || previous.length <= 1) break;
+
+    const matchesInRound = previous.length / 2;
+    const roundLabel = roundLabelFor(matchesInRound);
+    const round: BracketMatch[] = [];
+
+    for (let slot = 1; slot <= matchesInRound; slot++) {
+      const upperFeeder = previous[slot * 2 - 2];
+      const lowerFeeder = previous[slot * 2 - 1];
+
+      round.push({
+        matchId: `br:${roundNumber}:${slot}`,
+        upperId: upperFeeder === undefined ? null : winnerOf(upperFeeder, state.matchResults),
+        lowerId: lowerFeeder === undefined ? null : winnerOf(lowerFeeder, state.matchResults),
+        // Never a bye past round 1: a bye's seed has already advanced, so both slots
+        // here are either a real winner or a name that is not known yet.
+        isBye: false,
+        roundLabel,
+      });
+    }
+
+    rounds.push(round);
+  }
+
+  const final = rounds[rounds.length - 1]?.[0];
+  if (final === undefined) return null;
+
+  return { rounds, final, championId: winnerOf(final, state.matchResults) };
+}
+
+/**
+ * Whether the tournament is finished and therefore read-only — D-17.
+ *
+ * A final with a recorded result and no reopen after it. That is the whole definition:
+ * a SECOND FOLD over the same document, computed on demand like everything else here.
+ *
+ * ## Why this is not a fourth {@link TournamentStage} member
+ *
+ * D-18 keeps the bracket on screen when this fires. A finished tournament is still
+ * showing its bracket — with the champion named and every result control inert — so
+ * being read-only is a PROPERTY of a tournament that is still in the `bracket` stage
+ * rather than a stage of its own. Making it a stage member would force
+ * {@link selectTournamentStage} to choose between naming the surface and naming the
+ * state, and the surface is what that function exists to answer.
+ *
+ * ## Why a fold rather than a stored flag, which is the part worth the words
+ *
+ * Four properties, none of which a `finished: true` field would have:
+ *
+ *   It survives reload.        The document is the only input, so a refresh recomputes
+ *                              the same answer rather than restoring a cached one.
+ *   It travels with the JSON.  An exported file carries the final result, so it opens
+ *                              locked on another machine with nothing extra to persist.
+ *   Two tabs cannot disagree.  Both fold the same log, so neither can hold a flag the
+ *                              other never saw set.
+ *   It cannot be claimed.      An imported document cannot declare itself unlocked
+ *                              while carrying a recorded final, and cannot declare
+ *                              itself locked without one (T-05-25). There is no field
+ *                              to forge, because the answer is not stored anywhere.
+ *
+ * ## Undo needs no inverse here
+ *
+ * `undo.ts`'s module header — "the entire implementation is remove the action and fold
+ * again" — means undoing a reopen restores `lastReopenSeq` to whatever the remaining
+ * log implies, and this function simply answers differently on the next call. There is
+ * nothing to reverse, because there was nothing to set.
+ *
+ * `state.lastReopenSeq` starts at `-1`, which is below every allocatable `seq`
+ * including `0`, so a tournament that has never been reopened locks on its final
+ * without a special case.
+ */
+export function selectTournamentLocked(state: DraftState): boolean {
+  const bracket = selectBracket(state);
+  if (bracket === null) return false;
+
+  const result = liveResultFor(state.matchResults, bracket.final.matchId);
+  if (result === null) return false;
+
+  return result.seq > state.lastReopenSeq;
+}
+
+/**
+ * Whether a cut of the top `n` would slice through a block nobody has ordered —
+ * Pitfall 4.
+ *
+ * ## The failure this prevents
+ *
+ * The round robin completes. Seeds 3, 4 and 5 are still tied, the automatic chain has
+ * run out of links, and no host override names them. The host cuts to the top 4.
+ * Whoever the bracket puts at seed 4 is arbitrary — it is whichever of the three the
+ * fold happened to list first — and the room will notice, because the standings table
+ * on the same screen reads `3 3 3` beside a bracket that just picked one of them.
+ *
+ * **Completeness does not imply resolution.** `05-UI-SPEC.md` §8 gates the cut on
+ * completeness alone (`{k} matches are still to play. Record them all before you
+ * cut.`), and a complete round robin can be tied. This is the second condition, and it
+ * is about resolution.
+ *
+ * The warning sign that it has been got wrong is specific: a bracket whose seeds 3 and
+ * 4 swap between two folds of the same document (T-05-26).
+ *
+ * ## `'hostOrder'` is a resolution, and that is why this reads `decidedBy`
+ *
+ * A hand-ordered block IS in an order — the host put it in one (D-13) — so a cut
+ * through it is fine and this returns `false`. Reading only `position` could not tell
+ * the two apart, because a resolved block renumbers `3 4 5` while an unresolved one
+ * shares `3 3 3`; reading `decidedBy` states the distinction rather than inferring it
+ * from a numbering that a later change to {@link selectStandings} could alter.
+ *
+ * ## Two consumers, and they must agree
+ *
+ * 05-11 renders `Take the cut` inert with the sentence
+ *
+ *     The cut at {n} splits a tie. Order the tied players yourself before you take it.
+ *
+ * and 05-08's `canApply` refuses `tournament/cutTaken` with `cutSplitsTiedBlock`. That
+ * is `reduce.ts:592-600`'s stated model — constraint upstream of the click, enforced
+ * twice, so the reducer arm is a backstop rather than the mechanism. If it ever fires
+ * for a real host, the two have disagreed and the inert control is the bug.
+ *
+ * An incomplete round robin answers `false`. Incompleteness has §8's own separate
+ * reason, and a control carrying two reasons at once would be the tool arguing with
+ * itself about which problem the host should fix first.
+ */
+export function selectCutSplitsTiedBlock(state: DraftState, n: number): boolean {
+  // The tie question only. Incompleteness is §8's reason, not this one.
+  if (selectRemainingMatchCount(state) > 0) return false;
+
+  const rows = selectStandings(state);
+  // `n === rows.length` is the whole field: there is no row `n + 1` to split against.
+  if (n < 1 || n >= rows.length) return false;
+
+  const lastIn = rows[n - 1];
+  const firstOut = rows[n];
+  if (lastIn === undefined || firstOut === undefined) return false;
+
+  // Different places, so the line falls between two blocks rather than inside one.
+  if (lastIn.position !== firstOut.position) return false;
+
+  // Explicit, and not merely unreachable: a host-ordered block is RESOLVED, so a cut
+  // through it is allowed however the numbering happens to read.
+  if (lastIn.decidedBy === 'hostOrder' || firstOut.decidedBy === 'hostOrder') return false;
+
+  return lastIn.decidedBy === 'tied' && firstOut.decidedBy === 'tied';
+}
+
+/**
+ * What a correction takes with it — the numbers `05-UI-SPEC.md` §5's button reads.
+ *
+ * `targetSeqs` is what `tournament/resultsVoided` carries; `matchCount` is the `{n}`
+ * the label interpolates; `voidsCut` chooses between the two labels. All three come
+ * out of ONE call, which is what stops the number the host read from disagreeing with
+ * the seqs the action names (T-05-28).
+ */
+export interface VoidCascade {
+  /** Log seqs to void. Empty means nothing downstream is affected. */
+  targetSeqs: readonly number[];
+  /** How many MATCH results are in `targetSeqs` — the `{n}` the button interpolates. */
+  matchCount: number;
+  /** True when the cut itself is voided — the `Record and void the bracket` label. */
+  voidsCut: boolean;
+}
+
+/**
+ * The shape of a bracket match id, beside {@link ROUND_ROBIN_MATCH_ID} and for the
+ * same reason: one place per shape, and no `g` flag, because a module-level global
+ * regex carries `lastIndex` between calls and would answer alternately for one string.
+ */
+const BRACKET_MATCH_ID = /^br:\d+:\d+$/;
+
+/** Nothing downstream is affected. Fresh, so no caller shares one instance. */
+function emptyCascade(): VoidCascade {
+  return { targetSeqs: [], matchCount: 0, voidsCut: false };
+}
+
+/**
+ * Every recorded `seq` for one match id.
+ *
+ * ALL of them rather than only the live one, so that voiding a correction cannot
+ * resurface the entry it replaced. `DraftState.matchResults` promises one entry per
+ * pairing, which makes this an identity today; it is written this way so it stays
+ * right if that ever stops being true.
+ */
+function seqsFor(results: readonly MatchResult[], matchId: string): number[] {
+  const seqs: number[] = [];
+  for (const result of results) {
+    if (result.matchId === matchId) seqs.push(result.seq);
+  }
+  return seqs;
+}
+
+/**
+ * Where a bracket match sits, or `null` when the bracket has no such id.
+ *
+ * Located by SEARCHING the derived bracket rather than by parsing the id, so
+ * `br:9:9` — a shape-valid id naming a slot no bracket of this size has — is answered
+ * rather than walked from.
+ */
+function locateBracketMatch(
+  bracket: Bracket,
+  matchId: string,
+): { roundIndex: number; slot: number; match: BracketMatch } | null {
+  for (let roundIndex = 0; roundIndex < bracket.rounds.length; roundIndex++) {
+    const round = bracket.rounds[roundIndex];
+    if (round === undefined) continue;
+
+    for (let i = 0; i < round.length; i++) {
+      const match = round[i];
+      if (match !== undefined && match.matchId === matchId) {
+        return { roundIndex, slot: i + 1, match };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * How many later results a correction to `matchId` would void, and which ones — TOUR-09.
+ *
+ * ## Why this is a SELECTOR and not something the reducer discovers
+ *
+ * `05-UI-SPEC.md` §5 relabels the primary button BEFORE the dispatch:
+ * `Record and void {n} matches`, or `Record and void the bracket`. The host reads the
+ * damage and then decides. A reducer side effect could not supply that number, because
+ * the number has to exist while the host is still deciding whether to cause it — which
+ * is the entire reason this function lives in this file rather than in `reduce.ts`
+ * (D-10).
+ *
+ * 05-08 dispatches the exact `targetSeqs` this returns, so the count the host read and
+ * the entries the action names are one computation rather than two that agree by
+ * inspection.
+ *
+ * ## Why an explicit clear, and not "ignore results whose participants no longer match"
+ *
+ * D-10's case, stated because the simplification looks obviously better until it is
+ * played out: correct a semi-final, record a new final, then correct the semi-final
+ * BACK. A purely derived fold would find the original final's participants matching
+ * again and **resurrect it** — an outcome nothing on screen predicted and nobody
+ * asked for. The void REMOVES it from the fold; re-recording is a fresh act by a host
+ * who meant it (T-05-27).
+ *
+ * ## D-11 is unconditional, and that is deliberate rather than an over-reach
+ *
+ * Any round-robin correction after the cut voids the cut and every bracket result,
+ * *whether or not the winner changed*. It looks like too much until the reason is
+ * stated: at tier 3 a metric-only change reorders the standings, the standings order
+ * IS the seeding order ({@link selectSeeding}), and so the bracket the room played was
+ * seeded from a table that no longer holds.
+ *
+ * ## `tournament/tiebreakOrdered` is deliberately NOT a target
+ *
+ * A host ordering matches its block by SET EQUALITY ({@link hostOrderFor}), so a
+ * correction that changes the block's membership makes the override stop matching on
+ * its own. Voiding it here as well would be a SECOND mechanism for one fact, and two
+ * mechanisms for one fact disagree eventually. 05-03 carries this sentence from the
+ * other side.
+ *
+ * ## Targets are `seq`, never an index
+ *
+ * `seq` uniformly names a match result, the cut, or both, and `CLAUDE.md` §Conventions
+ * makes it explicit that `seq` is allocated `max(seq) + 1` and **may legally have
+ * gaps**. Nothing here assumes contiguity or substitutes an array index for a `seq`,
+ * because an index would address a different entry the moment the log had a hole in it
+ * (T-05-30).
+ *
+ * The walk is bounded: `br:r:s` feeds `br:(r+1):ceil(s/2)`, the round number strictly
+ * increases, and it stops at the final — at most `log2(B) - r` steps, which is 4 at the
+ * 16-seed maximum. An unknown id returns an empty cascade rather than looping (T-05-29).
+ */
+export function selectVoidCascade(
+  state: DraftState,
+  matchId: string,
+  nextWinnerId: string,
+): VoidCascade {
+  if (ROUND_ROBIN_MATCH_ID.test(matchId)) {
+    // A shape-valid id naming a pairing this player list does not have, which
+    // `selectRemainingMatchCount` already declines to count.
+    const known = selectRoundRobinMatches(state).some((match) => match.matchId === matchId);
+    if (!known) return emptyCascade();
+
+    if (state.cut === null) return emptyCascade();
+
+    // D-11, unconditional on `nextWinnerId`: see the doc block. Every bracket result
+    // goes, and the cut with them.
+    const matchSeqs: number[] = [];
+    for (const result of state.matchResults) {
+      if (BRACKET_MATCH_ID.test(result.matchId)) matchSeqs.push(result.seq);
+    }
+
+    return {
+      targetSeqs: [state.cut.seq, ...matchSeqs],
+      // The cut is not a match, so its `seq` is a target without being counted.
+      matchCount: matchSeqs.length,
+      voidsCut: true,
+    };
+  }
+
+  if (!BRACKET_MATCH_ID.test(matchId)) return emptyCascade();
+
+  const bracket = selectBracket(state);
+  if (bracket === null) return emptyCascade();
+
+  const located = locateBracketMatch(bracket, matchId);
+  if (located === null) return emptyCascade();
+
+  // A bye is not played and carries no result, so there is nothing to correct and
+  // nothing downstream that a correction to it could invalidate.
+  if (located.match.isBye) return emptyCascade();
+
+  const current = liveResultFor(state.matchResults, matchId);
+  // Same winner, so a games or metric correction cannot change who is in the next
+  // match and nothing downstream is affected. With NO current result this is not a
+  // correction at all, and the walk below finds nothing in a well-formed document.
+  if (current !== null && current.winnerId === nextWinnerId) return emptyCascade();
+
+  const targetSeqs: number[] = [];
+  let slot = located.slot;
+
+  for (let roundIndex = located.roundIndex + 1; roundIndex < bracket.rounds.length; roundIndex++) {
+    // `br:r:s` feeds `br:(r+1):ceil(s/2)`.
+    slot = Math.ceil(slot / 2);
+
+    const round = bracket.rounds[roundIndex];
+    const match = round?.[slot - 1];
+    if (match === undefined) break;
+
+    // An unrecorded match on the path contributes nothing and DOES NOT stop the walk:
+    // a later match can be recorded while an earlier one is not, and stopping here
+    // would tell the host a correction was free when it takes the final with it.
+    targetSeqs.push(...seqsFor(state.matchResults, match.matchId));
+  }
+
+  return { targetSeqs, matchCount: targetSeqs.length, voidsCut: false };
+}
