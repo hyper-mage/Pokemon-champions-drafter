@@ -29,10 +29,12 @@ import {
 import {
   byeCountForCut,
   selectBracket,
+  selectCutSplitsTiedBlock,
   selectRemainingMatchCount,
   selectRoundRobinMatches,
   selectSeeding,
   selectStandings,
+  selectTournamentLocked,
   selectTournamentStage,
   type Bracket,
   type BracketMatch,
@@ -1000,5 +1002,135 @@ describe('selectBracket', () => {
     expect(first).toEqual(second);
     expect(first).not.toBe(second);
     expect(state.cut?.seeds).toEqual(['p1', 'p2', 'p3', 'p4', 'p5', 'p6']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// selectTournamentLocked — D-17, a fold rather than a flag
+// ---------------------------------------------------------------------------
+
+/** A finished 4-seed bracket: p1 over p4, p2 over p3, p1 over p2 in the final. */
+function playedOutFour(finalSeq?: number): MatchResult[] {
+  return [
+    br(1, 1, 'p1', 'p4'),
+    br(1, 2, 'p2', 'p3'),
+    br(2, 1, 'p1', 'p2', 0, finalSeq),
+  ];
+}
+
+describe('selectTournamentLocked', () => {
+  it('is false when there is no cut at all', () => {
+    expect(selectTournamentLocked(completeState(configFor(6)))).toBe(false);
+  });
+
+  it('is false while the final is unrecorded', () => {
+    const state = cutState(4, { matchResults: [br(1, 1, 'p1', 'p4'), br(1, 2, 'p2', 'p3')] });
+    expect(selectTournamentLocked(state)).toBe(false);
+  });
+
+  it('is true once the final is recorded, with lastReopenSeq at its -1 initial value', () => {
+    // -1 is below every legal seq INCLUDING 0, which is the whole reason the field is
+    // not initialised to 0. A tournament that has never been reopened locks.
+    const state = cutState(4, { matchResults: playedOutFour() });
+    expect(state.lastReopenSeq).toBe(-1);
+    expect(selectTournamentLocked(state)).toBe(true);
+  });
+
+  it('is false again once a reopen sits after the final result', () => {
+    const state = cutState(4, { matchResults: playedOutFour(), lastReopenSeq: 9_000 });
+    expect(selectTournamentLocked(state)).toBe(false);
+  });
+
+  it('locks again when a new final is recorded above the reopen', () => {
+    const state = cutState(4, {
+      matchResults: playedOutFour(9_500),
+      lastReopenSeq: 9_000,
+    });
+    expect(selectTournamentLocked(state)).toBe(true);
+  });
+
+  it('is not a stage — the bracket stays on screen when it fires (D-18)', () => {
+    const state = cutState(4, { matchResults: playedOutFour() });
+    expect(selectTournamentLocked(state)).toBe(true);
+    expect(selectTournamentStage(state)).toBe('bracket');
+  });
+
+  it('cannot be claimed by a document — it is read off the final, not off a field', () => {
+    // The same fold with the final result removed is unlocked, whatever else it carries.
+    const unlocked = cutState(4, { matchResults: [], lastReopenSeq: -1 });
+    expect(selectTournamentLocked(unlocked)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// selectCutSplitsTiedBlock — Pitfall 4
+// ---------------------------------------------------------------------------
+
+describe('selectCutSplitsTiedBlock', () => {
+  /** Six players, complete, with p3/p4/p5 unresolved on 2-3 — the Pitfall 4 table. */
+  function tiedTable(overrides: Partial<DraftState> = {}): DraftState {
+    const config = configFor(6);
+    return completeState(config, { matchResults: tiedForThird(config), ...overrides });
+  }
+
+  it('is true when the cut line falls inside an unresolved block', () => {
+    const state = tiedTable();
+    // p3, p4 and p5 all read position 3. A cut at 4 takes one of the three and the
+    // bracket's seed 4 is whichever of them the fold happened to list.
+    expect(by(selectStandings(state), (row) => row.position)).toEqual({
+      p1: 1,
+      p2: 2,
+      p3: 3,
+      p4: 3,
+      p5: 3,
+      p6: 6,
+    });
+    expect(selectCutSplitsTiedBlock(state, 4)).toBe(true);
+    expect(selectCutSplitsTiedBlock(state, 3)).toBe(true);
+  });
+
+  it('is false when the two rows either side of the line hold different positions', () => {
+    const state = tiedTable();
+    expect(selectCutSplitsTiedBlock(state, 2)).toBe(false);
+    expect(selectCutSplitsTiedBlock(state, 5)).toBe(false);
+  });
+
+  it('is false once the host has ordered the same block by hand', () => {
+    // A host order is a RESOLUTION, so the cut through it is fine. This is the whole
+    // reason the predicate reads decidedBy rather than only position.
+    const state = tiedTable({ tiebreakOrders: [{ playerIds: ['p5', 'p3', 'p4'], seq: 10 }] });
+
+    expect(by(selectStandings(state), (row) => row.decidedBy)).toMatchObject({
+      p5: 'hostOrder',
+      p3: 'hostOrder',
+      p4: 'hostOrder',
+    });
+    expect(selectCutSplitsTiedBlock(state, 4)).toBe(false);
+    expect(selectCutSplitsTiedBlock(state, 3)).toBe(false);
+  });
+
+  it('is false when n is the whole field — there is no row below to split against', () => {
+    expect(selectCutSplitsTiedBlock(tiedTable(), 6)).toBe(false);
+  });
+
+  it('is false out of range either way', () => {
+    expect(selectCutSplitsTiedBlock(tiedTable(), 0)).toBe(false);
+    expect(selectCutSplitsTiedBlock(tiedTable(), 99)).toBe(false);
+  });
+
+  it('is false while the round robin is incomplete, which has its own reason', () => {
+    // Nothing recorded: every row is 0-0 and shares position 1. That is not the tie
+    // this predicate is about, and §8's completeness reason already covers it — two
+    // reasons on one control would be the tool arguing with itself.
+    const state = completeState(configFor(6));
+    expect(selectRemainingMatchCount(state)).toBe(15);
+    expect(selectCutSplitsTiedBlock(state, 4)).toBe(false);
+  });
+
+  it('answers the same on two calls and mutates nothing', () => {
+    const state = tiedTable();
+    const first = selectCutSplitsTiedBlock(state, 4);
+    expect(selectCutSplitsTiedBlock(state, 4)).toBe(first);
+    expect(state.tiebreakOrders).toEqual([]);
   });
 });
