@@ -98,6 +98,9 @@ describe('bannedEntries', () => {
       // ban mode. The `hostBanlist` values keep this equality the one thing it asserts.
       banMode: 'hostBanlist',
       bansPerPlayer: 0,
+      // The bracket gate asks nothing at 'draftOnly'. This test is about banCount, and the
+      // depth question is settled — see FeasibilityInput.depth's doc block.
+      depth: 'draftOnly',
       entries: ENTRIES,
     });
 
@@ -122,6 +125,9 @@ describe('bannedEntries', () => {
       // ban mode. The `hostBanlist` values keep this equality the one thing it asserts.
       banMode: 'hostBanlist',
       bansPerPlayer: 0,
+      // The bracket gate asks nothing at 'draftOnly'. This test is about banCount, and the
+      // depth question is settled — see FeasibilityInput.depth's doc block.
+      depth: 'draftOnly',
       entries: ENTRIES,
     });
 
