@@ -978,3 +978,193 @@ export function selectCutSplitsTiedBlock(state: DraftState, n: number): boolean 
 
   return lastIn.decidedBy === 'tied' && firstOut.decidedBy === 'tied';
 }
+
+/**
+ * What a correction takes with it — the numbers `05-UI-SPEC.md` §5's button reads.
+ *
+ * `targetSeqs` is what `tournament/resultsVoided` carries; `matchCount` is the `{n}`
+ * the label interpolates; `voidsCut` chooses between the two labels. All three come
+ * out of ONE call, which is what stops the number the host read from disagreeing with
+ * the seqs the action names (T-05-28).
+ */
+export interface VoidCascade {
+  /** Log seqs to void. Empty means nothing downstream is affected. */
+  targetSeqs: readonly number[];
+  /** How many MATCH results are in `targetSeqs` — the `{n}` the button interpolates. */
+  matchCount: number;
+  /** True when the cut itself is voided — the `Record and void the bracket` label. */
+  voidsCut: boolean;
+}
+
+/**
+ * The shape of a bracket match id, beside {@link ROUND_ROBIN_MATCH_ID} and for the
+ * same reason: one place per shape, and no `g` flag, because a module-level global
+ * regex carries `lastIndex` between calls and would answer alternately for one string.
+ */
+const BRACKET_MATCH_ID = /^br:\d+:\d+$/;
+
+/** Nothing downstream is affected. Fresh, so no caller shares one instance. */
+function emptyCascade(): VoidCascade {
+  return { targetSeqs: [], matchCount: 0, voidsCut: false };
+}
+
+/**
+ * Every recorded `seq` for one match id.
+ *
+ * ALL of them rather than only the live one, so that voiding a correction cannot
+ * resurface the entry it replaced. `DraftState.matchResults` promises one entry per
+ * pairing, which makes this an identity today; it is written this way so it stays
+ * right if that ever stops being true.
+ */
+function seqsFor(results: readonly MatchResult[], matchId: string): number[] {
+  const seqs: number[] = [];
+  for (const result of results) {
+    if (result.matchId === matchId) seqs.push(result.seq);
+  }
+  return seqs;
+}
+
+/**
+ * Where a bracket match sits, or `null` when the bracket has no such id.
+ *
+ * Located by SEARCHING the derived bracket rather than by parsing the id, so
+ * `br:9:9` — a shape-valid id naming a slot no bracket of this size has — is answered
+ * rather than walked from.
+ */
+function locateBracketMatch(
+  bracket: Bracket,
+  matchId: string,
+): { roundIndex: number; slot: number; match: BracketMatch } | null {
+  for (let roundIndex = 0; roundIndex < bracket.rounds.length; roundIndex++) {
+    const round = bracket.rounds[roundIndex];
+    if (round === undefined) continue;
+
+    for (let i = 0; i < round.length; i++) {
+      const match = round[i];
+      if (match !== undefined && match.matchId === matchId) {
+        return { roundIndex, slot: i + 1, match };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * How many later results a correction to `matchId` would void, and which ones — TOUR-09.
+ *
+ * ## Why this is a SELECTOR and not something the reducer discovers
+ *
+ * `05-UI-SPEC.md` §5 relabels the primary button BEFORE the dispatch:
+ * `Record and void {n} matches`, or `Record and void the bracket`. The host reads the
+ * damage and then decides. A reducer side effect could not supply that number, because
+ * the number has to exist while the host is still deciding whether to cause it — which
+ * is the entire reason this function lives in this file rather than in `reduce.ts`
+ * (D-10).
+ *
+ * 05-08 dispatches the exact `targetSeqs` this returns, so the count the host read and
+ * the entries the action names are one computation rather than two that agree by
+ * inspection.
+ *
+ * ## Why an explicit clear, and not "ignore results whose participants no longer match"
+ *
+ * D-10's case, stated because the simplification looks obviously better until it is
+ * played out: correct a semi-final, record a new final, then correct the semi-final
+ * BACK. A purely derived fold would find the original final's participants matching
+ * again and **resurrect it** — an outcome nothing on screen predicted and nobody
+ * asked for. The void REMOVES it from the fold; re-recording is a fresh act by a host
+ * who meant it (T-05-27).
+ *
+ * ## D-11 is unconditional, and that is deliberate rather than an over-reach
+ *
+ * Any round-robin correction after the cut voids the cut and every bracket result,
+ * *whether or not the winner changed*. It looks like too much until the reason is
+ * stated: at tier 3 a metric-only change reorders the standings, the standings order
+ * IS the seeding order ({@link selectSeeding}), and so the bracket the room played was
+ * seeded from a table that no longer holds.
+ *
+ * ## `tournament/tiebreakOrdered` is deliberately NOT a target
+ *
+ * A host ordering matches its block by SET EQUALITY ({@link hostOrderFor}), so a
+ * correction that changes the block's membership makes the override stop matching on
+ * its own. Voiding it here as well would be a SECOND mechanism for one fact, and two
+ * mechanisms for one fact disagree eventually. 05-03 carries this sentence from the
+ * other side.
+ *
+ * ## Targets are `seq`, never an index
+ *
+ * `seq` uniformly names a match result, the cut, or both, and `CLAUDE.md` §Conventions
+ * makes it explicit that `seq` is allocated `max(seq) + 1` and **may legally have
+ * gaps**. Nothing here assumes contiguity or substitutes an array index for a `seq`,
+ * because an index would address a different entry the moment the log had a hole in it
+ * (T-05-30).
+ *
+ * The walk is bounded: `br:r:s` feeds `br:(r+1):ceil(s/2)`, the round number strictly
+ * increases, and it stops at the final — at most `log2(B) - r` steps, which is 4 at the
+ * 16-seed maximum. An unknown id returns an empty cascade rather than looping (T-05-29).
+ */
+export function selectVoidCascade(
+  state: DraftState,
+  matchId: string,
+  nextWinnerId: string,
+): VoidCascade {
+  if (ROUND_ROBIN_MATCH_ID.test(matchId)) {
+    // A shape-valid id naming a pairing this player list does not have, which
+    // `selectRemainingMatchCount` already declines to count.
+    const known = selectRoundRobinMatches(state).some((match) => match.matchId === matchId);
+    if (!known) return emptyCascade();
+
+    if (state.cut === null) return emptyCascade();
+
+    // D-11, unconditional on `nextWinnerId`: see the doc block. Every bracket result
+    // goes, and the cut with them.
+    const matchSeqs: number[] = [];
+    for (const result of state.matchResults) {
+      if (BRACKET_MATCH_ID.test(result.matchId)) matchSeqs.push(result.seq);
+    }
+
+    return {
+      targetSeqs: [state.cut.seq, ...matchSeqs],
+      // The cut is not a match, so its `seq` is a target without being counted.
+      matchCount: matchSeqs.length,
+      voidsCut: true,
+    };
+  }
+
+  if (!BRACKET_MATCH_ID.test(matchId)) return emptyCascade();
+
+  const bracket = selectBracket(state);
+  if (bracket === null) return emptyCascade();
+
+  const located = locateBracketMatch(bracket, matchId);
+  if (located === null) return emptyCascade();
+
+  // A bye is not played and carries no result, so there is nothing to correct and
+  // nothing downstream that a correction to it could invalidate.
+  if (located.match.isBye) return emptyCascade();
+
+  const current = liveResultFor(state.matchResults, matchId);
+  // Same winner, so a games or metric correction cannot change who is in the next
+  // match and nothing downstream is affected. With NO current result this is not a
+  // correction at all, and the walk below finds nothing in a well-formed document.
+  if (current !== null && current.winnerId === nextWinnerId) return emptyCascade();
+
+  const targetSeqs: number[] = [];
+  let slot = located.slot;
+
+  for (let roundIndex = located.roundIndex + 1; roundIndex < bracket.rounds.length; roundIndex++) {
+    // `br:r:s` feeds `br:(r+1):ceil(s/2)`.
+    slot = Math.ceil(slot / 2);
+
+    const round = bracket.rounds[roundIndex];
+    const match = round?.[slot - 1];
+    if (match === undefined) break;
+
+    // An unrecorded match on the path contributes nothing and DOES NOT stop the walk:
+    // a later match can be recorded while an earlier one is not, and stopping here
+    // would tell the host a correction was free when it takes the final with it.
+    targetSeqs.push(...seqsFor(state.matchResults, match.matchId));
+  }
+
+  return { targetSeqs, matchCount: targetSeqs.length, voidsCut: false };
+}
