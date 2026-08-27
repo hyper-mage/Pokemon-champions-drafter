@@ -16,6 +16,19 @@
 }
 
 /*
+ * The `Roster` group needs no geometry here, and that is worth stating so nobody adds
+ * some. `.config-screen` above is already a column with --space-5 between its children,
+ * which is exactly the separation the group wants from the `Players` fieldset beneath it —
+ * the same separation two fieldsets already get from each other. Everything inside the
+ * group is `RosterRefresh.css`'s, beside the component, per the one-stylesheet-per-
+ * component rule.
+ *
+ * It is deliberately NOT wrapped in `.config-screen__group`. That class is a <fieldset>
+ * treatment, and a fieldset around two buttons and a sentence would claim a set of form
+ * controls that is not there.
+ */
+
+/*
  * A real <fieldset>. The browser's default border and inline padding are replaced
  * wholesale rather than tweaked, because the defaults are a 2px groove that no token
  * describes.

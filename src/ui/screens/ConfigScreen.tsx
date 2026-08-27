@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'preact/hooks';
 
 import { newId, newSeed } from '../../adapters/id';
-import type { SpriteMeta } from '../../adapters/roster-source';
+import type { RosterBundle, SpriteMeta } from '../../adapters/roster-source';
 import { bannedEntries } from '../../core/bans';
 import { compile } from '../../core/compile';
 import { drawPool } from '../../core/draw';
@@ -43,6 +43,7 @@ import { announce } from '../components/LiveRegion';
 import { NumericField, parseNumericField } from '../components/NumericField';
 import { PlayerList, type PlayerDraft } from '../components/PlayerList';
 import { PoolGrid } from '../components/PoolGrid';
+import { RosterRefresh } from '../components/RosterRefresh';
 import { SchedulePreview, type MoveDirection } from '../components/SchedulePreview';
 import {
   SegmentedControl,
@@ -634,9 +635,37 @@ export interface ConfigScreenProps {
   spriteMeta: SpriteMeta;
   /** A tournament now exists. Routing is the caller's; this screen only reports it. */
   onStarted: () => void;
+  /**
+   * A NEWER DEFAULT roster was adopted from the origin — REFR-01.
+   *
+   * Optional, and every roster prop below it is optional for the same stated reason: the
+   * `Roster` group is a surface this screen OWNS rather than a service it performs for its
+   * caller, so a call site that says nothing about rosters still gets a working group. The
+   * shell is the only caller that has anything to do with the answer.
+   */
+  onRosterRefreshed?: ((bundle: RosterBundle) => void) | undefined;
+  /**
+   * A roster FILE was read and adopted into the registry — REFR-02. A separate callback
+   * from the one above because 05-04 decided an imported roster does NOT become the
+   * default; see `RosterRefresh`'s prop doc for what collapsing the two would cost.
+   */
+  onRosterImported?: ((bundle: RosterBundle) => void) | undefined;
+  /**
+   * D-26's landing site: the staleness banner on the landing screen routes here and moves
+   * focus to `Check for a new roster` rather than duplicating the control.
+   */
+  focusRosterRefresh?: boolean;
 }
 
-export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: ConfigScreenProps) {
+export function ConfigScreen({
+  snapshot,
+  entries,
+  spriteMeta,
+  onStarted,
+  onRosterRefreshed,
+  onRosterImported,
+  focusRosterRefresh = false,
+}: ConfigScreenProps) {
   /**
    * Four rows, all blank.
    *
@@ -1602,6 +1631,27 @@ export function ConfigScreen({ snapshot, entries, spriteMeta, onStarted }: Confi
   return (
     <div class="config-screen">
       <h1 class="app-shell__title">Set up the tournament</h1>
+
+      {/*
+        D-23: beside the roster the tournament is being created against, and FIRST in the
+        form rather than buried in it. Two reasons, both from the contract. The staleness
+        banner's config sentence says `Check for a new roster below`, so the control it
+        names has to be near the top the banner sits at; and every later answer on this
+        screen — the pool size, the bans, the draw — is an answer ABOUT this roster, so
+        changing it after them would invalidate work the host had already done.
+
+        A direct child of `.config-screen` rather than a `<fieldset>`, because the group
+        holds two buttons and a sentence and no fields at all. Its own `<h2>` sits at the
+        same level as the group legends below it, which is the level it belongs at.
+      */}
+      <RosterRefresh
+        regulationLabel={snapshot.regulation}
+        entryCount={entries.length}
+        validUntil={snapshot.validUntil}
+        onRefreshed={onRosterRefreshed}
+        onImported={onRosterImported}
+        focusOnMount={focusRosterRefresh}
+      />
 
       <fieldset class="config-screen__group">
         <legend class="config-screen__legend">Players</legend>
