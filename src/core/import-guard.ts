@@ -202,6 +202,48 @@ export const MAX_COMPOSITION_RULES = 8;
 export const MAX_MEGA_FORME_BANS = 5000;
 
 /**
+ * The per-match metric cap — 18. TOUR-07.
+ *
+ * WHERE 18 COMES FROM, stated rather than left as a round number: six Pokémon on a team
+ * times three games in the longest match this build can record. It is the largest honest
+ * answer to "how many were left standing", and `05-UI-SPEC.md` sized `--results-col-min`
+ * against the same number, so a full-width cell is a cell this guard would accept.
+ *
+ * The rule {@link MAX_BANS_PER_PLAYER} states applies here word for word: THE GATE'S BOUND
+ * AND THE GUARD'S BOUND MUST BE ONE NUMBER. The match dialog's `NumericField` reads THIS
+ * constant for its `max`, so the build cannot write a document that `isValidTournament`
+ * then refuses to re-open — which is a tournament the host cannot resume, discovered at
+ * the moment they try.
+ *
+ * Unlike the other caps in this block it bounds no allocation. A metric is one number in
+ * one cell, and `4000000000` renders as harmlessly as `7`. What it bounds is MEANING: the
+ * standings' second tiebreak link sums this field across a player's matches, so a value
+ * outside the range the game can produce silently decides an order the room would never
+ * have played to. That is the reason it is a refusal rather than a clamp.
+ */
+export const MAX_MATCH_METRIC = 18;
+
+/**
+ * The shape of a match id — `rr:{i}:{j}` or `br:{round}:{slot}`, digits only.
+ *
+ * The `SNAPSHOT_FILE_PATTERN` / `SPRITE_FILE_PATTERN` idiom: one module constant per
+ * shape, no `g` flag — a module-level global regex carries `lastIndex` between calls and
+ * would answer alternately for one string.
+ *
+ * WHY TWO RUNS OF DIGITS AND NEVER A PLAYER ID. `buildPlayers` below bounds a player id
+ * only as a non-empty UNIQUE STRING, so an imported document can legally carry ids
+ * containing a colon. `rr:${a.id}:${b.id}` then makes the players (`a:b`, `c`) and
+ * (`a`, `b:c`) produce the identical key `rr:a:b:c`: two different matches collapse onto
+ * one, and the corruption is silent because it lands in the fold rather than here. Do NOT
+ * fix that by tightening `buildPlayers`, which would refuse documents that are valid today.
+ *
+ * Checked in `buildLogEntry`, where an unparseable id FAILS THE ARM. Rebuilding it anyway
+ * would fold a result onto a match nothing addresses — invisible in the grid, present in
+ * the standings, and impossible to correct because no cell points at it.
+ */
+const MATCH_ID_PATTERN = /^(rr:\d+:\d+|br:\d+:\d+)$/;
+
+/**
  * The three keys that turn a data structure into a code path.
  *
  * `JSON.parse` itself does not invoke setters — it uses a data-property definition, so
@@ -295,6 +337,29 @@ function copyStringArray(value: unknown, limit: number): string[] | null {
   const copied: string[] = [];
   for (const item of value) {
     if (typeof item !== 'string') return null;
+    copied.push(item);
+  }
+  return copied;
+}
+
+/**
+ * A fresh array of log `seq` values, or null. {@link copyStringArray}'s sibling.
+ *
+ * Every member must be a non-negative safe integer, because that is what `buildLog` will
+ * have allocated for every entry it accepts — a fractional or negative target could match
+ * nothing, and would fold to a void that voids nothing while the recap reported a
+ * correction that cleared three matches.
+ *
+ * `limit` is `MAX_LOG_ENTRIES` at the one call site, and that is the honest bound rather
+ * than a generous one: a void cannot name more entries than a document is allowed to hold.
+ */
+function copySeqArray(value: unknown, limit: number): number[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length > limit) return null;
+
+  const copied: number[] = [];
+  for (const item of value) {
+    if (!isNonNegativeInteger(item)) return null;
     copied.push(item);
   }
   return copied;
@@ -981,6 +1046,89 @@ function buildLogEntry(value: unknown): Action | null {
       const bans = buildRevealedBans(raw['bans']);
       if (bans === null) return null;
       return { type: 'bans/revealed', bans, ...envelope };
+    }
+
+    case 'tournament/matchRecorded': {
+      // SIX fields named, and every one of them has to be, because this arm is the only
+      // thing standing between a shared file and a silently different tournament. The
+      // `bans/placed` arm above records what a single forgotten field costs.
+      const matchId = raw['matchId'];
+      const winnerId = raw['winnerId'];
+      const loserId = raw['loserId'];
+      const winnerGames = raw['winnerGames'];
+      const loserGames = raw['loserGames'];
+      const metric = raw['metric'];
+
+      // The id must be TWO RUNS OF DIGITS — see {@link MATCH_ID_PATTERN}. An unparseable
+      // id FAILS THE ARM rather than being rebuilt: a result folded onto a match nothing
+      // addresses is invisible in the grid, live in the standings, and uncorrectable,
+      // because no cell in the tool points at it.
+      if (typeof matchId !== 'string' || !MATCH_ID_PATTERN.test(matchId)) return null;
+      if (typeof winnerId !== 'string' || typeof loserId !== 'string') return null;
+
+      // Games are bounded HERE and the format rule lives in `canApply`, which is
+      // `actions.ts`'s guard/canApply split rather than a duplication: this function types
+      // one entry in isolation and cannot see `config.roundRobinFormat`. `1..2` and `0..1`
+      // are the widest pair any stage this build supports can produce.
+      if (!isPositiveInteger(winnerGames) || winnerGames > 2) return null;
+      if (!isNonNegativeInteger(loserGames) || loserGames > 1) return null;
+
+      // REQUIRED, never defaulted to zero. `0` is a real recorded metric at
+      // `draftAndBrackets`, so a default would make "the file did not say" and "the file
+      // said none" the same value in the one field the standings sort on.
+      if (!isNonNegativeInteger(metric) || metric > MAX_MATCH_METRIC) return null;
+
+      return {
+        type: 'tournament/matchRecorded',
+        matchId,
+        winnerId,
+        loserId,
+        winnerGames,
+        loserGames,
+        metric,
+        ...envelope,
+      };
+    }
+
+    case 'tournament/resultsVoided': {
+      // `causedBySeq` is the field this arm exists to not forget. It has no reader in the
+      // fold at ALL — it is undo's pairing key — which makes it the exact profile of the
+      // `bans/placed` `pass` failure: dropping it costs nothing locally and breaks the
+      // paired undo the moment the document is shared.
+      const targetSeqs = copySeqArray(raw['targetSeqs'], MAX_LOG_ENTRIES);
+      const causedBySeq = raw['causedBySeq'];
+
+      if (targetSeqs === null) return null;
+      if (!isNonNegativeInteger(causedBySeq)) return null;
+
+      return { type: 'tournament/resultsVoided', targetSeqs, causedBySeq, ...envelope };
+    }
+
+    case 'tournament/cutTaken': {
+      // Bounded by the PLAYER cap, because that is what the array holds — `draft/started`'s
+      // bound and `draft/started`'s argument. Whether the size is inside `2 … playerCount`
+      // and whether the line splits an unresolved tie block are `canApply`'s questions,
+      // asked against a state this function cannot see.
+      const seeds = copyStringArray(raw['seeds'], MAX_PLAYERS);
+      if (seeds === null) return null;
+      return { type: 'tournament/cutTaken', seeds, ...envelope };
+    }
+
+    case 'tournament/tiebreakOrdered': {
+      // Same bound, same argument. The ORDER is preserved exactly as written: it is the
+      // whole content of the action, and `selectStandings` matches an override to a block
+      // by set equality and then renders it in this order.
+      const playerIds = copyStringArray(raw['playerIds'], MAX_PLAYERS);
+      if (playerIds === null) return null;
+      return { type: 'tournament/tiebreakOrdered', playerIds, ...envelope };
+    }
+
+    case 'tournament/reopened': {
+      // The envelope IS the payload, and the arm exists anyway. Leaving this type to the
+      // `default` below would rebuild the same object today and would quietly stop being
+      // right the first time `ReopenedPayload` gains a field — an omission with no symptom
+      // at the moment it is made, which is this switch's characteristic failure.
+      return { type: 'tournament/reopened', ...envelope };
     }
 
     default:

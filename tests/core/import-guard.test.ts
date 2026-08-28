@@ -2590,86 +2590,94 @@ const TIEBREAK_ORDERED: Record<string, unknown> = {
 };
 const REOPENED: Record<string, unknown> = { type: 'tournament/reopened' };
 
+/**
+ * The last entry of a re-imported document, as raw keys.
+ *
+ * The round trip is asserted at the REBUILT ENTRY as well as at the fold, and the entry is
+ * the assertion that actually bites. `buildLogEntry` is what drops a field, and a fold
+ * comparison can only see a dropped field once `apply` reads it — so a fold-only test goes
+ * quietly vacuous for any field the reducer does not yet consume, which is precisely the
+ * condition under which Pitfall 5's omission gets made. What each field does to the fold is
+ * `tests/core/reduce.test.ts`'s question, and the two stay answerable separately.
+ */
+function reimportedTail(doc: TournamentDoc): Record<string, unknown> {
+  const result = parse(exported(doc));
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error('the fixture did not survive its own round trip');
+
+  // Both directions in one helper, so no caller can assert the tail and forget the fold.
+  expect(fold(result.doc)).toEqual(fold(doc));
+
+  return result.doc.log[result.doc.log.length - 1] as unknown as Record<string, unknown>;
+}
+
 describe('tournament actions — round trip per type', () => {
   it('carries every matchRecorded field through export and re-import', () => {
-    const original = docWith(MATCH_RECORDED);
-
-    const result = parse(exported(original));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    // The fold is what the host sees, and all six payload fields reach it — so a dropped
-    // field changes this comparison rather than hiding behind it.
-    expect(fold(result.doc)).toEqual(fold(original));
-    expect(fold(result.doc).matchResults).toEqual([
-      {
-        matchId: 'rr:0:1',
-        winnerId: 'p1',
-        loserId: 'p2',
-        winnerGames: 2,
-        loserGames: 1,
-        metric: 7,
-        seq: 4,
-      },
-    ]);
+    // All six, named, because a rebuild that forgot one would be invisible everywhere else.
+    expect(reimportedTail(docWith(MATCH_RECORDED))).toEqual({
+      type: 'tournament/matchRecorded',
+      matchId: 'rr:0:1',
+      winnerId: 'p1',
+      loserId: 'p2',
+      winnerGames: 2,
+      loserGames: 1,
+      metric: 7,
+      seq: 4,
+      at: 1_770_000_100_000,
+      actorId: 'host',
+    });
   });
 
-  it('carries resultsVoided through export and re-import, targetSeqs included', () => {
-    const original = docWith(MATCH_RECORDED, {
+  it('carries resultsVoided through export and re-import, causedBySeq included', () => {
+    // `causedBySeq` has NO reader in the fold — it is undo's pairing key — so no fold
+    // comparison could ever see it go missing. This is the field Pitfall 5 describes.
+    expect(
+      reimportedTail(
+        docWith(MATCH_RECORDED, {
+          type: 'tournament/resultsVoided',
+          targetSeqs: [4],
+          causedBySeq: 4,
+        }),
+      ),
+    ).toEqual({
       type: 'tournament/resultsVoided',
       targetSeqs: [4],
       causedBySeq: 4,
+      seq: 5,
+      at: 1_770_000_100_001,
+      actorId: 'host',
     });
-
-    const result = parse(exported(original));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    expect(fold(result.doc)).toEqual(fold(original));
-    // A dropped `targetSeqs` folds to a void that voids nothing, so the result survives.
-    expect(fold(result.doc).matchResults).toEqual([]);
-
-    // `causedBySeq` reaches no fold — it is undo machinery — so the comparison above
-    // cannot see it. Asserted on the rebuilt entry directly, because this is exactly the
-    // field Pitfall 5 describes: no local symptom, and a broken paired undo on a shared file.
-    const voided = result.doc.log[result.doc.log.length - 1] as unknown as Record<string, unknown>;
-    expect(voided['causedBySeq']).toBe(4);
-    expect(voided['targetSeqs']).toEqual([4]);
   });
 
-  it('carries cutTaken through export and re-import', () => {
-    const original = docWith(CUT_TAKEN);
-
-    const result = parse(exported(original));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    expect(fold(result.doc)).toEqual(fold(original));
-    expect(fold(result.doc).cut).toEqual({ seeds: ['p1', 'p2'], seq: 4 });
+  it('carries cutTaken through export and re-import, in seed order', () => {
+    expect(reimportedTail(docWith(CUT_TAKEN))).toEqual({
+      type: 'tournament/cutTaken',
+      seeds: ['p1', 'p2'],
+      seq: 4,
+      at: 1_770_000_100_000,
+      actorId: 'host',
+    });
   });
 
   it('carries tiebreakOrdered through export and re-import, in the host order', () => {
-    const original = docWith(TIEBREAK_ORDERED);
-
-    const result = parse(exported(original));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    expect(fold(result.doc)).toEqual(fold(original));
     // ORDER, not membership: the host put these two in this order, and a rebuild that
     // sorted or de-duplicated them would be answering a different question.
-    expect(fold(result.doc).tiebreakOrders).toEqual([{ playerIds: ['p2', 'p1'], seq: 4 }]);
+    expect(reimportedTail(docWith(TIEBREAK_ORDERED))).toEqual({
+      type: 'tournament/tiebreakOrdered',
+      playerIds: ['p2', 'p1'],
+      seq: 4,
+      at: 1_770_000_100_000,
+      actorId: 'host',
+    });
   });
 
   it('carries reopened through export and re-import', () => {
-    const original = docWith(REOPENED);
-
-    const result = parse(exported(original));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    expect(fold(result.doc)).toEqual(fold(original));
-    expect(fold(result.doc).lastReopenSeq).toBe(4);
+    expect(reimportedTail(docWith(REOPENED))).toEqual({
+      type: 'tournament/reopened',
+      seq: 4,
+      at: 1_770_000_100_000,
+      actorId: 'host',
+    });
   });
 });
 
