@@ -18,11 +18,21 @@ import {
   bansPlaced,
   bansRevealed,
   bansSubmitted,
+  cutTaken,
   isBansPlacedAction,
   isBansRevealedAction,
   isBansSubmittedAction,
+  isCutTakenAction,
   isDraftStartedAction,
+  isMatchRecordedAction,
   isPoolBuiltAction,
+  isReopenedAction,
+  isResultsVoidedAction,
+  isTiebreakOrderedAction,
+  matchRecorded,
+  reopened,
+  resultsVoided,
+  tiebreakOrdered,
   type AnyAction,
 } from '../../src/core/actions';
 import {
@@ -31,6 +41,7 @@ import {
   MAX_COMPOSITION_RULES,
   MAX_IMPORT_BYTES,
   MAX_LOG_ENTRIES,
+  MAX_MATCH_METRIC,
   MAX_MEGA_FORME_BANS,
   MAX_PLAYERS,
   MAX_POOL_IDS,
@@ -2531,5 +2542,334 @@ describe('version 5 config fields', () => {
     expect(state.cut).toBeNull();
     expect(state.tiebreakOrders).toEqual([]);
     expect(state.lastReopenSeq).toBe(-1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The `tournament/*` family — TOUR-05, TOUR-06, TOUR-09
+//
+// Pitfall 5 is what this section exists for. `buildLogEntry` rebuilds every known type
+// FIELD BY FIELD, so a field the arm does not name is dropped with no local symptom: it
+// works in memory, it works in autosave, and it disappears the moment a host shares the
+// JSON. `import-guard.ts`'s `bans/placed` arm records the shipped precedent.
+//
+// Five types land here, three of them carrying arrays, so there is a round-trip assertion
+// PER TYPE rather than one in aggregate — an aggregate assertion passes while four of the
+// five arms are right.
+// ---------------------------------------------------------------------------
+
+/** Tournament entries appended after the draft, stamped the way `dispatch` would. */
+function docWith(...payloads: readonly Record<string, unknown>[]): TournamentDoc {
+  const doc = validDoc();
+  // `validDoc`'s log ends at seq 3. Strictly increasing from 4, which `buildLog` requires
+  // and which leaves the fixture's own targets stable enough to quote in an assertion.
+  const stamped = payloads.map((payload, offset) => ({
+    ...payload,
+    seq: 4 + offset,
+    at: 1_770_000_100_000 + offset,
+    actorId: 'host',
+  }));
+
+  return { ...doc, log: [...doc.log, ...(stamped as unknown as TournamentDoc['log'])] };
+}
+
+const MATCH_RECORDED: Record<string, unknown> = {
+  type: 'tournament/matchRecorded',
+  matchId: 'rr:0:1',
+  winnerId: 'p1',
+  loserId: 'p2',
+  winnerGames: 2,
+  loserGames: 1,
+  metric: 7,
+};
+
+const CUT_TAKEN: Record<string, unknown> = { type: 'tournament/cutTaken', seeds: ['p1', 'p2'] };
+const TIEBREAK_ORDERED: Record<string, unknown> = {
+  type: 'tournament/tiebreakOrdered',
+  playerIds: ['p2', 'p1'],
+};
+const REOPENED: Record<string, unknown> = { type: 'tournament/reopened' };
+
+describe('tournament actions — round trip per type', () => {
+  it('carries every matchRecorded field through export and re-import', () => {
+    const original = docWith(MATCH_RECORDED);
+
+    const result = parse(exported(original));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // The fold is what the host sees, and all six payload fields reach it — so a dropped
+    // field changes this comparison rather than hiding behind it.
+    expect(fold(result.doc)).toEqual(fold(original));
+    expect(fold(result.doc).matchResults).toEqual([
+      {
+        matchId: 'rr:0:1',
+        winnerId: 'p1',
+        loserId: 'p2',
+        winnerGames: 2,
+        loserGames: 1,
+        metric: 7,
+        seq: 4,
+      },
+    ]);
+  });
+
+  it('carries resultsVoided through export and re-import, targetSeqs included', () => {
+    const original = docWith(MATCH_RECORDED, {
+      type: 'tournament/resultsVoided',
+      targetSeqs: [4],
+      causedBySeq: 4,
+    });
+
+    const result = parse(exported(original));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(fold(result.doc)).toEqual(fold(original));
+    // A dropped `targetSeqs` folds to a void that voids nothing, so the result survives.
+    expect(fold(result.doc).matchResults).toEqual([]);
+
+    // `causedBySeq` reaches no fold — it is undo machinery — so the comparison above
+    // cannot see it. Asserted on the rebuilt entry directly, because this is exactly the
+    // field Pitfall 5 describes: no local symptom, and a broken paired undo on a shared file.
+    const voided = result.doc.log[result.doc.log.length - 1] as unknown as Record<string, unknown>;
+    expect(voided['causedBySeq']).toBe(4);
+    expect(voided['targetSeqs']).toEqual([4]);
+  });
+
+  it('carries cutTaken through export and re-import', () => {
+    const original = docWith(CUT_TAKEN);
+
+    const result = parse(exported(original));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(fold(result.doc)).toEqual(fold(original));
+    expect(fold(result.doc).cut).toEqual({ seeds: ['p1', 'p2'], seq: 4 });
+  });
+
+  it('carries tiebreakOrdered through export and re-import, in the host order', () => {
+    const original = docWith(TIEBREAK_ORDERED);
+
+    const result = parse(exported(original));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(fold(result.doc)).toEqual(fold(original));
+    // ORDER, not membership: the host put these two in this order, and a rebuild that
+    // sorted or de-duplicated them would be answering a different question.
+    expect(fold(result.doc).tiebreakOrders).toEqual([{ playerIds: ['p2', 'p1'], seq: 4 }]);
+  });
+
+  it('carries reopened through export and re-import', () => {
+    const original = docWith(REOPENED);
+
+    const result = parse(exported(original));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(fold(result.doc)).toEqual(fold(original));
+    expect(fold(result.doc).lastReopenSeq).toBe(4);
+  });
+});
+
+describe('tournament actions — match id', () => {
+  // Pitfall 1: a match id is INDEX-based because `buildPlayers` bounds a player id only as
+  // a non-empty unique string, so an id concatenated from two player ids is ambiguous.
+  it.each(['rr:a:b', 'br:1', 'rr:1:2:3', ' rr:1:2', 'rr::1', 'xx:1:2', ''])(
+    'refuses the match id %j',
+    (matchId) => {
+      expect(rejection(parse(exported(docWith({ ...MATCH_RECORDED, matchId }))))).toBe('wrongShape');
+    },
+  );
+
+  it.each(['rr:0:1', 'br:1:1', 'rr:10:11', 'br:12:34'])('accepts the match id %j', (matchId) => {
+    expect(parse(exported(docWith({ ...MATCH_RECORDED, matchId }))).ok).toBe(true);
+  });
+});
+
+describe('tournament actions — payload bounds', () => {
+  it('accepts a metric of exactly MAX_MATCH_METRIC', () => {
+    expect(parse(exported(docWith({ ...MATCH_RECORDED, metric: MAX_MATCH_METRIC }))).ok).toBe(true);
+  });
+
+  it('refuses a metric one past MAX_MATCH_METRIC', () => {
+    const result = parse(exported(docWith({ ...MATCH_RECORDED, metric: MAX_MATCH_METRIC + 1 })));
+    expect(rejection(result)).toBe('wrongShape');
+  });
+
+  it.each([-1, 1.5])('refuses the metric %p', (metric) => {
+    expect(rejection(parse(exported(docWith({ ...MATCH_RECORDED, metric }))))).toBe('wrongShape');
+  });
+
+  it('refuses a missing metric rather than defaulting it to zero', () => {
+    const withoutMetric: Record<string, unknown> = { ...MATCH_RECORDED };
+    delete withoutMetric['metric'];
+    expect(rejection(parse(exported(docWith(withoutMetric))))).toBe('wrongShape');
+  });
+
+  it.each([0, 3, -1])('refuses winnerGames %p, which is outside 1..2', (winnerGames) => {
+    const result = parse(exported(docWith({ ...MATCH_RECORDED, winnerGames })));
+    expect(rejection(result)).toBe('wrongShape');
+  });
+
+  it.each([2, -1])('refuses loserGames %p, which is outside 0..1', (loserGames) => {
+    const result = parse(exported(docWith({ ...MATCH_RECORDED, loserGames })));
+    expect(rejection(result)).toBe('wrongShape');
+  });
+
+  it('refuses a non-integer targetSeq', () => {
+    const result = parse(
+      exported(docWith({ type: 'tournament/resultsVoided', targetSeqs: [1.5], causedBySeq: 4 })),
+    );
+    expect(rejection(result)).toBe('wrongShape');
+  });
+
+  it('refuses a resultsVoided carrying no causedBySeq', () => {
+    const result = parse(exported(docWith({ type: 'tournament/resultsVoided', targetSeqs: [4] })));
+    expect(rejection(result)).toBe('wrongShape');
+  });
+
+  it('refuses a cutTaken whose seeds are not strings', () => {
+    const result = parse(exported(docWith({ type: 'tournament/cutTaken', seeds: [1, 2] })));
+    expect(rejection(result)).toBe('wrongShape');
+  });
+
+  it('refuses a tiebreakOrdered carrying no playerIds', () => {
+    const result = parse(exported(docWith({ type: 'tournament/tiebreakOrdered' })));
+    expect(rejection(result)).toBe('wrongShape');
+  });
+});
+
+describe('tournament actions — an unrecognised tournament type', () => {
+  it('keeps the envelope and loses the payload', () => {
+    const original = docWith({
+      type: 'tournament/somethingNewer',
+      matchId: 'rr:0:1',
+      winnerId: 'p1',
+    });
+
+    const result = parse(exported(original));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const entry = result.doc.log[result.doc.log.length - 1] as unknown as Record<string, unknown>;
+    expect(Object.keys(entry).sort()).toEqual(['actorId', 'at', 'seq', 'type']);
+    expect(entry['type']).toBe('tournament/somethingNewer');
+    // Sync rule 11: a newer client's action folds to nothing rather than crashing.
+    expect(fold(result.doc).matchResults).toEqual([]);
+  });
+});
+
+describe('tournament action creators', () => {
+  it('copies the array handed to cutTaken, so a later render cannot rewrite the log', () => {
+    const seeds = ['p1', 'p2'];
+    const payload = cutTaken(seeds);
+
+    seeds[0] = 'p9';
+    seeds.push('p3');
+
+    expect(payload.seeds).toEqual(['p1', 'p2']);
+  });
+
+  it('copies the array handed to tiebreakOrdered', () => {
+    const playerIds = ['p2', 'p1'];
+    const payload = tiebreakOrdered(playerIds);
+
+    playerIds.reverse();
+
+    expect(payload.playerIds).toEqual(['p2', 'p1']);
+  });
+
+  it('copies the array handed to resultsVoided', () => {
+    const targetSeqs = [4, 5];
+    const payload = resultsVoided(targetSeqs, 4);
+
+    targetSeqs[0] = 99;
+
+    expect(payload.targetSeqs).toEqual([4, 5]);
+    expect(payload.causedBySeq).toBe(4);
+  });
+
+  it('carries loserId as a supplied field rather than deriving it', () => {
+    expect(matchRecorded('br:1:1', 'p1', 'p2', 2, 1, 6)).toEqual({
+      type: 'tournament/matchRecorded',
+      matchId: 'br:1:1',
+      winnerId: 'p1',
+      loserId: 'p2',
+      winnerGames: 2,
+      loserGames: 1,
+      metric: 6,
+    });
+  });
+
+  it('gives reopened an envelope-only payload', () => {
+    expect(reopened()).toEqual({ type: 'tournament/reopened' });
+  });
+});
+
+describe('tournament action guards', () => {
+  const stamped = (payload: Record<string, unknown>): AnyAction =>
+    ({ ...payload, seq: 4, at: 1, actorId: 'host' }) as unknown as AnyAction;
+
+  it('refuses a matchRecorded whose type is wrong', () => {
+    expect(isMatchRecordedAction(stamped({ ...MATCH_RECORDED, type: 'draft/pickMade' }))).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    ['matchId', 1],
+    ['winnerId', null],
+    ['loserId', 2],
+    ['winnerGames', '2'],
+    ['loserGames', 1.5],
+    ['metric', '7'],
+  ])('refuses a matchRecorded whose %s is the wrong kind', (field, value) => {
+    expect(isMatchRecordedAction(stamped({ ...MATCH_RECORDED, [field]: value }))).toBe(false);
+  });
+
+  it('accepts a well-formed matchRecorded, and asks nothing about the config', () => {
+    // Whether `winnerGames: 2` is legal at a `bo1` stage is `canApply`'s question, per
+    // `actions.ts`'s guard/canApply split. A guard reaching for the config would be a
+    // second authority on the same rule, free to disagree with the first.
+    expect(isMatchRecordedAction(stamped(MATCH_RECORDED))).toBe(true);
+  });
+
+  it('refuses a resultsVoided whose targetSeqs are not integers', () => {
+    expect(
+      isResultsVoidedAction(
+        stamped({ type: 'tournament/resultsVoided', targetSeqs: ['4'], causedBySeq: 4 }),
+      ),
+    ).toBe(false);
+  });
+
+  it('accepts a well-formed resultsVoided', () => {
+    expect(
+      isResultsVoidedAction(
+        stamped({ type: 'tournament/resultsVoided', targetSeqs: [4, 9], causedBySeq: 4 }),
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses a cutTaken whose seeds are not an array of strings', () => {
+    expect(isCutTakenAction(stamped({ type: 'tournament/cutTaken', seeds: 'p1' }))).toBe(false);
+  });
+
+  it('accepts a well-formed cutTaken', () => {
+    expect(isCutTakenAction(stamped(CUT_TAKEN))).toBe(true);
+  });
+
+  it('refuses a tiebreakOrdered carrying no playerIds', () => {
+    expect(isTiebreakOrderedAction(stamped({ type: 'tournament/tiebreakOrdered' }))).toBe(false);
+  });
+
+  it('accepts a well-formed tiebreakOrdered', () => {
+    expect(isTiebreakOrderedAction(stamped(TIEBREAK_ORDERED))).toBe(true);
+  });
+
+  it('accepts an envelope-only reopened and refuses another type', () => {
+    expect(isReopenedAction(stamped(REOPENED))).toBe(true);
+    expect(isReopenedAction(stamped({ type: 'tournament/cutTaken' }))).toBe(false);
   });
 });
