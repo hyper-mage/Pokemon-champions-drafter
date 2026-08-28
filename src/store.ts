@@ -740,6 +740,35 @@ function undoAnnouncement(
       // bans are still recorded, and they are off the screen again.
       return 'Undid the reveal. The bans are recorded and not shown.';
 
+    /*
+      THE FIVE TOURNAMENT ARMS — D-12. None of them calls `speciesName`, and none of them
+      could: `UndoRemoval.monId` is null for every tournament kind, because nothing here
+      touches the pool. What each one names instead is the FACT that stopped being true,
+      which is what somebody not watching the screen needs from the live region.
+    */
+    case 'match':
+      // `playerId` is the winner, so this names the one thing the undo actually changed.
+      return `Undid the recorded result. ${playerName}'s win no longer stands.`;
+
+    case 'void':
+      // One sentence for a removal that is usually TWO entries — the void and the
+      // `matchRecorded` it accompanied. Describing it as one act is the honest reading:
+      // the host made one correction, and one press took all of it back.
+      return 'Undid the correction. The earlier result stands again and nothing is voided.';
+
+    case 'cut':
+      // No player is named because a cut is about all of them, and the bracket going away
+      // is the part the room needs to hear.
+      return 'Undid the cut. The bracket is gone and the standings stand.';
+
+    case 'tiebreak':
+      // Says what the standings now show, rather than naming the players whose order was
+      // removed — the table itself is where those names belong.
+      return 'Undid the tiebreak order. Those players are tied again.';
+
+    case 'reopen':
+      return 'Undid the reopen. The tournament is finished again.';
+
     default: {
       // A new kind with no arm is a COMPILE ERROR rather than a species name spoken into a
       // room. This assignment is the whole reason the chain of `if`s became a switch.

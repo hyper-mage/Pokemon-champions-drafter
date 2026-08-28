@@ -52,10 +52,15 @@ import {
   isBansRevealedAction,
   isBansSubmittedAction,
   isCardsPlayedAction,
+  isCutTakenAction,
+  isMatchRecordedAction,
   isOrderResolvedAction,
   isPickMadeAction,
+  isReopenedAction,
+  isResultsVoidedAction,
   isSwapMadeAction,
   isSwapPassedAction,
+  isTiebreakOrderedAction,
   type Action,
   type CardsPlayedAction,
   type PickMadeAction,
@@ -157,6 +162,20 @@ const NEVER_UNDONE: readonly string[] = [POOL_BUILT, SCHEDULE_COMPILED, DRAFT_ST
  * the next thing below a ban is `draft/started`, which the deny-list correctly refuses. The
  * result is `Undo last move` doing nothing at all, on the one stage D-03 calls the
  * correction path for the phase's primary input.
+ *
+ * THE FIVE TOURNAMENT TYPES join in 05-08, all five at once, and D-12 is unconditional:
+ * one stack for the whole log, exactly as Phase 3 established it and Phase 4 kept it. Undo
+ * is the fast path for "that was the wrong winner"; D-09 and D-10's correction flow is for
+ * a mistake three matches back. `NEVER_UNDONE` is again unchanged, and again none of the
+ * five is near it.
+ *
+ * They are listed here in the same change that declared them, and the reason is worth
+ * stating because it is the one omission the type system does NOT catch. `UndoRemoval.kind`
+ * widening forces an arm in `undoAnnouncement` — `store.ts`'s `const exhaustive: never`
+ * makes a missing announcement a compile error. Nothing makes a missing ALLOW-LIST entry
+ * anything at all: the type still folds, the log still grows, and `Undo last move` simply
+ * reaches past it to a pick made half an hour earlier. Pitfall 6's warning sign is exactly
+ * that — the button enabled and inert after recording a match.
  */
 function isUndoable(action: Action): boolean {
   if (NEVER_UNDONE.includes(action.type)) return false;
@@ -168,7 +187,12 @@ function isUndoable(action: Action): boolean {
     isSwapPassedAction(action) ||
     isBansPlacedAction(action) ||
     isBansSubmittedAction(action) ||
-    isBansRevealedAction(action)
+    isBansRevealedAction(action) ||
+    isMatchRecordedAction(action) ||
+    isResultsVoidedAction(action) ||
+    isCutTakenAction(action) ||
+    isTiebreakOrderedAction(action) ||
+    isReopenedAction(action)
   );
 }
 
@@ -214,6 +238,33 @@ function triggeringCardIndex(doc: TournamentDoc, resolvedIndex: number, round: n
 }
 
 /**
+ * The `tournament/matchRecorded` a void accompanies — found by `seq`, EXACTLY.
+ *
+ * Compare this with {@link triggeringCardIndex} directly above, which searches for a
+ * plausible neighbour and says so: it matches on the round because a stray entry between
+ * the two could otherwise pair a resolution with a card from some other round. That is a
+ * heuristic doing its best with a log that carries no link between the two actions.
+ *
+ * `causedBySeq` removes the guesswork. The void NAMES the record it accompanies, so this
+ * matches one number against one number — no adjacency, no round, nothing that a third
+ * entry landing between them could disturb. That exactness is what makes D-10's "undo puts
+ * the whole correction back in one step" TRUE rather than intended.
+ *
+ * A missing target returns `-1` and the caller takes only the void, on `draft/pickUndone`'s
+ * precedent: `seq` may legally have gaps, an imported log is untrusted, and removing an
+ * unrelated result because the named one was absent would be worse than leaving a
+ * correction half-undone in a document this build never wrote.
+ */
+function causingRecordIndex(doc: TournamentDoc, voidIndex: number, causedBySeq: number): number {
+  for (let index = voidIndex - 1; index >= 0; index--) {
+    const action = doc.log[index];
+    if (action === undefined) continue;
+    if (isMatchRecordedAction(action) && action.seq === causedBySeq) return index;
+  }
+  return -1;
+}
+
+/**
  * Which log entries an undo would drop, ascending. Empty when there is nothing to undo.
  *
  * ## Why a resolution takes its trigger with it — D-20, and 03-RESEARCH's Pitfall 5
@@ -230,6 +281,19 @@ function triggeringCardIndex(doc: TournamentDoc, resolvedIndex: number, round: n
  * The alternative was making resolution a host click, which costs a click per round and
  * contradicts D-17's whole point — that "every card down but no order yet" is a screen
  * state nobody should have to look at.
+ *
+ * ## Why a void takes its correction with it — D-10, D-12
+ *
+ * The second pairing, and it is the same shape for a different reason. A correction that
+ * changes who is in a downstream match is TWO actions by design: the new
+ * `tournament/matchRecorded`, and a `tournament/resultsVoided` naming what it invalidated.
+ * They are one host act — one click, one confirm, one sentence in the recap — so undoing
+ * half of it would leave a semi-final corrected with its final still cleared, which is a
+ * state nothing on screen describes and nothing offers to fix.
+ *
+ * The pairing is by `causedBySeq` rather than by adjacency, and
+ * {@link causingRecordIndex} carries the comparison with `triggeringCardIndex`'s
+ * heuristic search.
  */
 function removalIndices(doc: TournamentDoc): number[] {
   const index = lastUndoableIndex(doc);
@@ -239,6 +303,11 @@ function removalIndices(doc: TournamentDoc): number[] {
   if (action !== undefined && isOrderResolvedAction(action)) {
     const cardIndex = triggeringCardIndex(doc, index, action.round);
     if (cardIndex !== -1) return [cardIndex, index];
+  }
+
+  if (action !== undefined && isResultsVoidedAction(action)) {
+    const recordIndex = causingRecordIndex(doc, index, action.causedBySeq);
+    if (recordIndex !== -1) return [recordIndex, index];
   }
 
   return [index];
@@ -262,7 +331,12 @@ export interface UndoRemoval {
     | 'pass'
     | 'banPlaced'
     | 'banSubmission'
-    | 'banReveal';
+    | 'banReveal'
+    | 'match'
+    | 'void'
+    | 'cut'
+    | 'tiebreak'
+    | 'reopen';
   /**
    * 1-based round of the action being removed.
    *
@@ -278,6 +352,11 @@ export interface UndoRemoval {
    * caller comparing this against the current round again hears "no round was crossed".
    * Which ban undos DO need a confirm is stated explicitly in
    * {@link undoCrossesRoundBoundary} rather than inferred from this number.
+   *
+   * For every TOURNAMENT kind, `config.rounds`, on the `'pass'` precedent exactly. A match
+   * record, a void, a cut, a tiebreak order and a reopen all happen after the last pick,
+   * so no pick round was crossed and the draft is standing on its last one — which is the
+   * same honest answer a pass gives, arrived at the same way.
    */
   round: number;
   /** Whose move it was. The UI resolves the display name; core never holds one. */
@@ -447,6 +526,93 @@ export function undoRemoval(doc: TournamentDoc): UndoRemoval | null {
     return {
       kind: 'banReveal',
       round: 1,
+      playerId: '',
+      monId: null,
+      outMonId: null,
+      cardValue: null,
+      swapRound: null,
+      removedCount: indices.length,
+    };
+  }
+
+  /*
+    THE FIVE TOURNAMENT ARMS — D-12, and every one of them carries `monId: null`.
+
+    `UndoRemoval.monId` means "the species returning to the POOL". Nothing in a tournament
+    touches the pool: the draft is over, every team is full, and the only thing a match
+    record moves is a name between two columns of a results grid. There is no honest value
+    to put here, and no dishonest one worth inventing.
+
+    `round: config.rounds` on the `'pass'` precedent — see the field's own doc block. All
+    five happen after the last pick, so a caller comparing this against the current round
+    gets the honest "no round was crossed", and `undoCrossesRoundBoundary` leaves these
+    kinds out of `ROUND_COMPARABLE_KINDS` rather than trusting the arithmetic to agree.
+
+    `playerId` is the WINNER for a match record, because that is the one player an
+    announcement can name truthfully — undoing the record is exactly "that win no longer
+    stands". The other four are host acts about the whole tournament and carry `''`, on
+    the `'banReveal'` precedent above: naming a player would imply the undo did something
+    to them in particular, and none of them does.
+  */
+  if (isMatchRecordedAction(primary)) {
+    return {
+      kind: 'match',
+      round: doc.config.rounds,
+      playerId: primary.winnerId,
+      monId: null,
+      outMonId: null,
+      cardValue: null,
+      swapRound: null,
+      removedCount: indices.length,
+    };
+  }
+
+  if (isResultsVoidedAction(primary)) {
+    // `removedCount` is 2 whenever `causedBySeq` found its record, which is what
+    // `confirm-copy.ts`'s `removedCount > 1` clause reads to say a whole correction is
+    // coming back rather than half of one.
+    return {
+      kind: 'void',
+      round: doc.config.rounds,
+      playerId: '',
+      monId: null,
+      outMonId: null,
+      cardValue: null,
+      swapRound: null,
+      removedCount: indices.length,
+    };
+  }
+
+  if (isCutTakenAction(primary)) {
+    return {
+      kind: 'cut',
+      round: doc.config.rounds,
+      playerId: '',
+      monId: null,
+      outMonId: null,
+      cardValue: null,
+      swapRound: null,
+      removedCount: indices.length,
+    };
+  }
+
+  if (isTiebreakOrderedAction(primary)) {
+    return {
+      kind: 'tiebreak',
+      round: doc.config.rounds,
+      playerId: '',
+      monId: null,
+      outMonId: null,
+      cardValue: null,
+      swapRound: null,
+      removedCount: indices.length,
+    };
+  }
+
+  if (isReopenedAction(primary)) {
+    return {
+      kind: 'reopen',
+      round: doc.config.rounds,
       playerId: '',
       monId: null,
       outMonId: null,

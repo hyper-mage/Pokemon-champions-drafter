@@ -16,16 +16,21 @@ import {
   bansSubmitted,
   CARDS_PLAYED,
   cardsPlayed,
+  cutTaken,
   DRAFT_PICK_MADE,
   draftStarted,
   isScheduleCompiledAction,
+  matchRecorded,
   ORDER_RESOLVED,
   orderResolved,
   pickMade,
   pickUndone,
   poolBuilt,
+  reopened,
+  resultsVoided,
   SCHEDULE_COMPILED,
   scheduleCompiled,
+  tiebreakOrdered,
   type Action,
   type AnyAction,
   type Intent,
@@ -35,6 +40,9 @@ import { resolvePickOrder } from '../../src/core/cards';
 import {
   initialState,
   SCHEMA_VERSION,
+  type DraftPick,
+  type DraftState,
+  type MatchResult,
   type TournamentConfig,
   type TournamentDoc,
 } from '../../src/core/model';
@@ -1760,5 +1768,535 @@ describe('canApply(bans/revealed)', () => {
       ok: false,
       reason: 'draftNotStarted',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The tournament arms — TOUR-05, TOUR-06, TOUR-09
+//
+// These fixtures build a `DraftState` directly rather than folding a full four-player
+// draft, on `tests/core/tournament.test.ts`'s stated precedent: the arms under test are
+// functions of the fold, and 24 picks of scaffolding would obscure which field each
+// assertion is actually about. The arms that DO have to be exercised through a fold —
+// "later beats earlier", and a void that lands after the record it accompanies — are, and
+// they say so.
+// ---------------------------------------------------------------------------
+
+const TOUR_ORDER = ['p1', 'p2', 'p3', 'p4'];
+
+function tourConfig(overrides: Partial<TournamentConfig> = {}): TournamentConfig {
+  return {
+    ...CONFIG,
+    players: TOUR_ORDER.map((id, index) => ({ id, name: `Player ${index + 1}` })),
+    // Two rounds rather than six: `selectIsTournamentComplete` needs every team full, and
+    // the number of picks it takes to get there is not what any assertion below is about.
+    rounds: 2,
+    depth: 'draftBracketsAndLog',
+    ...overrides,
+  };
+}
+
+/** Every team full — the earliest state a tournament stage can open on. */
+function tourState(config: TournamentConfig, overrides: Partial<DraftState> = {}): DraftState {
+  const picks: DraftPick[] = [];
+  for (let round = 1; round <= config.rounds; round++) {
+    for (const player of config.players) {
+      picks.push({
+        playerId: player.id,
+        monId: `m${picks.length}`,
+        round,
+        pickIndex: picks.length,
+        seq: picks.length,
+      });
+    }
+  }
+
+  return {
+    ...initialState(config),
+    order: config.players.map((player) => player.id),
+    picks,
+    ...overrides,
+  };
+}
+
+/** `rr:{i}:{j}` from two player ids — INDICES, which is the whole point of the shape. */
+function rrId(config: TournamentConfig, aId: string, bId: string): string {
+  const ids = config.players.map((player) => player.id);
+  const i = Math.min(ids.indexOf(aId), ids.indexOf(bId));
+  const j = Math.max(ids.indexOf(aId), ids.indexOf(bId));
+  return `rr:${i}:${j}`;
+}
+
+function rrResult(
+  config: TournamentConfig,
+  winnerId: string,
+  loserId: string,
+  metric = 0,
+  seq = 100,
+): MatchResult {
+  return {
+    matchId: rrId(config, winnerId, loserId),
+    winnerId,
+    loserId,
+    winnerGames: 1,
+    loserGames: 0,
+    metric,
+    seq,
+  };
+}
+
+/** p1 3–0, p2 2–1, p3 1–2, p4 0–3 — a complete round robin with no tie anywhere. */
+function distinctRecords(config: TournamentConfig): MatchResult[] {
+  const pairs: [string, string][] = [
+    ['p1', 'p2'],
+    ['p1', 'p3'],
+    ['p1', 'p4'],
+    ['p2', 'p3'],
+    ['p2', 'p4'],
+    ['p3', 'p4'],
+  ];
+  return pairs.map(([winnerId, loserId], index) =>
+    rrResult(config, winnerId, loserId, 0, 100 + index),
+  );
+}
+
+/**
+ * p1 3–0, then p2, p3 and p4 all 1–2 in a CYCLE — a block of three the chain cannot split.
+ *
+ * Record ties them, the metric is level, head-to-head is not reached because the block is
+ * larger than two, and no host order names them. `decidedBy` is `'tied'` for all three.
+ */
+function tiedBlockRecords(config: TournamentConfig): MatchResult[] {
+  const pairs: [string, string][] = [
+    ['p1', 'p2'],
+    ['p1', 'p3'],
+    ['p1', 'p4'],
+    ['p2', 'p3'],
+    ['p3', 'p4'],
+    ['p4', 'p2'],
+  ];
+  return pairs.map(([winnerId, loserId], index) =>
+    rrResult(config, winnerId, loserId, 0, 100 + index),
+  );
+}
+
+/** The bracket a cut of all four produces: `br:1:1` is p1–p4 and `br:1:2` is p2–p3. */
+function bracketResults(): MatchResult[] {
+  return [
+    { matchId: 'br:1:1', winnerId: 'p1', loserId: 'p4', winnerGames: 1, loserGames: 0, metric: 0, seq: 210 },
+    { matchId: 'br:1:2', winnerId: 'p2', loserId: 'p3', winnerGames: 1, loserGames: 0, metric: 0, seq: 211 },
+  ];
+}
+
+const FINAL_RESULT: MatchResult = {
+  matchId: 'br:2:1',
+  winnerId: 'p1',
+  loserId: 'p2',
+  winnerGames: 1,
+  loserGames: 0,
+  metric: 0,
+  seq: 220,
+};
+
+/** Round robin complete, cut taken, both semis played. Nothing is locked yet. */
+function bracketState(config: TournamentConfig, overrides: Partial<DraftState> = {}): DraftState {
+  return tourState(config, {
+    matchResults: [...distinctRecords(config), ...bracketResults()],
+    cut: { seeds: ['p1', 'p2', 'p3', 'p4'], seq: 200 },
+    ...overrides,
+  });
+}
+
+/** The same tournament with its final recorded — `selectTournamentLocked` holds. */
+function lockedState(config: TournamentConfig): DraftState {
+  return tourState(config, {
+    matchResults: [...distinctRecords(config), ...bracketResults(), FINAL_RESULT],
+    cut: { seeds: ['p1', 'p2', 'p3', 'p4'], seq: 200 },
+  });
+}
+
+describe('apply — tournament/matchRecorded', () => {
+  it('REPLACES an existing result for the same match id rather than appending one', () => {
+    const config = tourConfig();
+    const matchId = rrId(config, 'p1', 'p2');
+    const state = tourState(config);
+
+    const folded = [
+      stamp(matchRecorded(matchId, 'p1', 'p2', 1, 0, 3), 400),
+      stamp(matchRecorded(matchId, 'p2', 'p1', 1, 0, 5), 401),
+    ].reduce(apply, state);
+
+    expect(folded.matchResults).toHaveLength(1);
+    expect(folded.matchResults[0]).toEqual({
+      matchId,
+      winnerId: 'p2',
+      loserId: 'p1',
+      winnerGames: 1,
+      loserGames: 0,
+      metric: 5,
+      // The NEW action's seq, off the envelope — this is what a void targets, and taking
+      // the superseded entry's would make a correction uncorrectable.
+      seq: 401,
+    });
+  });
+
+  it('appends a result for a match id it has not seen', () => {
+    const config = tourConfig();
+    const state = tourState(config);
+
+    const folded = [
+      stamp(matchRecorded(rrId(config, 'p1', 'p2'), 'p1', 'p2', 1, 0, 0), 400),
+      stamp(matchRecorded(rrId(config, 'p3', 'p4'), 'p3', 'p4', 1, 0, 0), 401),
+    ].reduce(apply, state);
+
+    expect(folded.matchResults.map((result) => result.matchId)).toEqual(['rr:0:1', 'rr:2:3']);
+  });
+
+  it('ignores a malformed payload rather than folding a partial result', () => {
+    const state = tourState(tourConfig());
+    const malformed = { type: 'tournament/matchRecorded', matchId: 'rr:0:1', seq: 400, at: 1, actorId: 'host' } as unknown as AnyAction;
+
+    expect(apply(state, malformed)).toBe(state);
+  });
+});
+
+describe('apply — tournament/resultsVoided', () => {
+  it('removes every result whose seq is named', () => {
+    const config = tourConfig();
+    const state = bracketState(config);
+
+    const folded = apply(state, stamp(resultsVoided([210, 211], 400), 401));
+
+    expect(folded.matchResults.map((result) => result.matchId)).toEqual([
+      'rr:0:1',
+      'rr:0:2',
+      'rr:0:3',
+      'rr:1:2',
+      'rr:1:3',
+      'rr:2:3',
+    ]);
+  });
+
+  it('nulls the cut when the cut seq is named', () => {
+    const config = tourConfig();
+    const state = bracketState(config);
+
+    expect(apply(state, stamp(resultsVoided([200, 210, 211], 400), 401)).cut).toBeNull();
+  });
+
+  it('leaves the cut alone when its seq is not named', () => {
+    const config = tourConfig();
+    const state = bracketState(config);
+
+    expect(apply(state, stamp(resultsVoided([210], 400), 401)).cut).toEqual({
+      seeds: ['p1', 'p2', 'p3', 'p4'],
+      seq: 200,
+    });
+  });
+
+  it('NEVER removes a tiebreakOrders entry, whatever targetSeqs contains', () => {
+    const config = tourConfig();
+    const orders = [{ playerIds: ['p2', 'p3', 'p4'], seq: 300 }];
+    const state = bracketState(config, { tiebreakOrders: orders });
+
+    // 300 is deliberately named. An override self-invalidates by SET EQUALITY, so voiding
+    // it here would be a second mechanism for one fact.
+    const folded = apply(state, stamp(resultsVoided([210, 300], 400), 401));
+
+    expect(folded.tiebreakOrders).toEqual([{ playerIds: ['p2', 'p3', 'p4'], seq: 300 }]);
+  });
+
+  it('returns the state unchanged when nothing matched', () => {
+    const state = bracketState(tourConfig());
+
+    expect(apply(state, stamp(resultsVoided([9999], 400), 401))).toBe(state);
+  });
+});
+
+describe('apply — the remaining three tournament arms', () => {
+  it('sets the cut to the seeds plus the envelope seq', () => {
+    const config = tourConfig();
+    const state = tourState(config, { matchResults: distinctRecords(config) });
+
+    expect(apply(state, stamp(cutTaken(['p1', 'p2']), 407)).cut).toEqual({
+      seeds: ['p1', 'p2'],
+      seq: 407,
+    });
+  });
+
+  it('appends a tiebreak order and does not remove an earlier one for the same set', () => {
+    const state = tourState(tourConfig());
+
+    // 05-03's chain reads the HIGHEST seq per set, so both entries standing is correct and
+    // a replace here would silently change what an undo of the second restores.
+    const folded = [
+      stamp(tiebreakOrdered(['p2', 'p3', 'p4']), 410),
+      stamp(tiebreakOrdered(['p4', 'p3', 'p2']), 411),
+    ].reduce(apply, state);
+
+    expect(folded.tiebreakOrders).toEqual([
+      { playerIds: ['p2', 'p3', 'p4'], seq: 410 },
+      { playerIds: ['p4', 'p3', 'p2'], seq: 411 },
+    ]);
+  });
+
+  it('sets lastReopenSeq to the envelope seq', () => {
+    const state = lockedState(tourConfig());
+
+    expect(apply(state, stamp(reopened(), 415)).lastReopenSeq).toBe(415);
+  });
+});
+
+describe('canApply — tournament, the stage gate', () => {
+  const NOT_RUNNING = { ok: false, reason: 'tournamentNotRunning' } as const;
+
+  it('refuses all five while the tournament is not running', () => {
+    const config = tourConfig({ depth: 'draftOnly' });
+    const state = tourState(config);
+
+    expect(canApply(state, stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 0), 400))).toEqual(
+      NOT_RUNNING,
+    );
+    expect(canApply(state, stamp(resultsVoided([100], 400), 401))).toEqual(NOT_RUNNING);
+    expect(canApply(state, stamp(cutTaken(['p1', 'p2']), 402))).toEqual(NOT_RUNNING);
+    expect(canApply(state, stamp(tiebreakOrdered(['p2', 'p3']), 403))).toEqual(NOT_RUNNING);
+    expect(canApply(state, stamp(reopened(), 404))).toEqual(NOT_RUNNING);
+  });
+
+  it('refuses all five while the draft is still running', () => {
+    const config = tourConfig();
+    const state = { ...tourState(config), picks: [] };
+
+    expect(canApply(state, stamp(cutTaken(['p1', 'p2']), 402))).toEqual(NOT_RUNNING);
+  });
+});
+
+describe('canApply — tournament, locked and reopened', () => {
+  it('refuses the four write actions with tournamentLocked and allows the reopen', () => {
+    const config = tourConfig();
+    const state = lockedState(config);
+    const locked = { ok: false, reason: 'tournamentLocked' } as const;
+
+    expect(
+      canApply(state, stamp(matchRecorded(rrId(config, 'p1', 'p2'), 'p2', 'p1', 1, 0, 0), 400)),
+    ).toEqual(locked);
+    expect(canApply(state, stamp(resultsVoided([220], 400), 401))).toEqual(locked);
+    expect(canApply(state, stamp(cutTaken(['p1', 'p2']), 402))).toEqual(locked);
+    expect(canApply(state, stamp(tiebreakOrdered(['p2', 'p3']), 403))).toEqual(locked);
+
+    expect(canApply(state, stamp(reopened(), 404))).toEqual({ ok: true });
+  });
+
+  it('refuses a reopen while the tournament is not locked', () => {
+    const state = bracketState(tourConfig());
+
+    expect(canApply(state, stamp(reopened(), 404))).toEqual({
+      ok: false,
+      reason: 'notReopenable',
+    });
+  });
+});
+
+describe('canApply — tournament/matchRecorded', () => {
+  it('refuses a match id that names neither a pairing nor a bracket slot', () => {
+    const config = tourConfig();
+    const state = tourState(config, { matchResults: distinctRecords(config) });
+
+    // A shape-valid id naming a pairing this player list does not have.
+    expect(canApply(state, stamp(matchRecorded('rr:0:9', 'p1', 'p2', 1, 0, 0), 400))).toEqual({
+      ok: false,
+      reason: 'unknownMatch',
+    });
+    // A bracket id with no cut taken.
+    expect(canApply(state, stamp(matchRecorded('br:1:1', 'p1', 'p4', 1, 0, 0), 401))).toEqual({
+      ok: false,
+      reason: 'unknownMatch',
+    });
+    // Not a match id at all.
+    expect(canApply(state, stamp(matchRecorded('nonsense', 'p1', 'p2', 1, 0, 0), 402))).toEqual({
+      ok: false,
+      reason: 'unknownMatch',
+    });
+  });
+
+  it('refuses a bracket match whose participants are not known yet', () => {
+    const config = tourConfig();
+    const state = tourState(config, {
+      matchResults: distinctRecords(config),
+      cut: { seeds: ['p1', 'p2', 'p3', 'p4'], seq: 200 },
+    });
+
+    expect(canApply(state, stamp(matchRecorded('br:2:1', 'p1', 'p2', 1, 0, 0), 400))).toEqual({
+      ok: false,
+      reason: 'matchNotPlayable',
+    });
+  });
+
+  it('refuses a bye, which is not played and carries no result', () => {
+    const config = tourConfig();
+    const state = tourState(config, {
+      matchResults: distinctRecords(config),
+      // Three seeds, so seed 4 is a phantom and `br:1:1` is seed 1's bye.
+      cut: { seeds: ['p1', 'p2', 'p3'], seq: 200 },
+    });
+
+    expect(canApply(state, stamp(matchRecorded('br:1:1', 'p1', 'p2', 1, 0, 0), 400))).toEqual({
+      ok: false,
+      reason: 'matchNotPlayable',
+    });
+  });
+
+  it('refuses a winner and loser that are not the match participants', () => {
+    const config = tourConfig();
+    const state = tourState(config, { matchResults: [] });
+
+    expect(
+      canApply(state, stamp(matchRecorded(rrId(config, 'p1', 'p2'), 'p1', 'p3', 1, 0, 0), 400)),
+    ).toEqual({ ok: false, reason: 'wrongMatchParticipants' });
+  });
+
+  it('reads roundRobinFormat for an rr id and bracketFormat for a br id', () => {
+    const config = tourConfig({ roundRobinFormat: 'bo1', bracketFormat: 'bo3' });
+    const state = tourState(config, {
+      matchResults: distinctRecords(config),
+      cut: { seeds: ['p1', 'p2', 'p3', 'p4'], seq: 200 },
+    });
+
+    // Two games at a bo1 stage.
+    expect(
+      canApply(state, stamp(matchRecorded(rrId(config, 'p1', 'p2'), 'p1', 'p2', 2, 1, 0), 400)),
+    ).toEqual({ ok: false, reason: 'gamesNotForFormat' });
+
+    // The SAME games, on a br id, at a bo3 stage.
+    expect(canApply(state, stamp(matchRecorded('br:1:1', 'p1', 'p4', 2, 1, 0), 401))).toEqual({
+      ok: true,
+    });
+
+    // And one game at a bo3 stage is the mirror refusal.
+    expect(canApply(state, stamp(matchRecorded('br:1:1', 'p1', 'p4', 1, 0, 0), 402))).toEqual({
+      ok: false,
+      reason: 'gamesNotForFormat',
+    });
+  });
+
+  it('refuses a non-zero metric below draftBracketsAndLog', () => {
+    const config = tourConfig({ depth: 'draftAndBrackets' });
+    const state = tourState(config);
+
+    expect(
+      canApply(state, stamp(matchRecorded(rrId(config, 'p1', 'p2'), 'p1', 'p2', 1, 0, 4), 400)),
+    ).toEqual({ ok: false, reason: 'metricNotForDepth' });
+
+    expect(
+      canApply(state, stamp(matchRecorded(rrId(config, 'p1', 'p2'), 'p1', 'p2', 1, 0, 0), 401)),
+    ).toEqual({ ok: true });
+  });
+
+  it('refuses a byte-identical re-record and accepts a metric-only correction', () => {
+    const config = tourConfig();
+    const matchId = rrId(config, 'p1', 'p2');
+    const state = tourState(config, {
+      matchResults: [
+        { matchId, winnerId: 'p1', loserId: 'p2', winnerGames: 1, loserGames: 0, metric: 4, seq: 100 },
+      ],
+    });
+
+    expect(canApply(state, stamp(matchRecorded(matchId, 'p1', 'p2', 1, 0, 4), 400))).toEqual({
+      ok: false,
+      reason: 'resultUnchanged',
+    });
+
+    // A metric-only change IS a correction, and mislabelling it would make the one
+    // correction a tier-3 host most often needs impossible to record.
+    expect(canApply(state, stamp(matchRecorded(matchId, 'p1', 'p2', 1, 0, 5), 401))).toEqual({
+      ok: true,
+    });
+  });
+});
+
+describe('canApply — tournament/cutTaken', () => {
+  it('refuses a second cut', () => {
+    const state = bracketState(tourConfig());
+
+    expect(canApply(state, stamp(cutTaken(['p1', 'p2']), 400))).toEqual({
+      ok: false,
+      reason: 'cutAlreadyTaken',
+    });
+  });
+
+  it('refuses a cut while matches are still to play', () => {
+    const config = tourConfig();
+    const state = tourState(config, { matchResults: distinctRecords(config).slice(0, 5) });
+
+    expect(canApply(state, stamp(cutTaken(['p1', 'p2']), 400))).toEqual({
+      ok: false,
+      reason: 'roundRobinNotComplete',
+    });
+  });
+
+  it('refuses a cut size outside two through the player count', () => {
+    const config = tourConfig();
+    const state = tourState(config, { matchResults: distinctRecords(config) });
+
+    expect(canApply(state, stamp(cutTaken(['p1']), 400))).toEqual({
+      ok: false,
+      reason: 'cutSizeOutOfRange',
+    });
+    expect(canApply(state, stamp(cutTaken(['p1', 'p2', 'p3', 'p4', 'p1']), 401))).toEqual({
+      ok: false,
+      reason: 'cutSizeOutOfRange',
+    });
+    expect(canApply(state, stamp(cutTaken(['p1', 'p2', 'p3', 'p4']), 402))).toEqual({ ok: true });
+  });
+
+  it('refuses a cut that splits a block nobody has ordered', () => {
+    const config = tourConfig();
+    const state = tourState(config, { matchResults: tiedBlockRecords(config) });
+
+    // p2, p3 and p4 share second place, so a cut at two puts one of three arbitrarily in.
+    expect(canApply(state, stamp(cutTaken(['p1', 'p2']), 400))).toEqual({
+      ok: false,
+      reason: 'cutSplitsTiedBlock',
+    });
+  });
+});
+
+describe('canApply — tournament/tiebreakOrdered', () => {
+  it('accepts the tied block and refuses anything else', () => {
+    const config = tourConfig();
+    const state = tourState(config, { matchResults: tiedBlockRecords(config) });
+
+    expect(canApply(state, stamp(tiebreakOrdered(['p4', 'p2', 'p3']), 400))).toEqual({ ok: true });
+
+    // A SUBSET of the block is not the set of players who are actually tied.
+    expect(canApply(state, stamp(tiebreakOrdered(['p2', 'p3']), 401))).toEqual({
+      ok: false,
+      reason: 'tiebreakBlockNotTied',
+    });
+
+    // And a block the chain already resolved is not tied either.
+    const resolved = tourState(config, { matchResults: distinctRecords(config) });
+    expect(canApply(resolved, stamp(tiebreakOrdered(['p2', 'p3']), 402))).toEqual({
+      ok: false,
+      reason: 'tiebreakBlockNotTied',
+    });
+  });
+});
+
+describe('canApply — tournament/resultsVoided', () => {
+  it('refuses a void that names nothing the document holds', () => {
+    const state = bracketState(tourConfig());
+
+    expect(canApply(state, stamp(resultsVoided([9999], 400), 401))).toEqual({
+      ok: false,
+      reason: 'nothingToVoid',
+    });
+  });
+
+  it('accepts a void naming a result, and one naming only the cut', () => {
+    const state = bracketState(tourConfig());
+
+    expect(canApply(state, stamp(resultsVoided([210], 400), 401))).toEqual({ ok: true });
+    expect(canApply(state, stamp(resultsVoided([200], 400), 402))).toEqual({ ok: true });
   });
 });

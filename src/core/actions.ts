@@ -38,6 +38,38 @@
  * time; `bans/submitted` and `bans/revealed` are the blind stage speaking in private and
  * then all at once. Splitting them across two changes would have meant editing all six
  * landing sites twice.
+ *
+ * ## The `tournament/*` family — the thirteenth through the seventeenth
+ *
+ * Five types, attached together for the reason the ban trio was: they are one vocabulary,
+ * and splitting them across five changes would have meant editing every landing site five
+ * times. In file order:
+ *
+ *   {@link TOURNAMENT_MATCH_RECORDED}    one match, winner and games and metric at once.
+ *   {@link TOURNAMENT_RESULTS_VOIDED}    what a correction clears, named by `seq`.
+ *   {@link TOURNAMENT_CUT_TAKEN}         the seeded cut, materialized.
+ *   {@link TOURNAMENT_TIEBREAK_ORDERED}  the host's order for a block nothing could split.
+ *   {@link TOURNAMENT_REOPENED}          un-finishing a finished tournament.
+ *
+ * ## The landing sites, counted, because this is where the count matters
+ *
+ * The paragraphs above say "six places" and then "all six landing sites". Stated exactly,
+ * for a family of five where an omission multiplies by five, there are SEVEN:
+ *
+ *   1. the exported constant, here;
+ *   2. the payload interface;
+ *   3. the `Intent` union member — and the `…Action` alias beside it;
+ *   4. the creator;
+ *   5. the structural guard, `is…Action`;
+ *   6. `buildLogEntry`'s arm in `import-guard.ts`;
+ *   7. `apply`'s arm AND `canApply`'s arm in `reduce.ts`.
+ *
+ * Sites 6 and 7 fail differently and that difference is worth knowing before starting. A
+ * missing `buildLogEntry` arm drops the payload SILENTLY on a round trip — it works in
+ * memory, it works in autosave, and the field is gone the moment a host shares the file
+ * (`import-guard.ts`'s `bans/placed` arm records the shipped instance). A missing
+ * `undoAnnouncement` arm, by contrast, is a compile error, because `UndoRemoval.kind`'s
+ * `default` assigns to a `const exhaustive: never`. Only one of the two tells you.
  */
 
 export const POOL_BUILT = 'pool/built';
@@ -52,6 +84,11 @@ export const SWAP_PASSED = 'swap/passed';
 export const BANS_PLACED = 'bans/placed';
 export const BANS_SUBMITTED = 'bans/submitted';
 export const BANS_REVEALED = 'bans/revealed';
+export const TOURNAMENT_MATCH_RECORDED = 'tournament/matchRecorded';
+export const TOURNAMENT_RESULTS_VOIDED = 'tournament/resultsVoided';
+export const TOURNAMENT_CUT_TAKEN = 'tournament/cutTaken';
+export const TOURNAMENT_TIEBREAK_ORDERED = 'tournament/tiebreakOrdered';
+export const TOURNAMENT_REOPENED = 'tournament/reopened';
 
 /**
  * What `dispatch` adds to every intent.
@@ -405,6 +442,178 @@ export interface BansRevealedPayload {
   bans: { playerId: string; monIds: string[] }[];
 }
 
+/**
+ * One match, recorded whole — TOUR-05, D-05.
+ *
+ * ## ONE action carrying every fact about the match
+ *
+ * D-05, and the alternative it rejects is the one that looks tidier: winner now, number
+ * later. A match is then reachable in a half-recorded state, and the standings' second
+ * tiebreak link would sometimes read a result that has a winner and no metric — partly
+ * blind, on the one screen whose whole job is stating why one player is above another.
+ * One action means that state does not exist rather than being handled.
+ *
+ * ## `matchId` is INDEX-based, and it must stay that way
+ *
+ * `rr:{i}:{j}` with `i < j`, both 0-based indices into `config.players`, or
+ * `br:{round}:{slot}`, both 1-based. `import-guard.buildPlayers` bounds a player id only
+ * as a non-empty UNIQUE STRING, so an imported document can carry ids containing a colon
+ * — at which point `rr:${a.id}:${b.id}` makes the players (`a:b`, `c`) and (`a`, `b:c`)
+ * produce the same key, two different matches collapse onto one, and the corruption is
+ * silent because it lands in the fold rather than at the import boundary. `MATCH_ID_PATTERN`
+ * in `import-guard.ts` refuses anything that is not two runs of digits.
+ *
+ * The PARTICIPANTS stay player ids, on `winnerId` and `loserId`, where `CLAUDE.md`'s
+ * identity rule applies and where no concatenation happens.
+ *
+ * ## `loserId` is carried, never derived
+ *
+ * It is what makes D-10's "did the participants change" comparison possible for a bracket
+ * slot whose participants are THEMSELVES derived from earlier results. Deriving the loser
+ * would mean asking the bracket who else was in that match — and after a correction the
+ * bracket answers with the new pairing, which is the very thing being compared against.
+ *
+ * ## Two game fields rather than one
+ *
+ * `Won 2–1` renders straight off the payload with no arithmetic, and a future TOUR-11
+ * per-game log REPLACES the pair rather than reinterpreting a single number. A lone
+ * `games: 3` would have to be decoded against the stage format at every reader.
+ *
+ * The RANGES are bounded in `import-guard.ts` (`winnerGames` 1–2, `loserGames` 0–1)
+ * because they bound an allocation-shaped payload from an untrusted file. Whether the pair
+ * is legal for THIS stage's format is a fact about the config, so it is `canApply`'s
+ * `gamesNotForFormat` — the same split `cards/played` illustrates at the top of this file.
+ *
+ * `metric` is scored by `config.matchMetric` and is REQUIRED rather than optional: it is
+ * `0` at `draftAndBrackets`, where nothing reads it (D-01, D-02), and an optional field
+ * would make "not recorded" and "recorded as zero" indistinguishable in the one place the
+ * standings sort on. Its bound is `MAX_MATCH_METRIC`.
+ */
+export interface MatchRecordedPayload {
+  type: typeof TOURNAMENT_MATCH_RECORDED;
+  /** `rr:{i}:{j}` or `br:{round}:{slot}` — indices, never player ids. */
+  matchId: string;
+  /** A `PlayerConfig.id`, never a display name. */
+  winnerId: string;
+  /** A `PlayerConfig.id`. CARRIED, never derived — see the doc block. */
+  loserId: string;
+  /** Games the winner took: `1` at a `bo1` stage, `2` at a `bo3` one. */
+  winnerGames: number;
+  /** Games the loser took: `0` at `bo1`, `0` or `1` at `bo3`. */
+  loserGames: number;
+  /** Scored by `config.matchMetric`, `0 … MAX_MATCH_METRIC`. `0` where nothing reads it. */
+  metric: number;
+}
+
+/**
+ * What a correction clears — D-10's explicit clearing action.
+ *
+ * The compensating shape {@link PickUndonePayload} established, widened to a list because
+ * one correction can invalidate a whole path through the bracket. `seq` targeting rather
+ * than `matchId` targeting is what lets ONE field name a match result, the cut, or both.
+ *
+ * ## Why an explicit clear, and not "ignore results whose participants no longer match"
+ *
+ * D-10's case, which looks like over-engineering until it is played out: correct a
+ * semi-final, record a new final, then correct the semi-final BACK. A purely derived fold
+ * finds the original final's participants matching again and RESURRECTS it — an outcome
+ * nothing on screen predicted and nobody asked for. The void removes it; re-recording is a
+ * fresh act by a host who meant it.
+ *
+ * ## Why this is a second action rather than a `voids` field on the record
+ *
+ * A single `tournament/matchRecorded { voids: number[] }` would be atomic by construction
+ * and would need neither `causedBySeq` nor a pairing arm in `removalIndices`. D-10's words
+ * are "ALSO appends an explicit clearing action naming the matches voided", which is
+ * specific enough that reading it as a payload field would be an override rather than an
+ * interpretation. The atomicity cost is nil in practice: both dispatches are synchronous
+ * inside one event handler and autosave is a trailing debounce, so no partial correction
+ * can reach storage.
+ *
+ * ## `causedBySeq`
+ *
+ * The `seq` of the `tournament/matchRecorded` this void accompanies. It exists so
+ * `removalIndices` can pair the two EXACTLY rather than by searching for a plausible
+ * neighbour — which is the concern `triggeringCardIndex` records about its own search. It
+ * is what makes D-10's "undo puts the whole correction back in one step" true rather than
+ * intended.
+ */
+export interface ResultsVoidedPayload {
+  type: typeof TOURNAMENT_RESULTS_VOIDED;
+  /** Log `seq` values to clear — match results, the cut, or both. Never an array index. */
+  targetSeqs: number[];
+  /** The `seq` of the `tournament/matchRecorded` this void accompanies. */
+  causedBySeq: number;
+}
+
+/**
+ * The seeded cut from the round robin into the bracket — TOUR-09, D-06.
+ *
+ * ## Why this is materialized, against "nothing derived is stored"
+ *
+ * The argument {@link BansRevealedPayload} makes, in a setting where the cost of getting
+ * it wrong is a bracket that disagrees with itself. The seeds ARE derivable from the
+ * standings — `selectSeeding` is exactly `selectStandings().map(row => row.playerId)` —
+ * and that is not the question. The cut is a HOST ACT at a point in the log, taken against
+ * the table that was on screen at that moment, and ARCHITECTURE Pattern 5 exists for that
+ * class.
+ *
+ * D-11 is what makes it load-bearing rather than merely principled: a round-robin
+ * correction after the cut invalidates the cut, unconditionally, because the standings
+ * order IS the seeding order. A document that stored only a cut SIZE would silently
+ * re-seed itself from the changed standings and produce a bracket the room never played —
+ * with nothing on screen to say it had happened. Recording the seeds means a correction
+ * has to VOID the cut explicitly, in the log, where the recap can show it.
+ *
+ * `seeds` is seed order, index `0` being the top seed, so it is order-sensitive and an
+ * array is the only honest shape.
+ *
+ * The cut SIZE is `seeds.length` and is deliberately **not** a second field. Two fields
+ * would be two authorities on one number, free to disagree in a hand-edited file, and the
+ * bracket would have no way to say which one the room played.
+ */
+export interface CutTakenPayload {
+  type: typeof TOURNAMENT_CUT_TAKEN;
+  /** Seed order, top seed first. The cut size is `seeds.length` and is not stored twice. */
+  seeds: string[];
+}
+
+/**
+ * The host's order for a block the automatic chain could not split — TOUR-08, D-13.
+ *
+ * `playerIds` is the block, best first. It names the PLAYERS rather than assigning seed
+ * numbers for D-13's reason: typed numbers invite collisions and gaps, and — the part that
+ * matters here — a number carries no record of which players it was chosen for, so a
+ * numbered override could not self-invalidate at all. Naming the players IS the
+ * invalidation mechanism: `selectStandings` matches an override to a block by SET
+ * EQUALITY, so a correction that changes the block's membership makes the override stop
+ * matching on its own.
+ *
+ * That is also why this type is deliberately absent from a void's `targetSeqs`. Voiding it
+ * explicitly would be a second mechanism for one fact, and two mechanisms for one fact
+ * disagree eventually.
+ */
+export interface TiebreakOrderedPayload {
+  type: typeof TOURNAMENT_TIEBREAK_ORDERED;
+  /** The tied block in the host's chosen order, best first. */
+  playerIds: string[];
+}
+
+/**
+ * Un-finishing a finished tournament — D-17.
+ *
+ * The envelope is the whole payload, and that is the point: locked is a FOLD — a final
+ * with a recorded result and no reopen after it — rather than a flag something sets. So
+ * reopening has nothing to carry beyond the `seq` every action already has, which is the
+ * number `selectTournamentLocked` compares the final's `seq` against.
+ *
+ * Undoable like everything else (D-12), and undoing it needs no inverse: removing the
+ * entry and re-folding leaves `lastReopenSeq` at whatever the remaining log implies.
+ */
+export interface ReopenedPayload {
+  type: typeof TOURNAMENT_REOPENED;
+}
+
 export type Intent =
   | PoolBuiltPayload
   | ScheduleCompiledPayload
@@ -417,7 +626,12 @@ export type Intent =
   | SwapPassedPayload
   | BansPlacedPayload
   | BansSubmittedPayload
-  | BansRevealedPayload;
+  | BansRevealedPayload
+  | MatchRecordedPayload
+  | ResultsVoidedPayload
+  | CutTakenPayload
+  | TiebreakOrderedPayload
+  | ReopenedPayload;
 
 export type PoolBuiltAction = PoolBuiltPayload & ActionEnvelope;
 export type ScheduleCompiledAction = ScheduleCompiledPayload & ActionEnvelope;
@@ -431,6 +645,11 @@ export type SwapPassedAction = SwapPassedPayload & ActionEnvelope;
 export type BansPlacedAction = BansPlacedPayload & ActionEnvelope;
 export type BansSubmittedAction = BansSubmittedPayload & ActionEnvelope;
 export type BansRevealedAction = BansRevealedPayload & ActionEnvelope;
+export type MatchRecordedAction = MatchRecordedPayload & ActionEnvelope;
+export type ResultsVoidedAction = ResultsVoidedPayload & ActionEnvelope;
+export type CutTakenAction = CutTakenPayload & ActionEnvelope;
+export type TiebreakOrderedAction = TiebreakOrderedPayload & ActionEnvelope;
+export type ReopenedAction = ReopenedPayload & ActionEnvelope;
 
 /** A stamped action this build understands. */
 export type Action = Intent & ActionEnvelope;
@@ -610,6 +829,75 @@ export function bansRevealed(
       monIds: entry.monIds.map((id) => id),
     })),
   };
+}
+
+/**
+ * Six arguments, each named into the returned object, and never a spread.
+ *
+ * `loserId` is an ARGUMENT rather than something this function works out. The purity split
+ * again — who else was in the match is a fact about the STATE, resolved at the edge and
+ * handed in already decided, exactly as {@link poolBuilt}'s `seed` and
+ * {@link cardsPlayed}'s `round` are. Deriving it here would also be wrong on its own
+ * terms: see {@link MatchRecordedPayload} for why a bracket cannot be asked who the loser
+ * was during the very correction that changes the answer.
+ */
+export function matchRecorded(
+  matchId: string,
+  winnerId: string,
+  loserId: string,
+  winnerGames: number,
+  loserGames: number,
+  metric: number,
+): MatchRecordedPayload {
+  return {
+    type: TOURNAMENT_MATCH_RECORDED,
+    matchId,
+    winnerId,
+    loserId,
+    winnerGames,
+    loserGames,
+    metric,
+  };
+}
+
+/**
+ * A fresh array, never the caller's — the rule {@link bansSubmitted} states.
+ *
+ * The caller here is `selectVoidCascade`'s `targetSeqs`, which is rebuilt on every render
+ * of the record dialog because the button's own label interpolates its length. A payload
+ * that aliased it would let the next render rewrite a log entry that has already been
+ * written — and for a void that means clearing results nobody chose to clear.
+ */
+export function resultsVoided(
+  targetSeqs: readonly number[],
+  causedBySeq: number,
+): ResultsVoidedPayload {
+  return { type: TOURNAMENT_RESULTS_VOIDED, targetSeqs: targetSeqs.map((seq) => seq), causedBySeq };
+}
+
+/**
+ * A fresh array, for {@link bansSubmitted}'s reason applied to seed order.
+ *
+ * `seeds` arrives as a slice of `selectSeeding`, which is rebuilt from the standings on
+ * every render of the cut control. Aliasing it would let a later correction reorder a cut
+ * already in the log — silently, and in exactly the direction D-11 exists to prevent.
+ */
+export function cutTaken(seeds: readonly string[]): CutTakenPayload {
+  return { type: TOURNAMENT_CUT_TAKEN, seeds: seeds.map((id) => id) };
+}
+
+/**
+ * A fresh array. The override surface holds the in-progress order in component state and
+ * rebuilds it on every up/down press, so this is the same hazard {@link bansSubmitted}
+ * names, with the ORDER rather than the membership as the thing that would be rewritten.
+ */
+export function tiebreakOrdered(playerIds: readonly string[]): TiebreakOrderedPayload {
+  return { type: TOURNAMENT_TIEBREAK_ORDERED, playerIds: playerIds.map((id) => id) };
+}
+
+/** Envelope-only. See {@link ReopenedPayload} for why there is nothing to carry. */
+export function reopened(): ReopenedPayload {
+  return { type: TOURNAMENT_REOPENED };
 }
 
 // ---------------------------------------------------------------------------
@@ -803,4 +1091,77 @@ export function isBansRevealedAction(action: AnyAction): action is BansRevealedA
     if (!isRecord(ban)) return false;
     return typeof ban['playerId'] === 'string' && isStringArray(ban['monIds']);
   });
+}
+
+function isIntegerArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((item) => isSafeInteger(item));
+}
+
+/**
+ * Types only, and this is the one where the temptation to do more is real.
+ *
+ * A GUARD ASKS NOTHING ABOUT `config` OR THE FOLD. Whether `winnerGames: 2` is legal is a
+ * question about the stage's format; whether `matchId` names a pairing this player list
+ * has, whether the winner and loser are that match's participants, and whether the
+ * tournament is even running are all questions about the STATE. This function sees one
+ * action in isolation. Every one of them lives in `canApply`, which sees both — and a
+ * guard that reached for the config would be a second authority on the same rules, free
+ * to disagree with the first.
+ *
+ * The `matchId` SHAPE is not checked here either, and that is the same rule rather than an
+ * exception to it: it is checked in `buildLogEntry` against `MATCH_ID_PATTERN`, which is
+ * the untrusted-input boundary, and refused as `unknownMatch` by `canApply`, which is the
+ * origination one. Both of those have somewhere to put the answer; this function does not.
+ */
+export function isMatchRecordedAction(action: AnyAction): action is MatchRecordedAction {
+  if (action.type !== TOURNAMENT_MATCH_RECORDED || !isRecord(action)) return false;
+  return (
+    typeof action['matchId'] === 'string' &&
+    typeof action['winnerId'] === 'string' &&
+    typeof action['loserId'] === 'string' &&
+    isSafeInteger(action['winnerGames']) &&
+    isSafeInteger(action['loserGames']) &&
+    isSafeInteger(action['metric'])
+  );
+}
+
+/**
+ * Types only, and `causedBySeq` is not optional.
+ *
+ * A payload missing it is refused rather than defaulted, on {@link isSwapMadeAction}'s
+ * precedent: a default would make an imported correction fold as a bare void, and
+ * `removalIndices` would then take the void back on its own and leave the correction it
+ * accompanied standing — which is a half-undone correction nothing on screen describes.
+ */
+export function isResultsVoidedAction(action: AnyAction): action is ResultsVoidedAction {
+  if (action.type !== TOURNAMENT_RESULTS_VOIDED || !isRecord(action)) return false;
+  return isIntegerArray(action['targetSeqs']) && isSafeInteger(action['causedBySeq']);
+}
+
+/**
+ * Types only. Whether `seeds` are the document's configured players is referential
+ * integrity, and no structural guard in this file does any; whether the size is inside
+ * `2 … playerCount` and whether the line splits an unresolved tie block are both facts
+ * about the state, which `canApply` sees and this does not.
+ */
+export function isCutTakenAction(action: AnyAction): action is CutTakenAction {
+  if (action.type !== TOURNAMENT_CUT_TAKEN || !isRecord(action)) return false;
+  return isStringArray(action['seeds']);
+}
+
+/** Types only. Whether these players are actually a tied block is `canApply`'s question. */
+export function isTiebreakOrderedAction(action: AnyAction): action is TiebreakOrderedAction {
+  if (action.type !== TOURNAMENT_TIEBREAK_ORDERED || !isRecord(action)) return false;
+  return isStringArray(action['playerIds']);
+}
+
+/**
+ * The discriminant IS the whole guard, because the envelope is the whole payload.
+ *
+ * Written out as a function rather than left to a bare `type` comparison at the call
+ * sites, so that `apply`, `canApply` and `isUndoable` all ask the same question in the
+ * same words — and so a later field on {@link ReopenedPayload} has one place to be checked.
+ */
+export function isReopenedAction(action: AnyAction): action is ReopenedAction {
+  return action.type === TOURNAMENT_REOPENED && isRecord(action);
 }

@@ -27,18 +27,28 @@ import {
   SCHEDULE_COMPILED,
   SWAP_MADE,
   SWAP_PASSED,
+  TOURNAMENT_CUT_TAKEN,
+  TOURNAMENT_MATCH_RECORDED,
+  TOURNAMENT_REOPENED,
+  TOURNAMENT_RESULTS_VOIDED,
+  TOURNAMENT_TIEBREAK_ORDERED,
   bansPlaced,
   bansRevealed,
   bansSubmitted,
   cardsPlayed,
+  cutTaken,
   draftStarted,
+  matchRecorded,
   orderResolved,
   pickMade,
   pickUndone,
   poolBuilt,
+  reopened,
+  resultsVoided,
   scheduleCompiled,
   swapMade,
   swapPassed,
+  tiebreakOrdered,
   type Action,
   type Intent,
   type RoundSpec,
@@ -1218,5 +1228,153 @@ describe('what a ban undo actually removes', () => {
         fold(snakeDoc(placed - 1)),
       );
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The tournament actions on the ONE stack — D-12.
+//
+// Pitfall 6 is what the first test here exists for, and it has bitten this codebase once
+// already: `isUndoable` is a deny-list PLUS an allow-list, so a type in NEITHER is
+// silently stepped past — usually onto `draft/started`, which the deny-list correctly
+// refuses, leaving `Undo last move` enabled and doing nothing at all. The
+// `UndoRemoval.kind` exhaustiveness check catches a missing ANNOUNCEMENT at compile time
+// and cannot catch this, so it is asserted per type.
+// ---------------------------------------------------------------------------
+
+/** A finished draft: twelve picks, both teams full. Every tournament action follows one. */
+function completedDraft(): Action[] {
+  return withPicks(openingLog(), 12);
+}
+
+const NEXT_SEQ = 14;
+
+/** One tournament action on top of a finished draft. */
+function tournamentDoc(...intents: readonly Intent[]): TournamentDoc {
+  const log = completedDraft();
+  intents.forEach((intent, offset) => log.push(stamp(intent, NEXT_SEQ + offset)));
+  return makeDoc(log);
+}
+
+const TOURNAMENT_CASES: [string, string, Intent][] = [
+  ['match', TOURNAMENT_MATCH_RECORDED, matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 0)],
+  // `causedBySeq: 999` names nothing in this log, so the void stands alone and this case
+  // stays about the kind rather than about the pairing.
+  ['void', TOURNAMENT_RESULTS_VOIDED, resultsVoided([13], 999)],
+  ['cut', TOURNAMENT_CUT_TAKEN, cutTaken(['p1', 'p2'])],
+  ['tiebreak', TOURNAMENT_TIEBREAK_ORDERED, tiebreakOrdered(['p1', 'p2'])],
+  ['reopen', TOURNAMENT_REOPENED, reopened()],
+];
+
+describe('undo — the tournament actions join the one stack', () => {
+  it.each(TOURNAMENT_CASES)('%s: is undoable rather than stepped past', (_kind, type, intent) => {
+    const doc = tournamentDoc(intent);
+
+    // The failure this catches is the SILENT one: a type in neither list leaves this
+    // answering with the last pick instead, and `Undo last move` removes the wrong thing.
+    expect(lastUndoableAction(doc)?.type).toBe(type);
+    expect(canUndo(doc)).toBe(true);
+  });
+
+  it.each(TOURNAMENT_CASES)('%s: reports that kind and removes one entry', (kind, _type, intent) => {
+    const removal = undoRemoval(tournamentDoc(intent));
+
+    expect(removal?.kind).toBe(kind);
+    expect(removal?.removedCount).toBe(1);
+  });
+
+  it.each(TOURNAMENT_CASES)('%s: reports config.rounds as its round', (_kind, _type, intent) => {
+    // All five happen AFTER the draft, so no pick round was crossed. `config.rounds` is
+    // where the draft is standing, which makes a caller's comparison answer honestly.
+    expect(undoRemoval(tournamentDoc(intent))?.round).toBe(CONFIG.rounds);
+  });
+
+  it('still refuses the three origination actions', () => {
+    // The deny-list is unchanged by this phase, and the allow-list growing has not made
+    // it reachable — the argument `NEVER_UNDONE`'s own comment makes, re-asserted.
+    expect(canUndo(makeDoc(openingLog()))).toBe(false);
+  });
+
+  it('restores the superseded result when a correction is undone', () => {
+    const matchId = 'rr:0:1';
+    const before = tournamentDoc(matchRecorded(matchId, 'p1', 'p2', 1, 0, 3));
+    const corrected = tournamentDoc(
+      matchRecorded(matchId, 'p1', 'p2', 1, 0, 3),
+      matchRecorded(matchId, 'p2', 'p1', 1, 0, 5),
+    );
+
+    expect(fold(corrected).matchResults[0]?.winnerId).toBe('p2');
+    // By RE-FOLDING, not by an inverse: the earlier entry was never removed from the log,
+    // so dropping the correction is all it takes for the fold to answer with it again.
+    expect(fold(undoLast(corrected))).toEqual(fold(before));
+  });
+});
+
+describe('undo — a correction comes back in one step — D-10, D-12', () => {
+  const SEMI = 'br:1:1';
+  const FINAL = 'br:2:1';
+
+  /** A semi and a final recorded, and nothing corrected yet. */
+  function played(): TournamentDoc {
+    return tournamentDoc(
+      matchRecorded(SEMI, 'p1', 'p2', 1, 0, 0),
+      matchRecorded(FINAL, 'p1', 'p2', 1, 0, 0),
+    );
+  }
+
+  /** The semi corrected, and the final it invalidated voided by `seq`. */
+  function corrected(causedBySeq = NEXT_SEQ + 2): TournamentDoc {
+    return tournamentDoc(
+      matchRecorded(SEMI, 'p1', 'p2', 1, 0, 0),
+      matchRecorded(FINAL, 'p1', 'p2', 1, 0, 0),
+      matchRecorded(SEMI, 'p2', 'p1', 1, 0, 0),
+      resultsVoided([NEXT_SEQ + 1], causedBySeq),
+    );
+  }
+
+  it('takes the matchRecorded at causedBySeq with the void', () => {
+    expect(undoRemoval(corrected())?.removedCount).toBe(2);
+    expect(undoLast(corrected()).log).toHaveLength(played().log.length);
+  });
+
+  it('puts the whole correction back in ONE press', () => {
+    // The claim D-10 makes, asserted rather than described: after one undo the fold is
+    // the fold from before the correction — voided final restored, semi back to p1.
+    expect(fold(undoLast(corrected()))).toEqual(fold(played()));
+  });
+
+  it('takes only the void when no entry carries that seq', () => {
+    // A gapped or imported log is untrusted, and `seq` may legally have gaps — so a
+    // missing target is TOLERATED, on `draft/pickUndone`'s precedent, rather than being
+    // allowed to make undo remove an unrelated result.
+    const orphaned = corrected(9999);
+
+    expect(undoRemoval(orphaned)?.removedCount).toBe(1);
+    expect(undoLast(orphaned).log).toHaveLength(orphaned.log.length - 1);
+    // The correction itself survives, because nothing paired it.
+    expect(fold(undoLast(orphaned)).matchResults.find((r) => r.matchId === SEMI)?.winnerId).toBe(
+      'p2',
+    );
+  });
+
+  it('pairs by seq rather than by adjacency', () => {
+    // `causedBySeq` makes the search EXACT, which is the concern `triggeringCardIndex`
+    // records about its own. A tiebreak order sitting between the two must not break the
+    // pairing, and must not be taken instead.
+    const log = completedDraft();
+    log.push(stamp(matchRecorded(SEMI, 'p1', 'p2', 1, 0, 0), NEXT_SEQ));
+    log.push(stamp(matchRecorded(FINAL, 'p1', 'p2', 1, 0, 0), NEXT_SEQ + 1));
+    log.push(stamp(matchRecorded(SEMI, 'p2', 'p1', 1, 0, 0), NEXT_SEQ + 2));
+    log.push(stamp(tiebreakOrdered(['p1', 'p2']), NEXT_SEQ + 3));
+    log.push(stamp(resultsVoided([NEXT_SEQ + 1], NEXT_SEQ + 2), NEXT_SEQ + 4));
+
+    const after = undoLast(makeDoc(log));
+
+    expect(after.log.map((action) => action.seq)).toEqual([
+      ...Array.from({ length: 14 }, (_unused, index) => index),
+      NEXT_SEQ,
+      NEXT_SEQ + 1,
+      NEXT_SEQ + 3,
+    ]);
   });
 });
