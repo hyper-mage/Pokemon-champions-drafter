@@ -315,8 +315,8 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 05-08-PLAN.md — five `tournament/*` actions across seven landing sites each (TOUR-05, TOUR-06, TOUR-09)
-- [ ] 05-09-PLAN.md — the library adapter, its cap of 12, and the phase's confirm copy (PERS-08)
+- [x] 05-08-PLAN.md — five `tournament/*` actions across seven landing sites each (TOUR-05, TOUR-06, TOUR-09)
+- [x] 05-09-PLAN.md — the library adapter, its cap of 12, and the phase's confirm copy (PERS-08)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -352,7 +352,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
-| 5. Full Tournament — Brackets, Standings, Archive | 7/15 | In Progress|  |
+| 5. Full Tournament — Brackets, Standings, Archive | 9/15 | In Progress|  |
 
 ## Requirement Coverage
 
