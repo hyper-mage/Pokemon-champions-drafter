@@ -16,7 +16,12 @@
  * All seven of 02-UI-SPEC §11's sets are here. The seventh arrived with 02-07's `Bans`
  * group; the note recording it as absent was deleted in the same change that made it false,
  * because a stale contract comment is worse than none — the next reader trusts it.
+ *
+ * The one import is `LIBRARY_CAP`, and it is a value this file must not restate. See
+ * {@link EVICTION_CONFIRM} for why the number is interpolated rather than written out.
  */
+
+import { LIBRARY_CAP } from '../adapters/library';
 
 /**
  * Pluralisation, done here rather than in the contract.
@@ -64,12 +69,38 @@ export function matches(count: number): string {
 }
 
 /**
- * 1. Abandoning a draft — D-36.
+ * The fifth, and the second of the two 05-UI-SPEC §Copywriting names for this phase —
+ * again "here and nowhere else".
  *
- * `danger` toned, and one of only two of the six that qualify. This is genuine data loss
- * with no way back: the log is discarded, the saved record is removed, and the only
+ * EXPORTED like {@link matches} and {@link swaps}, for the reason those two give rather
+ * than as a new default: the library count is read by the landing screen's section as well
+ * as by the eviction body below, and a second private copy is how two surfaces end up
+ * disagreeing about the singular. One tournament is the state every host is in after their
+ * first night, so the singular is the common case here rather than a defensive edge.
+ */
+export function tournaments(count: number): string {
+  return count === 1 ? '1 tournament' : `${count} tournaments`;
+}
+
+/**
+ * 1. Abandoning a draft — D-36, body changed by 05-UI-SPEC §Amendment 1.
+ *
+ * Still one of the three sets that qualify for the destructive tone. This is genuine data
+ * loss with no way back: the log is discarded, the saved record is removed, and the only
  * durable copy is a file the host may or may not have downloaded. The body says exactly
  * that rather than implying a recovery that does not exist.
+ *
+ * ## Why the body gained a clause and nothing else moved
+ *
+ * D-15 makes `Start a new tournament` FILE the current one instead of discarding it, so
+ * that path stopped being destructive and its dialog now informs rather than warns. That
+ * leaves abandon as the ONLY path in the app that discards a tournament — and a host who
+ * has just learned that starting a new tournament keeps the old one will reasonably assume
+ * this one does too. The added clause says outright that it does not, because the
+ * assumption is now the reasonable one and only this sentence can correct it.
+ *
+ * The heading, the tone and both labels are deliberately unchanged: Amendment 1 moves the
+ * body alone, and anything importing this set keeps working.
  */
 export const ABANDON_CONFIRM = {
   heading: 'Abandon this draft?',
@@ -77,7 +108,7 @@ export const ABANDON_CONFIRM = {
   confirmLabel: 'Abandon draft',
   safeLabel: 'Keep drafting',
   body: (pickCount: number, playerCount: number): string =>
-    `This discards ${picks(pickCount)} across ${players(playerCount)}. Nothing recovers it unless you have already downloaded the tournament JSON.`,
+    `This discards ${picks(pickCount)} across ${players(playerCount)} and does not file it with your tournaments. Nothing recovers it unless you have already downloaded the tournament JSON.`,
 };
 
 /**
@@ -417,4 +448,95 @@ export const UNDO_REVEAL_CONFIRM = {
   safeLabel: 'Keep the reveal',
   body: (playerCount: number): string =>
     `This takes the reveal back to the locked screen. The ${playersPossessive(playerCount)} bans stay recorded, and everyone who has already read them still has. Undo again to remove a player's bans.`,
+};
+
+// ---------------------------------------------------------------------------
+// Phase 5 — the library, and the reopen. D-14 / D-15 / D-16 / D-17.
+//
+// ## All three take the default tone, and the reservation is the reason
+//
+// The destructive tone in this project means one specific thing: THERE IS NO WAY BACK
+// WITHOUT A FILE YOU MAY NOT HAVE DOWNLOADED. Exactly three surfaces qualify — the two
+// abandons and the import overwrite — and none of the three sets below joins them:
+//
+//   - Filing loses nothing. That is the whole of D-15: the tournament goes into the
+//     library and stays openable from the landing screen.
+//   - Eviction names the tournament that is about to go and offers its download FIRST,
+//     which is precisely the property that distinguishes it from the three.
+//   - A reopen is itself undoable, and it destroys no recorded result.
+//
+// Colouring any of them red would make the three irreversible surfaces less legible as a
+// category, and being legible as a category is the only job the reservation has.
+// ---------------------------------------------------------------------------
+
+/**
+ * 14. Filing the current tournament on `Start a new tournament` — D-15, 05-UI-SPEC §12.
+ *
+ * The dialog INFORMS rather than warns, which is the change D-15 makes and the reason this
+ * set exists at all. Nothing is lost, so a warning would be a lie about the consequence;
+ * what the host needs to know is where the tournament went and how to get back to it.
+ *
+ * The download is still offered in the same breath, and that is deliberate rather than
+ * belt-and-braces: D-14 accepts that Safari drops script-written storage after seven days
+ * idle and that this now costs the whole library, so the JSON file remains the system of
+ * record and every filing path keeps saying so.
+ *
+ * The body takes the format label rather than a date, because that is what the host named
+ * the night and what they will look for in the list.
+ */
+export const FILING_CONFIRM = {
+  heading: 'Start a new tournament?',
+  tone: 'default' as const,
+  confirmLabel: 'Start a new tournament',
+  safeLabel: 'Keep this one open',
+  body: (formatLabel: string): string =>
+    `${formatLabel} is filed with your tournaments and stays open from the landing screen. Download the JSON too if you want a copy that browser storage cannot lose.`,
+};
+
+/**
+ * 15. Filing at the cap, which drops the oldest — D-16, 05-UI-SPEC §12.
+ *
+ * The one set in this file with a FIFTH string. `downloadLabel` is a third button, not a
+ * variant of the other two: D-16's contract is that the oldest tournament is offered for
+ * download and then dropped, and an offer the host cannot act on from inside this dialog
+ * is not an offer. It names the tournament rather than saying `Download it`, so a host
+ * reading only the buttons still learns which night is at stake.
+ *
+ * The cap is INTERPOLATED from {@link LIBRARY_CAP} rather than written as a number here.
+ * That is the reason the cap is a constant at all — a literal in this sentence would be a
+ * second number, free to drift from the one the adapter actually enforces, and the drift
+ * would surface as a dialog that promises twelve while the code keeps ten.
+ *
+ * The em dash and the full stops are contract, per this module's header.
+ */
+export const EVICTION_CONFIRM = {
+  heading: 'Your tournaments are full',
+  tone: 'default' as const,
+  confirmLabel: 'File it and drop the oldest',
+  safeLabel: 'Keep the oldest',
+  downloadLabel: (oldLabel: string): string => `Download ${oldLabel}`,
+  body: (newLabel: string, oldLabel: string, date: string): string =>
+    `This app keeps ${LIBRARY_CAP} tournaments. Filing ${newLabel} drops the oldest — ${oldLabel} from ${date}. Download it first if you want to keep it.`,
+};
+
+/**
+ * 16. Reopening a finished tournament — D-17, 05-UI-SPEC §Finished and reopen.
+ *
+ * A plain string body rather than a composer, alone among the sets that say anything
+ * substantive. There is nothing to interpolate: the consequence is the same sentence
+ * whatever the tournament held, because it describes what CORRECTING will cost rather than
+ * what reopening costs. Reopening itself voids nothing.
+ *
+ * That distinction is the whole point of the second clause. A host reopening a finished
+ * night is usually chasing one mistyped score, and the thing they cannot see is that the
+ * cut and the bracket were DERIVED from the result they are about to change. The sentence
+ * tells them before they spend the evening rebuilding a bracket they did not know they
+ * had voided.
+ */
+export const REOPEN_CONFIRM = {
+  heading: 'Reopen this tournament?',
+  tone: 'default' as const,
+  confirmLabel: 'Reopen it',
+  safeLabel: 'Leave it finished',
+  body: 'This makes every result editable again. Correcting a round-robin result voids the cut and the bracket; correcting a bracket result voids the matches after it.',
 };

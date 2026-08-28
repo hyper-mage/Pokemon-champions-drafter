@@ -595,7 +595,7 @@ describe('abandoning a draft', () => {
     await click(buttonNamed('Abandon draft'));
 
     expect(dialogText()).toContain(
-      'This discards 3 picks across 2 players. Nothing recovers it unless you have already downloaded the tournament JSON.',
+      'This discards 3 picks across 2 players and does not file it with your tournaments. Nothing recovers it unless you have already downloaded the tournament JSON.',
     );
 
     await click(dialogButtonNamed(ABANDON_CONFIRM.safeLabel));
@@ -623,7 +623,7 @@ describe('abandoning a draft', () => {
 
     await click(buttonNamed('Abandon draft'));
 
-    expect(dialogText()).toContain('This discards 1 pick across 1 player.');
+    expect(dialogText()).toContain('This discards 1 pick across 1 player and does not file it');
   });
 
   /**
