@@ -1,7 +1,11 @@
 import { Fragment } from 'preact';
 
 import type { DraftState, MatchMetric, MatchResult, StageFormat } from '../../core/model';
-import { selectRemainingMatchCount, selectRoundRobinMatches } from '../../core/tournament';
+import {
+  selectRemainingMatchCount,
+  selectRoundRobinMatches,
+  selectTournamentLocked,
+} from '../../core/tournament';
 import { matches as matchCount } from '../confirm-copy';
 import { useRovingTabindex } from '../use-roving-tabindex';
 
@@ -93,6 +97,21 @@ function captionLine(metric: MatchMetric): string {
 
 export const RESULTS_EMPTY = 'No results yet. Record a match by choosing any empty cell.';
 
+/**
+ * §10's locked sentences — the visible one and the one each cell's name carries.
+ *
+ * `FinishedNotice` and the reopen control are 05-13's, and this is deliberately not a
+ * preview of them: it is the INERT half, which has to exist the moment a cell can be
+ * clicked on a finished tournament. That is reachable today by importing a document whose
+ * final is recorded, and without this the reducer's `tournamentLocked` backstop refuses the
+ * dispatch with nothing on screen to explain why — a control that silently does nothing.
+ *
+ * Inert rather than hidden, which is the codebase's established move: a control that
+ * vanished would make a host think the app had lost a feature.
+ */
+export const RESULTS_FINISHED = 'This tournament is finished. Results are read-only.';
+const FINISHED_CELL_REASON = 'This tournament is finished. Reopen it to change a result.';
+
 /** `2–1`, with an en dash. Never a hyphen: the contract writes the dash and it is read. */
 function gamesText(winnerGames: number, loserGames: number, rowWon: boolean): string {
   return rowWon ? `${winnerGames}–${loserGames}` : `${loserGames}–${winnerGames}`;
@@ -127,6 +146,7 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
 
   const showGames = state.config.roundRobinFormat === 'bo3';
   const showMetric = state.config.depth === 'draftBracketsAndLog';
+  const locked = selectTournamentLocked(state);
 
   /*
     The hook in its 1-D mode — `count` alone, and the second option deliberately omitted.
@@ -164,7 +184,9 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
     result: MatchResult | null,
     rowWon: boolean,
   ): string {
-    if (result === null) return `${rowName} versus ${columnName} — not played yet`;
+    const finished = locked ? ` — ${FINISHED_CELL_REASON}` : '';
+
+    if (result === null) return `${rowName} versus ${columnName} — not played yet${finished}`;
 
     const games = showGames
       ? ` ${gamesText(result.winnerGames, result.loserGames, rowWon)}`
@@ -173,7 +195,7 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
       ? `, ${result.metric} ${metricLabel(state.config.matchMetric)}`
       : '';
 
-    return `${rowName} ${rowWon ? 'beat' : 'lost to'} ${columnName}${games}${metric}`;
+    return `${rowName} ${rowWon ? 'beat' : 'lost to'} ${columnName}${games}${metric}${finished}`;
   }
 
   // The tab stop's position among the live cells, counted in the same reading order the
@@ -193,6 +215,9 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
       {showMetric && <p class="results-grid__caption">{captionLine(state.config.matchMetric)}</p>}
 
       {remaining === pairs.length && <p class="results-grid__empty">{RESULTS_EMPTY}</p>}
+
+      {/* ONE visible sentence, per §4's finished row. The cells carry the rest. */}
+      {locked && <p class="results-grid__finished">{RESULTS_FINISHED}</p>}
 
       {/*
         The shipped `overflow-x: auto` wrapper. The grid fits with no internal scroll up to
@@ -269,14 +294,26 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
                     : 'results-grid__cell--recorded',
                 ].join(' ');
 
+                /*
+                  `aria-disabled` without the native attribute, and absent rather than
+                  `"false"` when it does not hold — WR-04's rule, and the reason is the same
+                  one `FeasibilityBar` gives: a natively disabled control is not focusable,
+                  so the reason in its accessible name would be unreachable by keyboard.
+                */
+                const inert = locked ? 'true' : undefined;
+
                 return (
                   <button
                     type="button"
                     class={className}
                     key={columnPlayer.id}
                     tabIndex={rove.tabIndexAt(index)}
+                    aria-disabled={inert}
                     onFocus={() => rove.onItemFocus(index)}
-                    onClick={() =>
+                    onClick={() => {
+                      // The early return IS the refusal — see the note above `inert`.
+                      if (locked) return;
+
                       onSelectMatch({
                         matchId,
                         aId: rowPlayer.id,
@@ -284,8 +321,8 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
                         bId: columnPlayer.id,
                         bName: columnPlayer.name,
                         format: state.config.roundRobinFormat,
-                      })
-                    }
+                      });
+                    }}
                   >
                     {/*
                       An UNPLAYED cell renders nothing at all — no text and no fill. That is

@@ -33,11 +33,13 @@ import {
   initialState,
   type DraftState,
   type MatchMetric,
+  type MatchResult,
   type PlayerConfig,
   type StageFormat,
   type TournamentConfig,
   type TournamentDepth,
 } from '../../src/core/model';
+import { selectBracket } from '../../src/core/tournament';
 import {
   ResultsGrid,
   RESULTS_EMPTY,
@@ -351,6 +353,100 @@ describe('what is left', () => {
 
     draw(stateWith({ players: 4, depth: 'draftAndBrackets' }));
     expect(host.querySelector('.results-grid__caption')).toBeNull();
+  });
+});
+
+describe('a finished tournament', () => {
+  /**
+   * Reachable TODAY by importing a document whose final is recorded — the bracket surface
+   * that would produce one is 05-13's, but the import path is not gated on it. Without the
+   * inert state the reducer's `tournamentLocked` backstop refuses the dispatch and nothing
+   * on screen says why, which is a control that silently does nothing.
+   */
+  function lockedState(): DraftState {
+    const players = 4;
+    const base = stateWith({ players });
+    const roundRobin: MatchResult[] = [];
+    let seq = 100;
+
+    for (let i = 0; i < players; i++) {
+      for (let j = i + 1; j < players; j++) {
+        roundRobin.push({
+          matchId: `rr:${i}:${j}`,
+          winnerId: `p${i + 1}`,
+          loserId: `p${j + 1}`,
+          winnerGames: 1,
+          loserGames: 0,
+          metric: 0,
+          seq: seq++,
+        });
+      }
+    }
+
+    const withCut: DraftState = {
+      ...base,
+      order: playersOf(players).map((player) => player.id),
+      matchResults: roundRobin,
+      cut: { seeds: playersOf(players).map((player) => player.id), seq: 500 },
+    };
+
+    const bracket = selectBracket(withCut);
+    const final = bracket?.final;
+    const semis = bracket?.rounds[0] ?? [];
+
+    return {
+      ...withCut,
+      matchResults: [
+        ...roundRobin,
+        ...semis.flatMap((match) =>
+          match.upperId === null || match.lowerId === null
+            ? []
+            : [
+                {
+                  matchId: match.matchId,
+                  winnerId: match.upperId,
+                  loserId: match.lowerId,
+                  winnerGames: 1,
+                  loserGames: 0,
+                  metric: 0,
+                  seq: seq++,
+                },
+              ],
+        ),
+        {
+          matchId: final?.matchId ?? '',
+          winnerId: 'p1',
+          loserId: 'p2',
+          winnerGames: 1,
+          loserGames: 0,
+          metric: 0,
+          seq: 700,
+        },
+      ],
+    };
+  }
+
+  it('makes every cell inert with a stated reason, and refuses the click', () => {
+    draw(lockedState());
+
+    expect(host.textContent).toContain('This tournament is finished. Results are read-only.');
+
+    const first = cells()[0] as HTMLButtonElement;
+    expect(first.getAttribute('aria-disabled')).toBe('true');
+    expect(nameOf(first)).toContain('This tournament is finished. Reopen it to change a result.');
+
+    act(() => {
+      first.click();
+    });
+    expect(selected).toHaveLength(0);
+  });
+
+  it('sheds the attribute outright while the tournament is live — never "false"', () => {
+    draw(stateWith({ players: 4 }));
+
+    const first = cells()[0] as HTMLButtonElement;
+    expect(first.hasAttribute('aria-disabled')).toBe(false);
+    expect(host.innerHTML).not.toContain('aria-disabled="false"');
   });
 });
 

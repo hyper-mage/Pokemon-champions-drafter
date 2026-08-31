@@ -148,6 +148,28 @@
   background: var(--color-surface-raised);
 }
 
+/*
+ * A finished tournament — §10. NOT danger-coloured: nothing is wrong, the night finished.
+ * `ReadOnlyBanner`'s precedent, which states at length that read-only is emphatically not a
+ * danger state.
+ */
+.results-grid__finished {
+  margin: 0;
+  max-width: 60ch;
+  font: var(--text-body);
+  color: var(--color-text-muted);
+}
+
+/*
+ * The non-colour half of the inert signal, beside the reason each cell's accessible name
+ * carries. Opacity rather than a hue change, so the grid still reads with no colour
+ * perception at all.
+ */
+.results-grid__cell[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .results-grid__result {
   min-width: 0;
   overflow-wrap: anywhere;
