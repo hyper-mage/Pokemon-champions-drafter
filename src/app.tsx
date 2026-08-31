@@ -1684,6 +1684,20 @@ export function App() {
   const closeConfirm = useCallback(() => setConfirm({ kind: 'idle' }), []);
 
   /**
+   * Which match the record dialog is open on, by match id — or `null`.
+   *
+   * Held HERE rather than inside `TournamentScreen`, and the placement is the same one
+   * every dialog in this file already takes: `inert` applies to a whole subtree, so a modal
+   * rendered inside the read-only gate would render, trap focus and refuse every click the
+   * instant another tab took the lock — a dialog nobody can dismiss. The gate can be raised
+   * while this dialog is open, which is exactly the case that makes the placement matter.
+   *
+   * A read-only tab still cannot reach it: the only route to a non-null value is a
+   * results-grid cell, and every one of those is inside the gate (T-05-55).
+   */
+  const [, setRecordingMatchId] = useState<string | null>(null);
+
+  /**
    * Did the pick that caused the current turn also clear active pool filters — D-35.
    *
    * `PoolGrid` owns the filter state and this is the single fact that has to leave it. It
@@ -2790,6 +2804,7 @@ export function App() {
               bannedNames,
             }}
             onBackToDraft={() => setScreen({ name: 'draft' })}
+            onSelectMatch={setRecordingMatchId}
           />
         )}
       </div>

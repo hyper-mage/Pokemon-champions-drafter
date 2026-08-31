@@ -1,0 +1,159 @@
+/*
+ * ResultsGrid.css — the crosstable, and the one raw length this phase adds.
+ *
+ * Tokens only otherwise. No raw hex, no raw length the token table covers, and nothing
+ * accent-coloured anywhere in this file: `05-UI-SPEC` §Accent reserved for states that a
+ * playable match, an advancing seed and a leading player must not be marked with hue,
+ * because a fill-in-any-order round robin has no next match to mark.
+ *
+ * --- WHY --results-col-min IS DECLARED HERE, AND WHY IT IS A NAMED VALUE ---
+ *
+ * `--board-label-w`'s precedent exactly: one declaration, in the file that owns the
+ * reasoning. It is not moved into tokens.css because it is this one layout's geometry
+ * rather than a value the token table covers, and DRFT-14 assertion 19 cites it — a value
+ * an assertion cites has to be regressable.
+ *
+ * IT IS DERIVED RATHER THAN CHOSEN. The longest reachable cell string is a best-of-three
+ * verdict plus the largest metric the guard admits — `Won 2-1 . 18`, twelve characters. At
+ * `--text-heading` (24 / 600, about 0.55em of average advance) that is roughly 158
+ * pixels, plus `--space-2` of padding on both sides. 188 = 4 x 47, so it lands on the
+ * spacing scale by construction rather than by luck.
+ *
+ * The number is what forces the tournament screens full-bleed. `.app-shell`'s 1200 cap
+ * leaves 114 per column at 8 players and `.draft-shell` leaves 204; 114 cannot hold this
+ * and 204 can, with slack. See `05-UI-SPEC` §Layout Budget for the arithmetic in full.
+ */
+
+:root {
+  --results-col-min: 188px;
+}
+
+.results-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/*
+ * The count, and it is the phase's answer to D-03 rather than a caption. At
+ * `--text-heading` because it is read across a room, and above the grid because that is
+ * where the eye lands before it starts counting holes.
+ */
+.results-grid__count {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+/* The unit, stated ONCE. §4 forbids repeating it inside 28 cells. */
+.results-grid__caption {
+  margin: 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.results-grid__empty {
+  margin: 0;
+  max-width: 60ch;
+  font: var(--text-body);
+  color: var(--color-text-muted);
+}
+
+/*
+ * `BoardGrid.css`'s scroll wrapper, reused rather than restated — the documented exception
+ * to the no-horizontal-scroll rule, and what carries a 9th player rather than breaking on
+ * one. `MAX_PLAYERS` is 64, so this degrades all the way up.
+ */
+.results-grid__scroll {
+  overflow-x: auto;
+}
+
+.results-grid__grid {
+  display: grid;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+.results-grid__corner {
+  min-height: var(--space-4);
+}
+
+/*
+ * --- THE DELIBERATE DIVERGENCE FROM BoardGrid.css ---
+ *
+ * The board ellipsises its row label on three properties. This file does NOT: a column
+ * header WRAPS instead, and the row label with it. Player names are host-typed with no
+ * length bound in `import-guard.ts`, and `02-UI-SPEC` assertion 7 already established that
+ * a truncated name is a failure rather than a fallback — the board can fall back on a
+ * `title` because its cells hold sprites the host recognises, and a crosstable holds
+ * nothing but the two names.
+ *
+ * `overflow-wrap: anywhere` so a single unbroken token cannot force horizontal overflow.
+ * The header row is sized for two lines by its content and grows past that if it must,
+ * which is the T-05-52 mitigation: an unbounded name costs vertical space rather than
+ * breaking the layout sideways.
+ */
+.results-grid__header,
+.results-grid__label {
+  align-self: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: var(--text-heading);
+}
+
+/*
+ * Pinned at EVERY width, which is where this diverges from the board a second time: the
+ * board pins its label column only below its own breakpoint, and §Interaction requires the
+ * crosstable to keep the sticky label and the scroll wrapper at every width. A row whose
+ * name has scrolled off is a row nobody can attribute a result to.
+ */
+.results-grid__label {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding-right: var(--space-2);
+  background: var(--color-bg);
+}
+
+/*
+ * The diagonal and the lower triangle. `--color-bg` and no boundary at all, so they read
+ * as absence rather than as a third cell state — they are `aria-hidden` and carry no text
+ * for the same reason.
+ */
+.results-grid__blank {
+  background: var(--color-bg);
+}
+
+.results-grid__cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  color: var(--color-text);
+  font: var(--text-heading);
+  text-align: center;
+  cursor: pointer;
+}
+
+/*
+ * A recorded cell — §Colour is never the only signal, row 2. The fill and the boundary are
+ * both lightness rather than hue, and the WORDS carry the signal: the grid reads correctly
+ * with no colour perception at all.
+ *
+ * `--border-w` against the empty cell's `--hairline-w` dashed boundary, so a filled cell
+ * and a hole differ in weight and in style as well as in whether they hold text.
+ */
+.results-grid__cell--recorded {
+  border: var(--border-w) solid var(--color-hairline);
+  background: var(--color-surface-raised);
+}
+
+.results-grid__result {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The separator convention 03-UI-SPEC established. Decorative, and hidden as such. */
+.results-grid__sep {
+  color: var(--color-text-muted);
+}

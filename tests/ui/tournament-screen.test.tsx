@@ -437,6 +437,7 @@ describe('the stage shell', () => {
           state={completedState(depth)}
           topBar={TOP_BAR}
           onBackToDraft={() => undefined}
+          onSelectMatch={() => undefined}
         />,
         host,
       );

@@ -1,5 +1,6 @@
 import type { DraftState } from '../../core/model';
 import { selectTournamentStage } from '../../core/tournament';
+import { ResultsGrid } from '../components/ResultsGrid';
 import { TopBar, type TopBarProps } from '../components/TopBar';
 
 import './TournamentScreen.css';
@@ -51,6 +52,16 @@ export interface TournamentScreenProps {
   topBar: TopBarProps;
   /** Back to the draft screen, where the board and the export panels are. */
   onBackToDraft: () => void;
+  /**
+   * A live results-grid cell the host activated, by match id.
+   *
+   * The dialog it opens is mounted by `app.tsx` as a SIBLING of the read-only gate, on the
+   * placement rule the three shipped dialogs already follow: `inert` applies to a whole
+   * subtree, so a modal rendered inside the gate would render, trap focus and refuse every
+   * click the moment another tab took the lock. The only route to this callback is a
+   * control inside the gate, so a read-only tab still cannot record anything.
+   */
+  onSelectMatch: (matchId: string) => void;
 }
 
 /** Verbatim from `05-UI-SPEC` §Copywriting → Round robin. */
@@ -61,7 +72,12 @@ export const BACK_TO_DRAFT = 'Back to the draft';
 
 const TOURNAMENT_TITLE = 'Tournament';
 
-export function TournamentScreen({ state, topBar, onBackToDraft }: TournamentScreenProps) {
+export function TournamentScreen({
+  state,
+  topBar,
+  onBackToDraft,
+  onSelectMatch,
+}: TournamentScreenProps) {
   const stage = selectTournamentStage(state);
 
   return (
@@ -84,6 +100,8 @@ export function TournamentScreen({ state, topBar, onBackToDraft }: TournamentScr
             <h2 class="tournament-screen__stage-heading" id="tournament-round-robin">
               {ROUND_ROBIN_HEADING}
             </h2>
+
+            <ResultsGrid state={state} onSelectMatch={onSelectMatch} />
 
             {/* 05-11 mounts the standings, the tiebreak override and the cut beside this. */}
           </section>
