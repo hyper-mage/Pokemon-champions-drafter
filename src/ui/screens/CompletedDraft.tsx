@@ -2,8 +2,11 @@ import { toShowdownPaste, type PasteSlot } from '../../core/export/paste';
 import type { DraftState, PlayerConfig } from '../../core/model';
 import type { RosterEntry } from '../../core/roster/types';
 import { selectSlotStone, selectTeams } from '../../core/selectors';
+import { selectTournamentStage } from '../../core/tournament';
 import { CHECKPOINT_HEADING, CheckpointPrompt } from '../components/CheckpointPrompt';
 import { ExportPanel } from '../components/ExportPanel';
+
+import './CompletedDraft.css';
 
 /**
  * What the host sees when the draft is finished — EXPO-06 and PERS-06.
@@ -54,7 +57,26 @@ export interface CompletedDraftProps {
   checkpointDismissed: boolean;
   onDownload: () => void;
   onDismissCheckpoint: () => void;
+  /**
+   * Go to the tournament surfaces — the round robin, the cut and the bracket.
+   *
+   * The control that calls this renders only when `selectTournamentStage(state)` is not
+   * `'notRunning'`, which is what makes a `draftOnly` night skip every bracket screen
+   * entirely (ROADMAP criterion 1's first clause) without this file knowing what
+   * `draftOnly` is. No log action is involved and none is wanted: the round robin exists
+   * the moment the draft completes, because every pairing is derived.
+   */
+  onOpenTournament: () => void;
 }
+
+/**
+ * Verbatim, and named so the test and the screen cannot drift apart.
+ *
+ * A verb and its object, per `CLAUDE.md` §Copy. Not `Continue` and not `Next`: what the
+ * host is opening is the tournament, and the export panels they are leaving stay one
+ * `Back to the draft` away.
+ */
+export const OPEN_TOURNAMENT = 'Go to the tournament';
 
 /**
  * A player's slots in the shape `toShowdownPaste` accepts.
@@ -99,9 +121,30 @@ export function CompletedDraft({
   checkpointDismissed,
   onDownload,
   onDismissCheckpoint,
+  onOpenTournament,
 }: CompletedDraftProps) {
+  /*
+    The stage selector decides whether there is a tournament to go to, and this file does
+    not second-guess it. `'notRunning'` is its answer for a `draftOnly` night and for a
+    draft that is not finished — precisely the two cases with no surface to open — so the
+    control appears exactly when one exists.
+  */
+  const hasTournament = selectTournamentStage(state) !== 'notRunning';
+
   return (
     <div class="completed-draft">
+      {/*
+        AN ADDED CONTROL, NOT A SCREEN SWAP. This component takes the pool grid's place and
+        nothing else — the doc block above says why in terms that apply unchanged here, and
+        a completed-draft screen that replaced the whole draft region to offer this would
+        make the final pick the one pick in the tournament that could not be taken back.
+      */}
+      {hasTournament && (
+        <button type="button" class="completed-draft__tournament" onClick={onOpenTournament}>
+          {OPEN_TOURNAMENT}
+        </button>
+      )}
+
       <CheckpointPrompt
         // The DRAFT milestone names itself. 04-11 mounts the same component at the ban
         // reveal under its own heading, and neither caller inherits the other's by default.

@@ -118,6 +118,7 @@ import { CompletedDraft } from './ui/screens/CompletedDraft';
 import { ConfigScreen } from './ui/screens/ConfigScreen';
 import { LandingScreen } from './ui/screens/LandingScreen';
 import { StorageBlocked } from './ui/screens/StorageBlocked';
+import { TournamentScreen } from './ui/screens/TournamentScreen';
 import { useOwnership } from './ui/use-ownership';
 
 type LoadState =
@@ -165,10 +166,23 @@ type DocumentRoster =
  * the card panel, the board and the two hand strips individually: five places that can each
  * be got wrong, against one union member and one `setScreen` call. The answer is not close.
  *
- *   `landing`  the front door — resume, import, or a new tournament
- *   `config`   the form, which writes a document exactly once
- *   `bans`     the blind or snake ban stage, BEFORE the draft (D-11)
- *   `draft`    the pool, the board and the rest of the tournament
+ * ## Why the tournament is a FIFTH member, beside the fourth's reason
+ *
+ * The same argument one measurement further along, and this time it is arithmetic rather
+ * than a count of selectors. `05-UI-SPEC` §Layout Budget: the 8-player crosstable wants
+ * 204px columns, `.app-shell`'s 1200px cap yields 114px per column, and
+ * `--results-col-min` is 188px. **114 cannot hold 188 and 204 can**, so the tournament
+ * surfaces need the full-bleed shell — and the shell is chosen by `screen.name` in the
+ * expression below. A mode inside the draft screen could not reach a different shell
+ * without teaching that expression about a second state variable. Full-bleed is forced by
+ * measurement exactly as `02-UI-SPEC`'s 86px round cell forced sprite-only board chips.
+ *
+ *   `landing`     the front door — resume, import, or a new tournament
+ *   `config`      the form, which writes a document exactly once
+ *   `bans`        the blind or snake ban stage, BEFORE the draft (D-11)
+ *   `draft`       the pool, the board and the rest of the tournament
+ *   `tournament`  the round robin, the cut, the bracket and the recap — entered by an
+ *                 explicit host act and never by the router, see `screenForState`
  */
 type Screen =
   | { name: 'landing' }
@@ -187,7 +201,8 @@ type Screen =
       focusRoster?: boolean;
     }
   | { name: 'bans' }
-  | { name: 'draft' };
+  | { name: 'draft' }
+  | { name: 'tournament' };
 
 /**
  * Which screen a document belongs on — the one place that is answered.
@@ -201,6 +216,17 @@ type Screen =
  * It BRANCHES on `selectBanStageState` and decides nothing: `'notRunning'` is that
  * selector's answer for a hostBanlist tournament and for a stage that is already behind the
  * document, which are precisely the two cases that belong on the draft screen.
+ *
+ * ## `tournament` IS DELIBERATELY ABSENT, and that is not an oversight
+ *
+ * The doc block above names the failure a FORGOTTEN call site produces, so the reason for
+ * a deliberate omission belongs beside it. Routing on `selectIsTournamentComplete` would
+ * move the host off the per-player export panels the instant the last pick landed —
+ * pastes half-copied, `Download the tournament JSON` gone from under the cursor — to a
+ * screen nobody asked for. Nothing about the tournament is unavailable until it is
+ * entered: every pairing is derived, so the round robin exists whether it is on screen or
+ * not. `CompletedDraft` offers the way in and `TournamentScreen` offers the way back, and
+ * both are host acts. **Do not teach this function to return it.**
  */
 function screenForState(state: DraftState | null): Screen {
   if (state === null) return { name: 'draft' };
@@ -2347,11 +2373,18 @@ export function App() {
           carries `inert`, and the entry surface has to be under it: a read-only tab handed a
           live ban screen is a rival-tournament hole (T-04-20) and a secrecy one. Moving the
           entry surface out to a sibling would look identical on screen and reopen both.
+
+          THE TOURNAMENT SCREEN JOINS THE `draft-shell` ARM, and by measurement rather than
+          by resemblance. `05-UI-SPEC` §Layout Budget: the 8-player crosstable wants 204px
+          columns, this cap yields 114px, and `--results-col-min` is 188px. The sentence
+          above applies to it unchanged — a read-only tab handed a live results grid could
+          record a result nobody in the room played, which is T-05-55.
         */
         class={
           screen.name === 'bans' && blindEntryActive
             ? 'entry-shell'
             : screen.name === 'draft' ||
+                screen.name === 'tournament' ||
                 (screen.name === 'bans' && state?.config.banMode === 'snake')
               ? 'draft-shell'
               : 'app-shell'
@@ -2678,6 +2711,11 @@ export function App() {
                     checkpointDismissed={checkpointDismissed}
                     onDownload={handleDownload}
                     onDismissCheckpoint={() => setCheckpointDismissed(true)}
+                    // A route, not a fold. WHETHER the control renders is
+                    // `selectTournamentStage`'s call inside the screen — which is what
+                    // makes a `draftOnly` night skip every bracket surface — and this
+                    // line is only where the host lands when they take it.
+                    onOpenTournament={() => setScreen({ name: 'tournament' })}
                   />
                 ) : (
                   <PoolGrid
@@ -2727,6 +2765,32 @@ export function App() {
               }
             />
           </>
+        )}
+
+        {/*
+          THE FIFTH ARM, and it is an arm rather than a sibling for the reason the gate's
+          own doc block gives about the entry surface: this is the element that carries
+          `inert`, and every record, cut, override and reopen control on the tournament
+          surfaces has to be under it. A read-only tab that could reach a results-grid cell
+          would record a result the owning tab never saw (T-05-55), and moving the screen
+          out to a sibling would look identical on screen while reopening exactly that.
+
+          No new ownership machinery is needed and none is wanted — the only route to this
+          screen is a control inside the gate.
+        */}
+        {screen.name === 'tournament' && state !== null && (
+          <TournamentScreen
+            state={state}
+            topBar={{
+              onDownload: handleDownload,
+              onImportFile: handleImportFile,
+              importError: importFlow.status === 'failed' ? importFlow.message : null,
+              onRequestUndo: handleRequestUndo,
+              onRequestAbandon: handleRequestAbandon,
+              bannedNames,
+            }}
+            onBackToDraft={() => setScreen({ name: 'draft' })}
+          />
         )}
       </div>
 
