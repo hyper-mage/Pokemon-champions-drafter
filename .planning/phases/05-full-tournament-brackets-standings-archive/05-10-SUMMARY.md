@@ -211,3 +211,8 @@ path is touched, and the one new write path is `dispatch`.
   `Keep the recorded result` ×1, `This is already the recorded result.` ×1, `MAX_MATCH_METRIC`
   ≥1 with no `max={18}`, zero `ConfirmDialog`, `causedBySeq` ≥1, zero `.focus()`, zero
   `aria-disabled="false"`.
+
+## Self-Check: PASSED
+
+All eleven created files exist on disk. All five commits are in the log:
+`f1ae353`, `581fdac`, `ea31503`, `242cf29`, `339ac54`.
