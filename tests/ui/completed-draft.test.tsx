@@ -186,6 +186,7 @@ function drawCompleted(overrides: Partial<Parameters<typeof CompletedDraft>[0]> 
         checkpointDismissed={false}
         onDownload={() => undefined}
         onDismissCheckpoint={() => undefined}
+        onOpenTournament={() => undefined}
         {...overrides}
       />,
       host,
@@ -470,6 +471,7 @@ describe('copying', () => {
             checkpointDismissed={false}
             onDownload={() => undefined}
             onDismissCheckpoint={() => undefined}
+            onOpenTournament={() => undefined}
           />
         </>,
         host,
@@ -512,6 +514,7 @@ describe('copying', () => {
             checkpointDismissed={false}
             onDownload={() => undefined}
             onDismissCheckpoint={() => undefined}
+            onOpenTournament={() => undefined}
           />
         </>,
         host,

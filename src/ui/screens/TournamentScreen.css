@@ -1,0 +1,77 @@
+/*
+ * TournamentScreen.css — the stage shell's own geometry, and nothing else's.
+ *
+ * Tokens only. No raw hex and no raw length: every colour, size and space here comes from
+ * `tokens.css`, and the one sanctioned raw length this phase adds — `--results-col-min` —
+ * is declared in `ResultsGrid.css`, beside the reasoning that derives it.
+ *
+ * WHAT THIS FILE DELIBERATELY DOES NOT CONTAIN, on `BanStageScreen.css`'s rule:
+ *
+ *   `.draft-shell`               app.css — the full-bleed shell `05-UI-SPEC` §Layout
+ *                                Budget's arithmetic forces on this screen
+ *   `.draft-shell .sticky-head`  app.css — the head the TopBar sticks as
+ *   the results grid's rules     ResultsGrid.css, beside the component
+ *
+ * Restating any of them here would be a second thing that can disagree with the first
+ * about how tall the head is, and the room reads the top bar from the same line on this
+ * screen and the draft.
+ *
+ * `--space-5` separates the stage blocks and `--space-4` separates the blocks within one,
+ * per §Spacing Scale's two new rows. Both are gaps rather than margins so a block added by
+ * 05-11, 05-13 or 05-14 inherits the rhythm without declaring anything.
+ */
+
+.tournament-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/*
+ * The title and the way back, on one line at wide widths.
+ *
+ * `flex-wrap` rather than a media query: the two items stack on their own the moment the
+ * line cannot hold them, which is the same answer the shipped 1280px breakpoint gives
+ * without this file owning a second copy of that number.
+ */
+.tournament-screen__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.tournament-screen__title {
+  margin: 0;
+  font: var(--text-display);
+}
+
+/*
+ * Not the accent. `05-UI-SPEC` §Accent reserved for gives this screen exactly one
+ * accent-filled action — `Take the cut` at the round-robin stage — and a second one would
+ * make the reservation stop meaning anything. Leaving is a way out, not the primary act.
+ */
+.tournament-screen__back {
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-w) solid var(--color-hairline);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+.tournament-screen__stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tournament-screen__stage-heading {
+  margin: 0;
+  font: var(--text-heading);
+}

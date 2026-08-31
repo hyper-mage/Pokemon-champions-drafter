@@ -1,0 +1,32 @@
+/*
+ * CompletedDraft.css — one rule, and the reason the file did not exist until now.
+ *
+ * The screen shipped in 03-06 with no stylesheet at all, correctly: it mounts
+ * `CheckpointPrompt` and one `ExportPanel` per player, and every one of those brings its
+ * own rules. `.completed-draft` was a container with nothing to say.
+ *
+ * 05-10 adds the one element that belongs to this screen rather than to a component it
+ * mounts — the way on to the tournament surfaces — so the screen/stylesheet pair every
+ * other file in `src/ui/screens/` takes arrives with it. Tokens only, no raw hex, no raw
+ * length.
+ *
+ * NOT THE ACCENT, and this is the reservation rather than a preference. `05-UI-SPEC`
+ * §Accent reserved for gives each screen exactly one accent-filled primary action, and on
+ * this screen it is already spent: `CheckpointPrompt`'s `Download the tournament JSON` is
+ * accent use 2 of 3, and PERS-06 is the reason it outranks this. So the entry control
+ * takes the same bordered surface treatment the segmented controls use for a selected
+ * option — a lightness and boundary change, no hue — and still clears `--target-min`,
+ * because "not the primary action" is not a reason to make something hard to hit.
+ */
+
+.completed-draft__tournament {
+  min-height: var(--target-min);
+  margin-bottom: var(--space-4);
+  padding: 0 var(--space-3);
+  border: var(--border-w) solid var(--color-text);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+}

@@ -1,0 +1,62 @@
+/*
+ * MatchRecordDialog.css — the form inside the modal, and nothing about the modal.
+ *
+ * Tokens only. No raw hex, no raw length. The panel, the backdrop, the heading, the action
+ * row and the two buttons' base treatment are all `Dialog.css`'s, and restating any of them
+ * here would be a second thing that can disagree with the first about how a dialog looks —
+ * the same division `ConfirmDialog.css` keeps.
+ *
+ * `--space-3` between fields, per `05-UI-SPEC` §Spacing Scale.
+ */
+
+.match-record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/*
+ * Accent use 2 of 3 — the primary action of the current screen, which inside a modal is the
+ * modal's own. `05-UI-SPEC` §Colour: the D-10 and D-11 cascade confirms are `default`-toned
+ * and NOT danger-coloured, deliberately. What a cascade voids is recoverable in one undo
+ * step and is named in the recap either way; `--color-danger` means there is no way back
+ * without a file the host may not have downloaded, and colouring a fully-undoable
+ * correction the same red would make the three irreversible surfaces less legible as a
+ * category, which is the only job that reservation has.
+ */
+.match-record__record {
+  border: var(--hairline-w) solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+/*
+ * The inert state. `aria-disabled` is the selector, which keeps the styling and the
+ * semantics on one attribute — there is no separate class to forget.
+ *
+ * Not danger-coloured either: nothing has been lost and nothing is broken. It is a not-yet
+ * state, exactly like a blocked `Start draft`.
+ */
+.match-record__record[aria-disabled='true'] {
+  border-color: var(--color-hairline);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+}
+
+/*
+ * What the correction costs, in a sentence, beside the button that names it in three words.
+ * Both say the same thing because the room reads one of them and the screen reader hears
+ * the other.
+ */
+.match-record__cascade {
+  margin: 0;
+  max-width: 60ch;
+  font: var(--text-body);
+}
+
+.match-record__reason {
+  margin: 0;
+  max-width: 60ch;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}

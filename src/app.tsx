@@ -32,8 +32,10 @@ import {
   bansRevealed,
   bansSubmitted,
   cardsPlayed,
+  matchRecorded,
   orderResolved,
   pickMade,
+  resultsVoided,
   swapMade,
   swapPassed,
 } from './core/actions';
@@ -71,6 +73,7 @@ import {
   selectSwapTargets,
   selectTeams,
 } from './core/selectors';
+import { selectRemainingMatchCount, type VoidCascade } from './core/tournament';
 import { undoCrossesRoundBoundary, type RoundBoundaryCrossing } from './core/undo';
 import {
   abandonTournament,
@@ -97,6 +100,7 @@ import { CardPanel, type PlayedCard } from './ui/components/CardPanel';
 import { ConfirmDialog } from './ui/components/ConfirmDialog';
 import { ImportConfirmDialog } from './ui/components/ImportConfirmDialog';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
+import { MatchRecordDialog, type MatchRecord } from './ui/components/MatchRecordDialog';
 import {
   PoolGrid,
   type MegaRoundRestriction,
@@ -104,6 +108,7 @@ import {
   type SwapBudget,
 } from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
+import { type ResultsGridProps } from './ui/components/ResultsGrid';
 import {
   CARD_PHASE_EXPAND_REASON,
   SplitPanes,
@@ -118,6 +123,7 @@ import { CompletedDraft } from './ui/screens/CompletedDraft';
 import { ConfigScreen } from './ui/screens/ConfigScreen';
 import { LandingScreen } from './ui/screens/LandingScreen';
 import { StorageBlocked } from './ui/screens/StorageBlocked';
+import { TournamentScreen } from './ui/screens/TournamentScreen';
 import { useOwnership } from './ui/use-ownership';
 
 type LoadState =
@@ -165,10 +171,23 @@ type DocumentRoster =
  * the card panel, the board and the two hand strips individually: five places that can each
  * be got wrong, against one union member and one `setScreen` call. The answer is not close.
  *
- *   `landing`  the front door — resume, import, or a new tournament
- *   `config`   the form, which writes a document exactly once
- *   `bans`     the blind or snake ban stage, BEFORE the draft (D-11)
- *   `draft`    the pool, the board and the rest of the tournament
+ * ## Why the tournament is a FIFTH member, beside the fourth's reason
+ *
+ * The same argument one measurement further along, and this time it is arithmetic rather
+ * than a count of selectors. `05-UI-SPEC` §Layout Budget: the 8-player crosstable wants
+ * 204px columns, `.app-shell`'s 1200px cap yields 114px per column, and
+ * `--results-col-min` is 188px. **114 cannot hold 188 and 204 can**, so the tournament
+ * surfaces need the full-bleed shell — and the shell is chosen by `screen.name` in the
+ * expression below. A mode inside the draft screen could not reach a different shell
+ * without teaching that expression about a second state variable. Full-bleed is forced by
+ * measurement exactly as `02-UI-SPEC`'s 86px round cell forced sprite-only board chips.
+ *
+ *   `landing`     the front door — resume, import, or a new tournament
+ *   `config`      the form, which writes a document exactly once
+ *   `bans`        the blind or snake ban stage, BEFORE the draft (D-11)
+ *   `draft`       the pool, the board and the rest of the tournament
+ *   `tournament`  the round robin, the cut, the bracket and the recap — entered by an
+ *                 explicit host act and never by the router, see `screenForState`
  */
 type Screen =
   | { name: 'landing' }
@@ -187,7 +206,8 @@ type Screen =
       focusRoster?: boolean;
     }
   | { name: 'bans' }
-  | { name: 'draft' };
+  | { name: 'draft' }
+  | { name: 'tournament' };
 
 /**
  * Which screen a document belongs on — the one place that is answered.
@@ -201,6 +221,17 @@ type Screen =
  * It BRANCHES on `selectBanStageState` and decides nothing: `'notRunning'` is that
  * selector's answer for a hostBanlist tournament and for a stage that is already behind the
  * document, which are precisely the two cases that belong on the draft screen.
+ *
+ * ## `tournament` IS DELIBERATELY ABSENT, and that is not an oversight
+ *
+ * The doc block above names the failure a FORGOTTEN call site produces, so the reason for
+ * a deliberate omission belongs beside it. Routing on `selectIsTournamentComplete` would
+ * move the host off the per-player export panels the instant the last pick landed —
+ * pastes half-copied, `Download the tournament JSON` gone from under the cursor — to a
+ * screen nobody asked for. Nothing about the tournament is unavailable until it is
+ * entered: every pairing is derived, so the round robin exists whether it is on screen or
+ * not. `CompletedDraft` offers the way in and `TournamentScreen` offers the way back, and
+ * both are host acts. **Do not teach this function to return it.**
  */
 function screenForState(state: DraftState | null): Screen {
   if (state === null) return { name: 'draft' };
@@ -235,6 +266,15 @@ type ImportFlow =
  * file it came from, for the same reason: the only question a dialog should ask is the one
  * the host can actually answer.
  */
+/**
+ * The match the record dialog is open on, already resolved — or `null` for closed.
+ *
+ * `ResultsGrid` composes this and 05-13's bracket will compose the same shape, so the type
+ * is read off the grid's own prop rather than restated: two declarations of one payload is
+ * two places a field can be added to only once.
+ */
+type RecordingMatch = Parameters<ResultsGridProps['onSelectMatch']>[0] | null;
+
 type Confirm =
   | { kind: 'idle' }
   | { kind: 'abandon'; picks: number; players: number }
@@ -1658,6 +1698,25 @@ export function App() {
   const closeConfirm = useCallback(() => setConfirm({ kind: 'idle' }), []);
 
   /**
+   * Which match the record dialog is open on — or `null`.
+   *
+   * Held HERE rather than inside `TournamentScreen`, and the placement is the same one
+   * every dialog in this file already takes: `inert` applies to a whole subtree, so a modal
+   * rendered inside the read-only gate would render, trap focus and refuse every click the
+   * instant another tab took the lock — a dialog nobody can dismiss. The gate can be raised
+   * while this dialog is open, which is exactly the case that makes the placement matter.
+   *
+   * A read-only tab still cannot reach it: the only route to a non-null value is a
+   * results-grid cell, and every one of those is inside the gate (T-05-55).
+   *
+   * It holds the RESOLVED PAIRING rather than an id to look one up from — `Confirm`'s shape
+   * and its reason. The surface that owns the pairing names it, so nothing here has to
+   * parse a match id, which is the operation `selectRoundRobinMatches` refuses to perform
+   * because a player id may legally contain a colon.
+   */
+  const [recording, setRecording] = useState<RecordingMatch>(null);
+
+  /**
    * Did the pick that caused the current turn also clear active pool filters — D-35.
    *
    * `PoolGrid` owns the filter state and this is the single fact that has to leave it. It
@@ -2098,6 +2157,120 @@ export function App() {
   });
 
   // -------------------------------------------------------------------------
+  // TOUR-04 / TOUR-05 / TOUR-06 — one result, and what correcting it costs
+  // -------------------------------------------------------------------------
+
+  /**
+   * Record a match, and clear whatever that correction invalidated — D-05, D-10, D-11.
+   *
+   * ## THE ORDER IS THE DESIGN, and it is RESEARCH §Corrections as Appends'
+   *
+   * The record goes first and the void second. The reverse would show a result vanishing
+   * for no stated reason if anything went wrong between the two — the host would be left
+   * looking at an emptied bracket and no record of why. This way round, a failure between
+   * them leaves a recorded result and nothing voided, which is the recoverable half.
+   *
+   * Both dispatches are synchronous inside this one handler and autosave is a 300ms
+   * trailing debounce, so no partial correction can reach storage (T-05-54). D-05 already
+   * means a single match is never half-recorded; this is the pairing one level up.
+   *
+   * ## `causedBySeq` is READ BACK, not predicted
+   *
+   * `dispatch` stamps the envelope, so the record's `seq` does not exist until it is in the
+   * log — and it is `max(seq) + 1` rather than `log.length`, which a caller cannot compute
+   * for itself once undo has left a gap. So the document is re-read between the two, on
+   * the card-resolution handler's precedent above: the play is in the log now, and its
+   * number is a question about the state it produced. That pairing is what makes D-10's
+   * "undo puts the whole correction back in one step" true rather than intended.
+   *
+   * ## The cascade is the dialog's, not a second opinion
+   *
+   * `targetSeqs` arrives from the same `selectVoidCascade` call the button's label was
+   * computed from. Re-deriving it here would be a second authority on what the host just
+   * agreed to, and the two would disagree the moment either changed — a confirm that lied
+   * about its own cost (T-05-53).
+   */
+  /** The void sentence waiting for the render after the record's. See the handler below. */
+  const voidAnnouncementRef = useRef<string | null>(null);
+
+  const handleRecordMatch = useCallback((record: MatchRecord, cascade: VoidCascade) => {
+    const before = getState();
+    if (before === null) return;
+
+    const winnerName = selectPlayerName(before, record.winnerId);
+    const loserName = selectPlayerName(before, record.loserId);
+
+    const recorded = dispatch(
+      matchRecorded(
+        record.matchId,
+        record.winnerId,
+        record.loserId,
+        record.winnerGames,
+        record.loserGames,
+        record.metric,
+      ),
+    );
+
+    // A refused record leaves the dialog open on the values that were refused, which is
+    // where the host can still see and change them. Closing here would discard what they
+    // typed and tell them nothing.
+    if (!recorded.ok) return;
+
+    setRecording(null);
+
+    if (cascade.targetSeqs.length > 0) {
+      // Re-read: the record is in the log now, and its `seq` is a fact about the document
+      // it produced rather than the one it was dispatched against.
+      const after = getDoc();
+      const causedBySeq = after === null ? null : (after.log[after.log.length - 1]?.seq ?? null);
+
+      if (causedBySeq !== null) dispatch(resultsVoided(cascade.targetSeqs, causedBySeq));
+    }
+
+    /*
+      TWO ANNOUNCEMENTS, the record first and the void separately and after — §Interaction's
+      two live-region rows. One long sentence would fold the surprising fact into the
+      expected one, and the void is the surprising half.
+
+      THE SECOND IS ARMED RATHER THAN SPOKEN HERE, and that is the whole reason the ref
+      exists. `announce` writes a single signal, so a second call in this handler would
+      silently overwrite the first and the room would hear only the void — the exact
+      failure `confirmSwap` above records and routes around. LiveRegion's own header names
+      a two-frame write as the real fix for its byte-identical limit; this is that shape,
+      applied to two DIFFERENT sentences that must both be heard.
+
+      The count is read AFTER both dispatches, because a void puts matches back to unplayed
+      and the sentence must say what is left now rather than what was left a moment ago.
+    */
+    const settled = getState();
+    if (settled === null || winnerName === null || loserName === null) return;
+
+    const games = record.winnerGames > 1 ? ` ${record.winnerGames}–${record.loserGames}` : '';
+    announce(
+      `${winnerName} beat ${loserName}${games}. ${selectRemainingMatchCount(settled)} matches left.`,
+    );
+
+    if (cascade.matchCount > 0) {
+      voidAnnouncementRef.current = `${cascade.matchCount} matches were voided.`;
+    }
+  }, []);
+
+  /**
+   * Speak the void, one render after the record — see the block above.
+   *
+   * No dependency array and it always clears its own flag, exactly like the two focus
+   * handoffs in this file: an armed announcement must never survive into a later, unrelated
+   * render and be spoken about a correction that has scrolled out of the host's memory.
+   */
+  useEffect(() => {
+    const sentence = voidAnnouncementRef.current;
+    if (sentence === null) return;
+    voidAnnouncementRef.current = null;
+
+    announce(sentence);
+  });
+
+  // -------------------------------------------------------------------------
   // PERS-04 / PERS-05 — the tournament as a file
   // -------------------------------------------------------------------------
 
@@ -2347,11 +2520,18 @@ export function App() {
           carries `inert`, and the entry surface has to be under it: a read-only tab handed a
           live ban screen is a rival-tournament hole (T-04-20) and a secrecy one. Moving the
           entry surface out to a sibling would look identical on screen and reopen both.
+
+          THE TOURNAMENT SCREEN JOINS THE `draft-shell` ARM, and by measurement rather than
+          by resemblance. `05-UI-SPEC` §Layout Budget: the 8-player crosstable wants 204px
+          columns, this cap yields 114px, and `--results-col-min` is 188px. The sentence
+          above applies to it unchanged — a read-only tab handed a live results grid could
+          record a result nobody in the room played, which is T-05-55.
         */
         class={
           screen.name === 'bans' && blindEntryActive
             ? 'entry-shell'
             : screen.name === 'draft' ||
+                screen.name === 'tournament' ||
                 (screen.name === 'bans' && state?.config.banMode === 'snake')
               ? 'draft-shell'
               : 'app-shell'
@@ -2678,6 +2858,11 @@ export function App() {
                     checkpointDismissed={checkpointDismissed}
                     onDownload={handleDownload}
                     onDismissCheckpoint={() => setCheckpointDismissed(true)}
+                    // A route, not a fold. WHETHER the control renders is
+                    // `selectTournamentStage`'s call inside the screen — which is what
+                    // makes a `draftOnly` night skip every bracket surface — and this
+                    // line is only where the host lands when they take it.
+                    onOpenTournament={() => setScreen({ name: 'tournament' })}
                   />
                 ) : (
                   <PoolGrid
@@ -2728,6 +2913,33 @@ export function App() {
             />
           </>
         )}
+
+        {/*
+          THE FIFTH ARM, and it is an arm rather than a sibling for the reason the gate's
+          own doc block gives about the entry surface: this is the element that carries
+          `inert`, and every record, cut, override and reopen control on the tournament
+          surfaces has to be under it. A read-only tab that could reach a results-grid cell
+          would record a result the owning tab never saw (T-05-55), and moving the screen
+          out to a sibling would look identical on screen while reopening exactly that.
+
+          No new ownership machinery is needed and none is wanted — the only route to this
+          screen is a control inside the gate.
+        */}
+        {screen.name === 'tournament' && state !== null && (
+          <TournamentScreen
+            state={state}
+            topBar={{
+              onDownload: handleDownload,
+              onImportFile: handleImportFile,
+              importError: importFlow.status === 'failed' ? importFlow.message : null,
+              onRequestUndo: handleRequestUndo,
+              onRequestAbandon: handleRequestAbandon,
+              bannedNames,
+            }}
+            onBackToDraft={() => setScreen({ name: 'draft' })}
+            onSelectMatch={setRecording}
+          />
+        )}
       </div>
 
       {/*
@@ -2737,6 +2949,31 @@ export function App() {
         can dismiss. Rendered here it is unaffected by the attribute, and the pick count
         it quotes is the CURRENT draft's, which is the thing about to be lost.
       */}
+      {/*
+        Same placement, same reason as the three below — and here the reason is not
+        hypothetical. This dialog is opened from a surface INSIDE the gate, and the gate can
+        go up while it is open: another tab presses `Take over drafting here` mid-entry and
+        every screen behind this modal goes inert. Rendered inside, the dialog would go
+        inert with them — trapping focus in a panel that refuses its own dismiss button.
+
+        A read-only tab still cannot record anything, because the only route to a non-null
+        `recording` is a results-grid cell and every one of those IS behind the gate
+        (T-05-55). The gate is the record control's guard; it was never this modal's.
+      */}
+      {recording !== null && state !== null && (
+        <MatchRecordDialog
+          state={state}
+          matchId={recording.matchId}
+          aId={recording.aId}
+          aName={recording.aName}
+          bId={recording.bId}
+          bName={recording.bName}
+          format={recording.format}
+          onRecord={handleRecordMatch}
+          onKeep={() => setRecording(null)}
+        />
+      )}
+
       {importFlow.status === 'confirm' && state !== null && (
         <ImportConfirmDialog
           pickCount={selectPickCount(state)}
