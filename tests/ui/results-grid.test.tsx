@@ -38,7 +38,12 @@ import {
   type TournamentConfig,
   type TournamentDepth,
 } from '../../src/core/model';
-import { ResultsGrid, RESULTS_EMPTY, metricLabel } from '../../src/ui/components/ResultsGrid';
+import {
+  ResultsGrid,
+  RESULTS_EMPTY,
+  metricLabel,
+  type ResultsGridProps,
+} from '../../src/ui/components/ResultsGrid';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -128,7 +133,7 @@ function stateWith(
 }
 
 let host: HTMLDivElement;
-let selected: string[];
+let selected: Parameters<ResultsGridProps['onSelectMatch']>[0][];
 
 beforeEach(() => {
   host = document.createElement('div');
@@ -143,7 +148,10 @@ afterEach(() => {
 
 function draw(state: DraftState): void {
   act(() => {
-    render(<ResultsGrid state={state} onSelectMatch={(id) => selected.push(id)} />, host);
+    render(
+      <ResultsGrid state={state} onSelectMatch={(match) => selected.push(match)} />,
+      host,
+    );
   });
 }
 
@@ -281,7 +289,18 @@ describe('a cell', () => {
       cells()[0]?.click();
     });
 
-    expect(selected).toEqual(['rr:0:1']);
+    // The PAIRING travels with the id: the dialog needs both names and the stage's format,
+    // and none of the three is recoverable from a match id without parsing it.
+    expect(selected).toEqual([
+      {
+        matchId: 'rr:0:1',
+        aId: 'p1',
+        aName: 'Ada',
+        bId: 'p2',
+        bName: 'Bo',
+        format: 'bo1',
+      },
+    ]);
   });
 });
 

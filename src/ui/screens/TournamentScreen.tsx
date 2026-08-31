@@ -1,6 +1,6 @@
 import type { DraftState } from '../../core/model';
 import { selectTournamentStage } from '../../core/tournament';
-import { ResultsGrid } from '../components/ResultsGrid';
+import { ResultsGrid, type ResultsGridProps } from '../components/ResultsGrid';
 import { TopBar, type TopBarProps } from '../components/TopBar';
 
 import './TournamentScreen.css';
@@ -61,7 +61,7 @@ export interface TournamentScreenProps {
    * click the moment another tab took the lock. The only route to this callback is a
    * control inside the gate, so a read-only tab still cannot record anything.
    */
-  onSelectMatch: (matchId: string) => void;
+  onSelectMatch: ResultsGridProps['onSelectMatch'];
 }
 
 /** Verbatim from `05-UI-SPEC` §Copywriting → Round robin. */
@@ -107,8 +107,27 @@ export function TournamentScreen({
           </section>
         )}
 
-        {/* 05-13 mounts the bracket in this block; 05-14 mounts the recap below it. */}
-        {stage === 'bracket' && <section class="tournament-screen__stage" />}
+        {/*
+          THE CROSSTABLE OUTLIVES THE CUT, and that is D-11 rather than a convenience.
+
+          `05-UI-SPEC` §5's fourth primary-button row is `Record and void the bracket` — a
+          correction to a round-robin result taken AFTER the cut — so those results have to
+          stay correctable once the bracket exists. The grid is the only surface that offers
+          them, and a stage that dropped it would make the harshest cascade in the phase
+          unreachable while the dialog still carried the label for it.
+
+          05-13 mounts the bracket beside this and 05-14 mounts the recap below it; neither
+          replaces it.
+        */}
+        {stage === 'bracket' && (
+          <section class="tournament-screen__stage" aria-labelledby="tournament-round-robin">
+            <h2 class="tournament-screen__stage-heading" id="tournament-round-robin">
+              {ROUND_ROBIN_HEADING}
+            </h2>
+
+            <ResultsGrid state={state} onSelectMatch={onSelectMatch} />
+          </section>
+        )}
       </div>
     </>
   );

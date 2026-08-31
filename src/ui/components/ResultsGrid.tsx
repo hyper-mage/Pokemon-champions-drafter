@@ -1,6 +1,6 @@
 import { Fragment } from 'preact';
 
-import type { DraftState, MatchMetric, MatchResult } from '../../core/model';
+import type { DraftState, MatchMetric, MatchResult, StageFormat } from '../../core/model';
 import { selectRemainingMatchCount, selectRoundRobinMatches } from '../../core/tournament';
 import { matches as matchCount } from '../confirm-copy';
 import { useRovingTabindex } from '../use-roving-tabindex';
@@ -100,8 +100,24 @@ function gamesText(winnerGames: number, loserGames: number, rowWon: boolean): st
 
 export interface ResultsGridProps {
   state: DraftState;
-  /** A live cell the host activated, by match id. The caller opens the dialog. */
-  onSelectMatch: (matchId: string) => void;
+  /**
+   * A live cell the host activated. The caller opens the dialog.
+   *
+   * The PAIRING travels with the id, and the stage's format with it. Both are facts this
+   * surface already holds and neither is recoverable from a match id without parsing it —
+   * which is the thing `selectRoundRobinMatches` refuses to do, because a player id may
+   * legally contain a colon. `format` is the round robin's because this IS the round robin;
+   * a bracket cell hands over the bracket's, which is D-08's per-stage split arriving where
+   * it belongs rather than being re-decided in the dialog.
+   */
+  onSelectMatch: (match: {
+    matchId: string;
+    aId: string;
+    aName: string;
+    bId: string;
+    bName: string;
+    format: StageFormat;
+  }) => void;
 }
 
 export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
@@ -260,7 +276,16 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
                     key={columnPlayer.id}
                     tabIndex={rove.tabIndexAt(index)}
                     onFocus={() => rove.onItemFocus(index)}
-                    onClick={() => onSelectMatch(matchId)}
+                    onClick={() =>
+                      onSelectMatch({
+                        matchId,
+                        aId: rowPlayer.id,
+                        aName: rowPlayer.name,
+                        bId: columnPlayer.id,
+                        bName: columnPlayer.name,
+                        format: state.config.roundRobinFormat,
+                      })
+                    }
                   >
                     {/*
                       An UNPLAYED cell renders nothing at all — no text and no fill. That is
