@@ -1,5 +1,5 @@
 ---
-status: awaiting-host
+status: passed
 phase: 05-full-tournament-brackets-standings-archive
 source:
   [
@@ -9,7 +9,7 @@ source:
     STATE.md §Blockers — the Phase 4 BLOCKING item (04-11 task 3),
   ]
 started: 2026-09-01T00:00:00Z
-updated: 2026-09-01T00:00:00Z
+updated: 2026-09-01T15:10:00Z
 ---
 
 # Phase 5 human UAT — the tournament stage at three metres
@@ -29,10 +29,10 @@ which is the pessimistic case in `05-UI-SPEC` §DRFT-14's arc-minute table. A re
 screen is a different data point and has to be recorded as one.
 
 ```
-physical_size:      (fill in — e.g. ~24")
-resolution:         (fill in — 1080p expected)
+physical_size:      24-27" (host reported a range, not a single measurement)
+resolution:         1080p
 distance:           three metres
-date:               (fill in)
+date:               2026-09-01
 ```
 
 ## The closed remedy set — read this before you record a failure
@@ -156,8 +156,14 @@ expected: |
      Nothing on screen may reveal a submission before the reveal.
 pass_condition: |
   Both halves hold. If either fails, this item stays BLOCKING.
-result:   (fill in — passed | failed)
-note:     (fill in — what you could and could not read, and whether anything leaked)
+result:   passed
+note: |
+  Host confirmed both halves. Legibility half: the ban-stage surfaces read at three metres.
+  Secrecy half: nothing on the locked screen was readable as a Pokemon name before the reveal —
+  confirmed explicitly on a direct question, because the orchestrator's first phrasing of the
+  question inverted the pass condition and the ambiguous answer was not resolved by assumption.
+  Phase 4's 04-11 task 3 BLOCKING item is cleared by this run; BAN-05 and BAN-06 secrecy
+  acceptance is satisfied (threat T-05-84).
 ```
 
 **If this part is not run in this session, it stays BLOCKING and must not be recorded as passed.**
@@ -171,11 +177,11 @@ is not repeated.
 
 | # | Surface | What you do at three metres | Pass condition | Result | Note |
 | --- | --- | --- | --- | --- | --- |
-| a | The results grid, about half recorded | Read the **remaining-match count** aloud. Then, without moving closer, say roughly how many cells are still empty. | The **count** is the pass condition. The empty-cell estimate is evidence for or against the empty-cell treatment, recorded either way. | | |
-| b | Three recorded cells | Read aloud the two players from the headers and the result from the cell, for three different cells. | All three read correctly — both names and the result. | | |
-| c | The standings table | Read every player name, every record, and the tiebreak note on any tied row. | Names and records read at 24px; the tiebreak note reads at 14px. | | |
-| d | The 8-seed bracket, cut at 5 so three byes are drawn | Read every bracket slot aloud, including the byes and the `Winner of …` placeholders. | Every slot readable. Byes and placeholders identifiable as such. | | |
-| e | The champion | Record the final. Read the champion's name aloud. | The name reads at 36px. | | |
+| a | The results grid, about half recorded | Read the **remaining-match count** aloud. Then, without moving closer, say roughly how many cells are still empty. | The **count** is the pass condition. The empty-cell estimate is evidence for or against the empty-cell treatment, recorded either way. | passed | Host reported a to e together as all passing. No empty-cell estimate was recorded separately. |
+| b | Three recorded cells | Read aloud the two players from the headers and the result from the cell, for three different cells. | All three read correctly — both names and the result. | passed | |
+| c | The standings table | Read every player name, every record, and the tiebreak note on any tied row. | Names and records read at 24px; the tiebreak note reads at 14px. | passed | |
+| d | The 8-seed bracket, cut at 5 so three byes are drawn | Read every bracket slot aloud, including the byes and the `Winner of …` placeholders. | Every slot readable. Byes and placeholders identifiable as such. | passed | |
+| e | The champion | Record the final. Read the champion's name aloud. | The name reads at 36px. | passed | |
 
 **Density, not size, is what is new here.** Every *size* on these surfaces already passed a physical
 check in Phase 3 or Phase 4 on the pessimistic screen. What is new is **28 cells in one view** where
@@ -192,12 +198,12 @@ Fill in once Part 2 is complete.
 ```
 automated_assertions:  7 of 7 passed (17-23)
 automated_gates:       4 of 4 passed (hex, px, four sizes, no fifth token consumed)
-physical_part_2a:      (fill in — Phase 4's BLOCKING item)
-physical_part_2b:      (fill in — a through e)
+physical_part_2a:      passed (Phase 4's BLOCKING item — cleared)
+physical_part_2b:      passed (a through e)
 total_physical:        6
-passed:                (fill in)
-failed:                (fill in)
-pending:               6
+passed:                6
+failed:                0
+pending:               0
 ```
 
 ## Gaps
@@ -205,23 +211,43 @@ pending:               6
 ```
 - truth: "The 8-player results grid, the 8-seed bracket and the champion's name are legible from
     three metres on a 1080p screen, verified by a person and recorded per surface"
-  status: pending
+  status: resolved
   severity: blocking
   test: [2b-a, 2b-b, 2b-c, 2b-d, 2b-e]
   reason: "Task 2 of 05-15-PLAN.md is a blocking checkpoint. 05-RESEARCH §Environment
     Availability records the physical check as human-dependent with NO automated fallback, and
     05-UI-SPEC §DRFT-14 records it as mandatory and not substitutable. Everything checkable from
     source was checked in Task 1 and all seven assertions pass."
-  disposition: "Awaiting the host. The phase is not complete until this file records a verdict per
-    surface, alongside the screen's physical size."
+  disposition: "Run 2026-09-01 at three metres on a 24-27\" 1080p screen. Host reported all five
+    surfaces as passing. Recorded with one caveat on granularity: the host reported a to e together
+    rather than surface by surface, so the record shows five passes on the host's word rather than
+    five independently narrated readings. No surface was reported marginal. See the granularity
+    gap below."
 
 - truth: "Phase 4's outstanding physical check is run in the same session, so the project carries
     one unrun physical item rather than two"
-  status: pending
+  status: resolved
   severity: blocking
   test: [2a]
   reason: "04-11 task 3, recorded BLOCKING in STATE.md. Batched into this session by 05-15-PLAN.md
     because the rig is identical — 8 players, blind, 2 bans each, standard density, a 1080p screen
     and three metres. It doubles as Phase 4's secrecy check for BAN-05 and BAN-06."
-  disposition: "If it is not run in this session, it stays BLOCKING and is not recorded as passed."
+  disposition: "Run 2026-09-01 in this session on the same rig. Both halves passed: ban-stage
+    surfaces legible at three metres, and no Pokemon nameable from the locked screen before the
+    reveal. 04-11 task 3 is cleared and Phase 4 no longer carries an unrun physical item."
+
+- truth: "A physical pass is recorded per surface rather than as a single verdict (threat T-05-82)"
+  status: partial
+  severity: advisory
+  test: [2b-a, 2b-b, 2b-c, 2b-d, 2b-e]
+  reason: "T-05-82 exists because Phase 3's pass was reported as one verdict and STATE.md still
+    carries the resulting ambiguity about which surfaces were marginal. This pass was requested
+    per surface and answered as 'all approved', which is a single verdict again, and 2b-a's
+    empty-cell estimate — evidence about the empty-cell treatment, not a pass condition — was not
+    captured at all."
+  disposition: "Not re-run. The five pass conditions are recorded as passed on the host's report
+    and no surface was called marginal, so nothing is recorded as verified that the host did not
+    assert. The missing empty-cell estimate is evidence rather than a gate, and the density
+    question it informs can be revisited if a real draft night reports the grid as hard to read.
+    Kept advisory so it surfaces in /gsd-audit-uat rather than being silently dropped."
 ```
