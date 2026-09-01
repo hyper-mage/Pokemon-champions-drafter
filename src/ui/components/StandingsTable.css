@@ -1,0 +1,119 @@
+/*
+ * StandingsTable.css — the five columns of `05-UI-SPEC` §6, and no motion at all.
+ *
+ * Tokens only: no raw hex and no raw length. The name column is `--board-label-w`, the
+ * draft board's own declaration reused rather than restated — a player-name column at a
+ * second width would make the board, the crosstable and the standings read as three
+ * different tools stacked on one screen. `--space-6` is §6's position column.
+ *
+ * NO TRANSITION RULE, ANYWHERE IN THIS FILE, AND NONE MAY BE ADDED. §Interaction's motion
+ * budget names this surface by name: a standings table does not animate a reorder. A row
+ * that slides into place is a row nobody can read while it moves, and this table is read
+ * from across a room while people argue with it.
+ *
+ * No :focus rule either — the global accent ring in app.css owns focus, and nothing in
+ * this table is interactive in the first place.
+ *
+ * Not accent-coloured. §Accent reserved for gives the round-robin stage exactly one accent
+ * action and a leading player is explicitly not one of accent's uses: marking first place
+ * with hue would be the same move as marking a next match, one surface along.
+ */
+
+.standings-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.standings-table__heading {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+/*
+ * The chain, stated once above the table. Muted and at --text-label so it reads as the
+ * table's own explanation rather than as a row of it — and, at tier 2, so the admission
+ * that the depth has one link fewer sits with the table it is about.
+ */
+.standings-table__caption {
+  margin: 0;
+  max-width: 60ch;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+/*
+ * The shared column template. The head and every row wear it, which is what keeps the
+ * two aligned without either of them declaring a width of its own.
+ *
+ * `column-gap` is --space-3 and `row-gap` is --space-1: the row wraps rather than
+ * scrolling at narrow widths, and when it does the note lands under the name at the
+ * tighter of the two gaps, because it is an aside about that name and not a new row.
+ */
+.standings-table__cells {
+  display: grid;
+  grid-template-columns: var(--space-6) var(--board-label-w) auto 1fr;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* Tier 3 only — the differential column exists at all only here (D-02). */
+.standings-table--metric .standings-table__cells {
+  grid-template-columns: var(--space-6) var(--board-label-w) auto auto 1fr;
+}
+
+.standings-table__head {
+  padding: 0 var(--space-3);
+}
+
+.standings-table__column {
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.standings-table__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  /*
+   * The marker is removed deliberately, on `SchedulePreview`'s stated reason: the position
+   * is already IN the row, and it is a position rather than a count. Three players tied
+   * for third all read 3 and the next row reads 6, so a browser marker beside them would
+   * number the same rows 1, 2, 3, 4 and disagree with the column it sits next to.
+   */
+  list-style: none;
+}
+
+.standings-table__row {
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+/* Position, name and record all at --text-heading, per §Typography. */
+.standings-table__position,
+.standings-table__player,
+.standings-table__record,
+.standings-table__metric {
+  font: var(--text-heading);
+  min-width: 0;
+}
+
+.standings-table__player {
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The note is the quietest thing in the row and has to be: it explains the row rather than
+ * being part of it. --text-label and muted, exactly as the caption above.
+ */
+.standings-table__note {
+  font: var(--text-label);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
