@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Host-Configured Draft Night** - A real group drafts on one shared screen: config, N players, pool, host banlist, board, feasibility gate (completed 2026-08-12)
 - [x] **Phase 3: Compiled Rules, Priority Cards, Swaps** - Composition requirements compile into a typed round schedule; cards decide turn order, swaps respect slot constraints (completed 2026-08-19)
 - [x] **Phase 4: Blind and Snake Bans** - The ban ritual on one shared screen, with a real pass-the-device flow that cannot leak (completed 2026-08-25)
-- [ ] **Phase 5: Full Tournament — Brackets, Standings, Archive** - Round robin, seeded cut, single elim, match records, recap, and roster refresh across a regulation rotation
+- [x] **Phase 5: Full Tournament — Brackets, Standings, Archive** - Round robin, seeded cut, single elim, match records, recap, and roster refresh across a regulation rotation (completed 2026-09-01)
 
 ## Phase Details
 
@@ -337,7 +337,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 05-15-PLAN.md — the three-metre pass and the phase gate *(not autonomous — blocking human check)* (TOUR-02, TOUR-03, TOUR-04, TOUR-08)
+- [x] 05-15-PLAN.md — the three-metre pass and the phase gate *(not autonomous — blocking human check)* (TOUR-02, TOUR-03, TOUR-04, TOUR-08)
 **UI hint**: yes
 **Notes**: This phase first satisfies the full success criterion (a real draft plus bracket, end to end, nothing tracked elsewhere). Research need LOW on brackets and standings — well-trodden tournament-software territory; the real discipline is refusing scope, since double elimination, Swiss, and consolation brackets are explicitly out of scope and are where bracket rendering code goes to die. Research need MEDIUM on roster refresh — re-confirm `raw.githubusercontent.com` CORS and caching behavior at implementation time, and note this is Tier A only: the app fetches the project's own pre-built snapshot, never live upstream data. Brackets and standings are fully additive — they consume only completed teams — which is why they come last among feature work.
 
@@ -352,7 +352,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
-| 5. Full Tournament — Brackets, Standings, Archive | 14/15 | In Progress|  |
+| 5. Full Tournament — Brackets, Standings, Archive | 15/15 | Complete   | 2026-09-01 |
 
 ## Requirement Coverage
 

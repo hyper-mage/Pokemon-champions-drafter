@@ -135,13 +135,15 @@ None yet.
 - **Phase 3 priority cards / Phase 4 blind bans:** MEDIUM research need each; both are novel hot-seat UX with only party-app and tabletop precedent. Both want a real playtest with the 4–8 friend group.
 - **Roster rotation timing:** Champions regulation M-C is expected around 2026-09-02. Snapshot regulation-labeling must land in Phase 1, not later.
 - Phase 3 verify gate: tests/ui/ban-list.test.tsx times out under full-suite parallel load. Pre-existing — reproduced with pre-plan src at e663518. Logged in 03/deferred-items.md; not this plan's to fix.
-- **Phase 4 is one human pass short of complete (BLOCKING).** 04-11 task 3 is `04-UI-SPEC`
-  §DRFT-14 item 4: 8 players, `blind`, 2 bans each, `standard` density, a 1080p screen and 3
-  metres of floor. 04-RESEARCH §Environment Availability records it as human-dependent with **no
-  automated fallback**, and it doubles as the phase's secrecy check, so it gates BAN-05 and BAN-06
-  acceptance as well as DRFT-14. All code is built, committed and green. If an item fails, that is
-  a finding about a `--text-*` token — the remedies are the existing four-size scale and the
-  existing pane states, and introducing a fifth font size is explicitly out of bounds.
+- ~~**Phase 4 is one human pass short of complete (BLOCKING).**~~ **RESOLVED 2026-09-01.** 04-11
+  task 3 (`04-UI-SPEC` §DRFT-14 item 4) was batched into Phase 5's gate as 05-15 Part 2a — same rig,
+  same session, one interruption instead of two. The host ran it on a 24-27" 1080p screen at three
+  metres and **both halves passed**: every ban-stage surface legible, and no Pokemon nameable from
+  the locked screen before the reveal. That satisfies the secrecy half, so **BAN-05 and BAN-06
+  acceptance are met** alongside DRFT-14. No `--text-*` remedy was needed and no fifth font size was
+  introduced. Recorded in
+  `.planning/phases/05-full-tournament-brackets-standings-archive/05-HUMAN-UAT.md` (Part 2a,
+  `status: resolved`). The project no longer carries any unrun physical verification item.
 
 - **BAN-07 is PARTIALLY satisfied by owner-approved decision D-19.** Only the `bothApply` branch
   is built; `Re-ban — Not yet available` ships disabled. The verifier must not score ROADMAP Phase
