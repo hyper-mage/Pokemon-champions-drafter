@@ -41,8 +41,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **PERS-05**: Host can import a tournament JSON file to restore it or move it to another machine
 - [x] **PERS-06**: A JSON checkpoint is offered automatically at hard milestones, so a lost draft is always recoverable
 - [x] **PERS-07**: Exported tournaments carry a schema version and import cleanly across app versions
-- [ ] **PERS-08**: Completed tournaments remain viewable after the draft ends
-- [ ] **PERS-09**: A draft recap is rendered directly from the action log
+- [x] **PERS-08**: Completed tournaments remain viewable after the draft ends
+- [x] **PERS-09**: A draft recap is rendered directly from the action log
 
 ### Draft Core
 
@@ -113,15 +113,15 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Tournament
 
-- [ ] **TOUR-01**: Host chooses tournament depth — draft only, draft plus brackets, or draft plus brackets plus match log
-- [ ] **TOUR-02**: Round robin generation with standings
-- [ ] **TOUR-03**: Single elimination bracket generation, including byes for non-power-of-two player counts
-- [ ] **TOUR-04**: Best-of-three as a label plus a 2-of-3 counter
-- [ ] **TOUR-05**: Host records the winner of each match, and brackets and standings advance automatically
-- [ ] **TOUR-06**: Match records are editable after entry
-- [ ] **TOUR-07**: One numeric result field per match — Pokémon remaining or KO differential — feeds the standings tiebreak
-- [ ] **TOUR-08**: Standings tiebreak runs record, then differential, then head-to-head, ending in an explicit host override
-- [ ] **TOUR-09**: A seeded top-N cut connects round robin into the elimination bracket
+- [x] **TOUR-01**: Host chooses tournament depth — draft only, draft plus brackets, or draft plus brackets plus match log
+- [x] **TOUR-02**: Round robin generation with standings
+- [x] **TOUR-03**: Single elimination bracket generation, including byes for non-power-of-two player counts
+- [x] **TOUR-04**: Best-of-three as a label plus a 2-of-3 counter
+- [x] **TOUR-05**: Host records the winner of each match, and brackets and standings advance automatically
+- [x] **TOUR-06**: Match records are editable after entry
+- [x] **TOUR-07**: One numeric result field per match — Pokémon remaining or KO differential — feeds the standings tiebreak
+- [x] **TOUR-08**: Standings tiebreak runs record, then differential, then head-to-head, ending in an explicit host override
+- [x] **TOUR-09**: A seeded top-N cut connects round robin into the elimination bracket
 
 ### Export
 
@@ -134,9 +134,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Roster Refresh
 
-- [ ] **REFR-01**: Host can fetch the project's own pre-built roster snapshot from within the app
-- [ ] **REFR-02**: Host can import a roster JSON file with no network access
-- [ ] **REFR-03**: A staleness banner compares the current date against the snapshot's validUntil, needing no network
+- [x] **REFR-01**: Host can fetch the project's own pre-built roster snapshot from within the app
+- [x] **REFR-02**: Host can import a roster JSON file with no network access
+- [x] **REFR-03**: A staleness banner compares the current date against the snapshot's validUntil, needing no network
 
 ## v2 Requirements
 
@@ -218,8 +218,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PERS-05 | Phase 1 | Complete |
 | PERS-06 | Phase 1 | Complete |
 | PERS-07 | Phase 1 | Complete |
-| PERS-08 | Phase 5 | Pending |
-| PERS-09 | Phase 5 | Pending |
+| PERS-08 | Phase 5 | Complete |
+| PERS-09 | Phase 5 | Complete |
 | DRFT-01 | Phase 2 | Complete |
 | DRFT-02 | Phase 2 | Complete |
 | DRFT-03 | Phase 2 | Complete |
@@ -268,24 +268,24 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SWAP-05 | Phase 3 | Complete |
 | SWAP-06 | Phase 3 | Complete |
 | SWAP-07 | Phase 3 | Complete |
-| TOUR-01 | Phase 5 | Pending |
-| TOUR-02 | Phase 5 | Pending |
-| TOUR-03 | Phase 5 | Pending |
-| TOUR-04 | Phase 5 | Pending |
-| TOUR-05 | Phase 5 | Pending |
-| TOUR-06 | Phase 5 | Pending |
-| TOUR-07 | Phase 5 | Pending |
-| TOUR-08 | Phase 5 | Pending |
-| TOUR-09 | Phase 5 | Pending |
+| TOUR-01 | Phase 5 | Complete |
+| TOUR-02 | Phase 5 | Complete |
+| TOUR-03 | Phase 5 | Complete |
+| TOUR-04 | Phase 5 | Complete |
+| TOUR-05 | Phase 5 | Complete |
+| TOUR-06 | Phase 5 | Complete |
+| TOUR-07 | Phase 5 | Complete |
+| TOUR-08 | Phase 5 | Complete |
+| TOUR-09 | Phase 5 | Complete |
 | EXPO-01 | Phase 1 | Complete |
 | EXPO-02 | Phase 1 | Complete |
 | EXPO-03 | Phase 1 | Complete |
 | EXPO-04 | Phase 1 | Pending |
 | EXPO-05 | Phase 1 | Complete |
 | EXPO-06 | Phase 1 | Complete |
-| REFR-01 | Phase 5 | Pending |
-| REFR-02 | Phase 5 | Pending |
-| REFR-03 | Phase 5 | Pending |
+| REFR-01 | Phase 5 | Complete |
+| REFR-02 | Phase 5 | Complete |
+| REFR-03 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 94 total

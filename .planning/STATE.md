@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 5 UI-SPEC approved
-last_updated: "2026-09-01T00:12:02.602Z"
+status: milestone_complete
+stopped_at: Milestone complete (Phase 05 was final phase)
+last_updated: 2026-09-01T22:37:29.104Z
 last_activity: 2026-09-01 -- Phase 05 execution started
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 62
-  completed_plans: 57
+  completed_plans: 62
   percent: 80
 ---
 
@@ -21,18 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** A group of friends can run an entire draft tournament — rules, bans, picks, swaps, brackets, results — start to finish inside the tool, without anyone reaching for a spreadsheet or a Discord message to track state.
-**Current focus:** Phase 05 — full-tournament-brackets-standings-archive
+**Current focus:** Milestone complete
 
 ## Current Position
 
-Phase: 05 (full-tournament-brackets-standings-archive) — EXECUTING
-Plan: 1 of 15
+Phase: 05
+Plan: Not started
 Next: `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
-Status: Executing Phase 05
+Status: Milestone complete
         verification `passed`, and the three-metre human pass approved on a ~24" 1080p screen
         (`04-HUMAN-UAT.md`, status complete, 4 passed / 0 issues). BAN-07 ships Partial by
         owner decision D-19: `bothApply` is built, the `Re-ban` arm is present but disabled.
-Last activity: 2026-09-01 -- Phase 05 execution started
+Last activity: 2026-09-01
 
 Progress: [████████████████████] 47/47 plans (4 of 5 phases complete)
 
@@ -48,7 +48,7 @@ session the one outstanding UAT item needs. Not decided; recorded so the choice 
 
 **Velocity:**
 
-- Total plans completed: 47
+- Total plans completed: 62
 - Average duration: — (only 2 of 36 plans were timed)
 - Total execution time: not tracked
 
