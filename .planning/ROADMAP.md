@@ -333,7 +333,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 05-14-PLAN.md — the recap, folded from the log (PERS-09, PERS-08)
+- [x] 05-14-PLAN.md — the recap, folded from the log (PERS-09, PERS-08)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -352,7 +352,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
-| 5. Full Tournament — Brackets, Standings, Archive | 13/15 | In Progress|  |
+| 5. Full Tournament — Brackets, Standings, Archive | 14/15 | In Progress|  |
 
 ## Requirement Coverage
 
