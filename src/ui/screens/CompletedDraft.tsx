@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+
 import { toShowdownPaste, type PasteSlot } from '../../core/export/paste';
 import type { DraftState, PlayerConfig } from '../../core/model';
 import type { RosterEntry } from '../../core/roster/types';
@@ -5,6 +7,13 @@ import { selectSlotStone, selectTeams } from '../../core/selectors';
 import { selectTournamentStage } from '../../core/tournament';
 import { CHECKPOINT_HEADING, CheckpointPrompt } from '../components/CheckpointPrompt';
 import { ExportPanel } from '../components/ExportPanel';
+import {
+  BACK_TO_DRAFT_FROM_RECAP,
+  RECAP_ACTION_ID,
+  RecapList,
+  VIEW_RECAP,
+  type RecapAccess,
+} from '../components/RecapList';
 
 import './CompletedDraft.css';
 
@@ -67,6 +76,15 @@ export interface CompletedDraftProps {
    * the moment the draft completes, because every pairing is derived.
    */
   onOpenTournament: () => void;
+  /**
+   * What the recap needs, or `null` when this caller cannot offer one — PERS-09.
+   *
+   * `TournamentScreen`'s prop of the same name and the same shape, and the reason it exists
+   * HERE as well is depth: a `draftOnly` night never reaches a bracket, so the entry point
+   * the bracket owns would leave PERS-09 unreachable for exactly the tournaments that end on
+   * this screen. One surface per depth, one control per surface.
+   */
+  recap: RecapAccess | null;
 }
 
 /**
@@ -122,6 +140,7 @@ export function CompletedDraft({
   onDownload,
   onDismissCheckpoint,
   onOpenTournament,
+  recap,
 }: CompletedDraftProps) {
   /*
     The stage selector decides whether there is a tournament to go to, and this file does
@@ -130,6 +149,56 @@ export function CompletedDraft({
     control appears exactly when one exists.
   */
   const hasTournament = selectTournamentStage(state) !== 'notRunning';
+
+  /**
+   * Whether the recap has taken this region — §11, and component state for the reason
+   * `TournamentScreen`'s copy of this flag is: which surface a host is reading did not
+   * happen at the table, so it belongs in no log and must not be undoable.
+   */
+  const [showRecap, setShowRecap] = useState(false);
+
+  /**
+   * Focus back to `View the draft recap` on the way out — §Interaction.
+   *
+   * The armed-ref-then-layout-effect handoff this codebase already uses twice, and for the
+   * structural reason it exists at all: the control is not in the tree at the moment of the
+   * click that closes the recap, so a ref would be `null` and only an id can address the
+   * element that the next render puts back.
+   */
+  const pendingRecapActionFocus = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!pendingRecapActionFocus.current) return;
+    pendingRecapActionFocus.current = false;
+
+    document.getElementById(RECAP_ACTION_ID)?.focus();
+  });
+
+  /*
+    THE SAME NARROW REPLACEMENT THIS COMPONENT IS ITSELF AN INSTANCE OF.
+
+    It takes the pool grid's place; the recap takes its place. The top bar and the draft
+    board are above both and are untouched either way, so `Undo last move` and
+    `Download JSON` are reachable from the recap exactly as the doc block above requires them
+    to be reachable from here.
+  */
+  if (showRecap && recap !== null) {
+    return (
+      <div class="completed-draft">
+        <RecapList
+          doc={recap.doc}
+          state={state}
+          entryById={recap.entryById}
+          spriteMeta={recap.spriteMeta}
+          backLabel={BACK_TO_DRAFT_FROM_RECAP}
+          onBack={() => {
+            setShowRecap(false);
+            pendingRecapActionFocus.current = true;
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div class="completed-draft">
@@ -142,6 +211,30 @@ export function CompletedDraft({
       {hasTournament && (
         <button type="button" class="completed-draft__tournament" onClick={onOpenTournament}>
           {OPEN_TOURNAMENT}
+        </button>
+      )}
+
+      {/*
+        THE RECAP'S ENTRY POINT AT `draftOnly` DEPTH, and the gate is the exact inverse of
+        the one above rather than a depth comparison — for the reason that one gives.
+
+        `selectTournamentStage` answers `'notRunning'` for a `draftOnly` night and for an
+        unfinished draft, and this component only renders once the draft is finished, so
+        inside it the two conditions collapse into one: no tournament to go to means the
+        night ends here, and the recap is the only thing left to open.
+
+        A night WITH a tournament reaches the recap from the bracket instead (§Color
+        reservation 2), so exactly one entry point exists at every depth and neither screen
+        offers a second.
+      */}
+      {!hasTournament && recap !== null && (
+        <button
+          type="button"
+          id={RECAP_ACTION_ID}
+          class="completed-draft__recap"
+          onClick={() => setShowRecap(true)}
+        >
+          {VIEW_RECAP}
         </button>
       )}
 

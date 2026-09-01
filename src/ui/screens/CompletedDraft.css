@@ -19,7 +19,21 @@
  * because "not the primary action" is not a reason to make something hard to hit.
  */
 
-.completed-draft__tournament {
+/*
+ * TWO CONTROLS, ONE TREATMENT, AND THEY ARE NEVER ON SCREEN TOGETHER.
+ *
+ * `__recap` is 05-14's `View the draft recap` at `draftOnly` depth, and its gate is the
+ * exact inverse of `__tournament`'s — a night with a tournament reaches the recap from the
+ * bracket instead. Grouped rather than duplicated, because they are the same control in two
+ * depths: the one thing this screen offers once the pastes are on screen.
+ *
+ * The accent argument above covers both unchanged. The bracket stage's accent IS spoken for
+ * by `View the draft recap` (§Color reservation 2), and that is a rule about the bracket
+ * stage — this screen's one accent is still `Download the tournament JSON`, and PERS-06 is
+ * still why it outranks anything here.
+ */
+.completed-draft__tournament,
+.completed-draft__recap {
   min-height: var(--target-min);
   margin-bottom: var(--space-4);
   padding: 0 var(--space-3);

@@ -459,6 +459,8 @@ describe('focus after the cut', () => {
         onBackToDraft={() => undefined}
         onSelectMatch={() => undefined}
         onRequestReopen={() => undefined}
+        // No recap surface in these cases — 05-14 gives the recap its own file.
+        recap={null}
       />
     );
 
