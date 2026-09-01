@@ -5,6 +5,7 @@ import type { TournamentDoc } from '../../core/model';
 import { fold } from '../../core/reduce';
 import { selectPickCount } from '../../core/selectors';
 import { StalenessBanner } from '../components/StalenessBanner';
+import { TournamentLibrary } from '../components/TournamentLibrary';
 
 import { StorageBlocked } from './StorageBlocked';
 
@@ -102,6 +103,16 @@ export interface LandingScreenProps {
    * of D-26 is that the tension between D-23 and D-25 is resolved by routing.
    */
   onUpdateRoster?: (() => void) | undefined;
+  /**
+   * Open a filed tournament by its document id — PERS-08, 05-UI-SPEC §12.
+   *
+   * Optional, on `roster`'s and `onUpdateRoster`'s precedent: a caller with nothing to say
+   * about the library still gets a working landing screen. Omitting it renders the section
+   * with rows that do nothing, so it is omitted only in tests that are about something
+   * else. Every consequence of opening — filing whatever is live FIRST, through the same
+   * D-15 confirm — belongs to the caller, exactly as `onImportFile`'s do.
+   */
+  onOpenTournament?: ((id: string) => void) | undefined;
 }
 
 export function LandingScreen({
@@ -113,6 +124,7 @@ export function LandingScreen({
   onImportFile,
   roster = null,
   onUpdateRoster,
+  onOpenTournament,
 }: LandingScreenProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -222,6 +234,21 @@ export function LandingScreen({
               onChange={handleFileChange}
             />
           </div>
+
+          {/*
+            PERS-08 / D-14 — below the actions, because it is history rather than a way in.
+            The three buttons above are what a host came here to press; the library is what
+            they come back for weeks later.
+
+            INSIDE the non-blocked branch, on the staleness banner's rule and for the same
+            reason: a failed storage canary renders `StorageBlocked` and nothing else, and a
+            list of filed tournaments beside a warning that storage does not work would be
+            offering the host twelve things the browser has just said it will not keep.
+
+            It renders NOTHING at zero entries and owns that rule itself, so there is no
+            conditional here to keep in step with it.
+          */}
+          <TournamentLibrary onOpen={onOpenTournament ?? (() => undefined)} />
         </>
       )}
     </div>
