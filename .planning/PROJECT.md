@@ -229,6 +229,13 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-26 after Phase 4 (Blind and Snake Bans) completed — 11/11 plans, 4/4 success criteria verified,
-and a human three-metre pass approved on a ~24" 1080p screen. RULE-08 and BAN-03..06 validated; BAN-07 partial by D-19.
-Phase 3 (Compiled Rules, Priority Cards, Swaps) completed 2026-08-19, 12/12 plans.*
+*Last updated: 2026-09-01 after Phase 5 (Full Tournament — Brackets, Standings, Archive) completed — 15/15 plans,
+5/5 success criteria verified against source, 14/14 requirement IDs closed: TOUR-01..09, PERS-08, PERS-09 and
+REFR-01..03. **Phase 5 is the last phase of the milestone, so the project's success criterion — a real draft plus
+bracket run end to end with nobody reaching for a spreadsheet — is now met in full.** The human three-metre pass ran
+2026-09-01 on a 24-27" 1080p screen and recorded 6 of 6, which also cleared Phase 4's outstanding 04-11 task 3
+(legibility and secrecy both), so no unrun physical verification item remains. A code review found 17 issues; the
+critical library-eviction data-loss bug (d8597ca) and the undo/canApply gap (01070af) were fixed, and 15 lower-severity
+findings are recorded and open in 05-REVIEW.md.
+Phase 4 (Blind and Snake Bans) completed 2026-08-26, 11/11 plans. Phase 3 (Compiled Rules, Priority Cards, Swaps)
+completed 2026-08-19, 12/12 plans.*
