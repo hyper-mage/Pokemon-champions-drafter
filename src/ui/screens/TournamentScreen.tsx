@@ -1,7 +1,13 @@
+import { useLayoutEffect, useRef } from 'preact/hooks';
+
+import { cutTaken, tiebreakOrdered } from '../../core/actions';
 import type { DraftState } from '../../core/model';
 import { selectTournamentStage } from '../../core/tournament';
+import { dispatch } from '../../store';
+import { BRACKET_HEADING_ID, CutControl } from '../components/CutControl';
 import { ResultsGrid, type ResultsGridProps } from '../components/ResultsGrid';
 import { StandingsTable } from '../components/StandingsTable';
+import { TiebreakOrderer } from '../components/TiebreakOrderer';
 import { TopBar, type TopBarProps } from '../components/TopBar';
 
 import './TournamentScreen.css';
@@ -38,6 +44,20 @@ import './TournamentScreen.css';
  * tiebreak override and the cut; 05-13 mounts the bracket; 05-14 mounts the recap. Each
  * lands inside the stage block it belongs to, so a later plan adds a child rather than
  * re-deciding the shell.
+ *
+ * ## Why the two round-robin write paths are wired HERE and not in `app.tsx`
+ *
+ * `onSelectMatch` goes up to `app.tsx` for one stated structural reason and one only:
+ * `inert` applies to a whole subtree, so the record dialog has to be a SIBLING of the
+ * read-only gate rather than a descendant of it. Nothing about the tiebreak override or
+ * the cut needs to escape that gate — both are plain controls that should be unreachable
+ * in a read-only tab, which is exactly what rendering them inside it achieves.
+ *
+ * So the two intents those controls report are turned into actions here, on
+ * `ConfigScreen`'s precedent for a screen that calls into `src/store.ts` directly. The
+ * alternative — threading two more callbacks through `app.tsx` — would put this screen's
+ * internal wiring in the shell without buying anything, and `dispatch` remains the one
+ * write path either way. The components themselves still own no dispatch.
  */
 
 export interface TournamentScreenProps {
@@ -81,6 +101,37 @@ export function TournamentScreen({
 }: TournamentScreenProps) {
   const stage = selectTournamentStage(state);
 
+  /**
+   * Hand focus to the bracket's heading once the cut has been taken.
+   *
+   * Armed by `Take the cut` and fired here rather than in the click handler, because the
+   * heading does not exist yet at the moment of the click — the stage is still the round
+   * robin until the dispatched action has been folded and this screen has re-rendered.
+   * `CutControl` cannot own this: it unmounts on its own success, and an effect scheduled
+   * by a component that is being removed does not run.
+   *
+   * `useLayoutEffect` with no dependency array, always clearing its own flag, exactly like
+   * the two handoffs in `app.tsx` — an armed handoff must never survive into a later,
+   * unrelated render.
+   *
+   * §Interaction: `Take the cut` no longer exists once the cut is taken, so focus cannot
+   * stay where it was and must not drop to `<body>`.
+   *
+   * The flag is armed by the host's act rather than by the dispatch's verdict, and that is
+   * self-correcting rather than careless: if `canApply` had refused the cut, the stage would
+   * not have flipped, the bracket heading would not be in the document, and `?.focus()`
+   * would do nothing — leaving focus exactly where the refusal left it. A `null` here is a
+   * bug in the gate above, not a case this handoff has to second-guess.
+   */
+  const pendingBracketFocus = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!pendingBracketFocus.current) return;
+    pendingBracketFocus.current = false;
+
+    document.getElementById(BRACKET_HEADING_ID)?.focus();
+  });
+
   return (
     <>
       <div class="sticky-head">
@@ -111,6 +162,37 @@ export function TournamentScreen({
               knowing what is above it.
             */}
             <StandingsTable state={state} />
+
+            {/*
+              Immediately below the standings, per §Color — the block it orders is the one
+              the table has just shown reading `Tied — order these yourself` on every row,
+              and a control that ordered players the host had to scroll away from would be
+              asking about a table they can no longer see.
+
+              It renders itself away once no block is unresolved, so there is no branch
+              here: `selectStandings` is the one authority on whether there is anything to
+              order, and asking it twice would be two answers to one question.
+            */}
+            <TiebreakOrderer
+              state={state}
+              onConfirm={(playerIds) => {
+                dispatch(tiebreakOrdered(playerIds));
+              }}
+            />
+
+            {/*
+              Below the standings and the override, in the order the host works through
+              them: read the table, settle anything the tool could not, then decide how much
+              of it advances. The cut is inert for as long as the override is on screen, so
+              the sequence is enforced by the gate rather than only implied by the layout.
+            */}
+            <CutControl
+              state={state}
+              onTakeCut={(seeds) => {
+                dispatch(cutTaken(seeds));
+                pendingBracketFocus.current = true;
+              }}
+            />
           </section>
         )}
 

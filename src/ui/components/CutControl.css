@@ -1,0 +1,78 @@
+/*
+ * CutControl — the size, the bye preview, and the two reasons the cut can refuse.
+ *
+ * Tokens only: no raw hex and no raw length. No :focus rule and no :active rule — the
+ * global accent ring in app.css owns focus, and a per-component ring is how a design
+ * system drifts. Geometry and copy both come from `05-UI-SPEC` §8.
+ *
+ * ONE accent fill, on `Take the cut`, which is accent's second reserved use. It is the only
+ * accent action left in the round-robin stage once the tiebreak override is resolved, and
+ * while the override is still on screen this button is inert — so the two never wear the
+ * fill at the same time.
+ *
+ * The blocked reason is NOT danger-coloured. `FeasibilityBar`'s rule and its reason:
+ * nothing has been lost, it is a not-yet state, so it renders in --color-text.
+ *
+ * No transition on the preview line. Taking the cut is not a transition (§Interaction's
+ * motion budget names it), and a preview that faded between sizes would lag the digits the
+ * host is typing.
+ */
+
+.cut-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 60ch;
+  min-width: 0;
+}
+
+.cut-control__heading {
+  margin: 0;
+  font: var(--text-heading);
+  color: var(--color-text);
+}
+
+/*
+ * The bye preview, at --text-body per §8's element table rather than at the muted label
+ * size the captions elsewhere take. It is a statement about the bracket the host is about
+ * to create, not an aside about the field above it.
+ */
+.cut-control__preview {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}
+
+.cut-control__reason {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}
+
+/*
+ * The one accent-filled control in this screen state — accent's second reserved use.
+ * --target-min in BOTH axes: the height is set here and the horizontal padding carries the
+ * width past it for the one label this button can hold.
+ */
+.cut-control__action {
+  align-self: flex-start;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--hairline-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+/*
+ * An inert cut is dimmed, not hidden and not natively disabled — it stays focusable so a
+ * keyboard user can reach the sentence that says why, which is the whole reason the refusal
+ * is stated rather than enforced by an attribute that removes the control from the tree.
+ */
+.cut-control__action--inert {
+  opacity: 0.45;
+  cursor: default;
+}
