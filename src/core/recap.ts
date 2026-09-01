@@ -59,6 +59,11 @@
  * config before the first action exists. Those entries carry {@link NO_LOG_SEQ} and sort
  * ahead of everything, which is where they belong chronologically.
  *
+ * `seq` is ASCENDING rather than strictly increasing, and the one case that separates the
+ * two is worth knowing: a reveal is a single action carrying every player's bans, so the
+ * lines it yields all share its `seq`. Everywhere else one action yields one line and the
+ * order is strict. Entries sharing a `seq` keep the order their source action lists them in.
+ *
  * Pure, like everything under `src/core`: no clock, no randomness, no storage, no DOM. The
  * record handed in is never mutated and every entry returned is freshly built.
  */
@@ -67,10 +72,16 @@ import {
   isBansPlacedAction,
   isBansRevealedAction,
   isCardsPlayedAction,
+  isCutTakenAction,
+  isMatchRecordedAction,
   isPickMadeAction,
+  isReopenedAction,
+  isResultsVoidedAction,
   isSwapMadeAction,
   isSwapPassedAction,
+  isTiebreakOrderedAction,
   type Action,
+  type MatchRecordedAction,
 } from './actions';
 import type { DraftState, TournamentDoc } from './model';
 import { selectAttributedBans, selectBanCollisions, selectPublicBanIds } from './selectors';
@@ -232,6 +243,74 @@ function revealEntries(state: DraftState, seq: number): RecapEntry[] {
 }
 
 /**
+ * The two match-id prefixes, and the ONE place in this module an id's shape carries meaning.
+ *
+ * Safe precisely because 05-08 pins the shape in `buildLogEntry` at the untrusted-input
+ * boundary: `rr:{i}:{j}` with 0-based player indices, `br:{round}:{slot}` with 1-based ones.
+ * Compared as a PREFIX rather than parsed — nothing here needs the numbers, and a player id
+ * may legally contain a colon, which is why no function in this codebase splits one.
+ */
+const BRACKET_PREFIX = 'br:';
+const ROUND_ROBIN_PREFIX = 'rr:';
+
+/**
+ * Which stage a match belongs to, or `null` when its id names neither.
+ *
+ * `null` is the untrusted-input case that no well-formed record can reach, and it is skipped
+ * on the same discipline every other arm follows: a line with no section has nowhere to
+ * render, and a half-placed entry would be worse than an absent one.
+ */
+function stageSection(matchId: string): RecapSection | null {
+  if (matchId.startsWith(BRACKET_PREFIX)) return 'bracket';
+  if (matchId.startsWith(ROUND_ROBIN_PREFIX)) return 'roundRobin';
+  return null;
+}
+
+/**
+ * D-22's mark for one recording, decided against every other recording of the same match.
+ *
+ * Grouped by `matchId` and compared on `seq` — never on array position, which is not the
+ * authority and which an out-of-order imported log would answer wrongly.
+ *
+ * The three cases are exhaustive by construction: a later recording exists, in which case
+ * this one was corrected; no later one but an earlier one, in which case this IS the
+ * correction; or neither, in which case the result stands as first recorded.
+ */
+function correctionFor(
+  matchId: string,
+  seq: number,
+  recordings: readonly MatchRecordedAction[],
+): RecapCorrection {
+  let earlier = false;
+  let later = false;
+
+  for (const other of recordings) {
+    if (other.matchId !== matchId) continue;
+    if (other.seq < seq) earlier = true;
+    if (other.seq > seq) later = true;
+  }
+
+  if (later) return 'correctedLater';
+  return earlier ? 'corrects' : 'none';
+}
+
+/**
+ * How many MATCH results a void cleared — the `{n}` in `{n} matches were voided`.
+ *
+ * Counted by walking the recordings rather than the targets, which dedupes for free: a
+ * target named twice in a hand-edited payload still clears one result, and a target naming
+ * the cut or an entry the log does not hold is not a match and is not counted. That is the
+ * distinction the line depends on, because a void routinely carries the cut's `seq` beside
+ * the results it invalidates.
+ */
+function voidedMatchCount(
+  targetSeqs: readonly number[],
+  recordings: readonly MatchRecordedAction[],
+): number {
+  return recordings.filter((recording) => targetSeqs.includes(recording.seq)).length;
+}
+
+/**
  * The night as a list of typed entries, in the order it happened — D-19.
  *
  * Chronological because that is closest to what the log actually is, which is D-19's stated
@@ -246,12 +325,23 @@ function revealEntries(state: DraftState, seq: number): RecapEntry[] {
  */
 export function buildRecap(doc: TournamentDoc, state: DraftState): readonly RecapEntry[] {
   const entries: RecapEntry[] = [...hostBanEntries(state)];
+  const ordered = inSeqOrder(doc.log);
+
+  /*
+    EVERY recording in the log, and this is the line the whole module exists for.
+
+    Reaching for the fold's one-result-per-match array instead is the natural move, and it
+    compiles and renders perfectly while quietly failing D-22 — `reduce.ts`'s own arm
+    comment points here and says so: the fold answers "what stands", the log answers "what
+    happened", and the superseded entries are only in the second.
+  */
+  const recordings = ordered.filter(isMatchRecordedAction);
 
   // The FIRST reveal wins, exactly as the fold's own arm does. A second one appended to a
   // hand-edited log must not be able to render the ban stage twice.
   let revealSeen = false;
 
-  for (const action of inSeqOrder(doc.log)) {
+  for (const action of ordered) {
     if (isBansPlacedAction(action) && state.config.banMode === 'snake') {
       if (!attributionHolds(state, action.playerId, action.monId)) continue;
       entries.push(
@@ -306,9 +396,90 @@ export function buildRecap(doc: TournamentDoc, state: DraftState): readonly Reca
       continue;
     }
 
-    // Everything else is deliberately silent here. The tournament families arrive with the
-    // correction marks, which is the half of this module that cannot be written without
-    // reading the whole log.
+    if (isMatchRecordedAction(action)) {
+      const section = stageSection(action.matchId);
+      if (section === null) continue;
+
+      entries.push(
+        entry(section, action.seq, 'match', {
+          playerIds: [action.winnerId, action.loserId],
+          correction: correctionFor(action.matchId, action.seq, recordings),
+          detail: {
+            winnerGames: action.winnerGames,
+            loserGames: action.loserGames,
+            metric: action.metric,
+          },
+        }),
+      );
+      continue;
+    }
+
+    if (isResultsVoidedAction(action)) {
+      /*
+        The void sits in the section of the correction it accompanies, which `causedBySeq`
+        names EXACTLY rather than by searching for a plausible neighbour. A void with no
+        traceable cause is a hand-edited case; it lands with the round robin, which is where
+        the correction path starts.
+      */
+      const cause = recordings.find((recording) => recording.seq === action.causedBySeq);
+      const section =
+        cause === undefined ? 'roundRobin' : (stageSection(cause.matchId) ?? 'roundRobin');
+
+      entries.push(
+        entry(section, action.seq, 'void', {
+          detail: { count: voidedMatchCount(action.targetSeqs, recordings) },
+        }),
+      );
+      continue;
+    }
+
+    if (isCutTakenAction(action)) {
+      /*
+        `seeds.length` IS the cut size, and it is deliberately not stored twice — two fields
+        would be two authorities on one number, free to disagree in a hand-edited file.
+        Taken on the round robin, from the table the host was reading, so it reads there.
+      */
+      entries.push(
+        entry('roundRobin', action.seq, 'cut', {
+          playerIds: action.seeds,
+          detail: { count: action.seeds.length },
+        }),
+      );
+      continue;
+    }
+
+    if (isTiebreakOrderedAction(action)) {
+      // The block in the host's chosen order, best first, exactly as recorded — an override
+      // that renumbered or re-sorted its own block would not be the host's answer any more.
+      entries.push(
+        entry('roundRobin', action.seq, 'override', { playerIds: action.playerIds }),
+      );
+      continue;
+    }
+
+    if (isReopenedAction(action)) {
+      /*
+        TOURNAMENT_REOPENED EMITS NO LINE, AND THAT IS THE DECISION RATHER THAN AN OMISSION.
+
+        D-20 makes coverage total, so a family with no line owes a reason. A reopen changes
+        what the host MAY EDIT, not what happened at the table: no result moved, no seed
+        changed, nobody at the table did anything. A recap line for it would report a tool
+        state in the middle of an account of an evening, and the correction it enabled — if
+        one followed — already has its own line and its own mark.
+      */
+      continue;
+    }
+
+    /*
+      Everything else is silent for the same class of reason, and none of it is an oversight.
+
+      `pool/built`, `schedule/compiled` and `draft/started` ORIGINATE the tournament rather
+      than happening during it; the recap opens with the bans because that is the first thing
+      the room did. `order/resolved` is the materialized consequence of the card plays that
+      are already on the page, so a line for it would restate them. `draft/pickUndone` is a
+      compensating action for a pick that undo removes from the log outright, so a well-formed
+      record does not carry one.
+    */
   }
 
   return entries;

@@ -27,12 +27,17 @@ import {
   bansRevealed,
   bansSubmitted,
   cardsPlayed,
+  cutTaken,
   draftStarted,
+  matchRecorded,
   pickMade,
   poolBuilt,
+  reopened,
+  resultsVoided,
   scheduleCompiled,
   swapMade,
   swapPassed,
+  tiebreakOrdered,
   type Action,
   type Intent,
 } from '../../src/core/actions';
@@ -414,5 +419,193 @@ describe('buildRecap against an untrusted log', () => {
     expect(second[0]?.monIds).toEqual(['skarmory']);
     expect(second.every((entry) => entry.correction === 'none')).toBe(true);
     expect(doc.log).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The tournament half, and the corrections the fold threw away — D-22
+// ---------------------------------------------------------------------------
+
+/** A finished draft, so the tournament actions below sit on a plausible record. */
+function draftedLog(): Action[] {
+  return [
+    stamp(poolBuilt(POOL, 'mb', 'abc123', 7, 0), 0),
+    stamp(draftStarted(ORDER, 9), 1),
+  ];
+}
+
+describe('buildRecap match results', () => {
+  it('emits one entry per recording, including the superseded ones', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 4), 10),
+      stamp(matchRecorded('rr:0:1', 'p2', 'p1', 1, 0, 3), 20),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 2), 30),
+    ]);
+
+    const matches = recapOf(doc).filter((entry) => entry.kind === 'match');
+
+    expect(matches).toHaveLength(3);
+    expect(matches.map((entry) => entry.seq)).toEqual([10, 20, 30]);
+    expect(matches.map((entry) => entry.playerIds[0])).toEqual(['p1', 'p2', 'p1']);
+  });
+
+  it('marks three recordings of one match correctedLater, correctedLater, corrects', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 4), 10),
+      stamp(matchRecorded('rr:0:1', 'p2', 'p1', 1, 0, 3), 20),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 2), 30),
+    ]);
+
+    const matches = recapOf(doc).filter((entry) => entry.kind === 'match');
+
+    expect(matches.map((entry) => entry.correction)).toEqual([
+      'correctedLater',
+      'correctedLater',
+      'corrects',
+    ]);
+  });
+
+  it('marks a single recording none', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 4), 10),
+    ]);
+
+    const matches = recapOf(doc).filter((entry) => entry.kind === 'match');
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.correction).toBe('none');
+  });
+
+  it('Pitfall 8 inverted: three matches with two corrections yield five roundRobin entries', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 4), 10),
+      stamp(matchRecorded('rr:0:2', 'p1', 'p3', 1, 0, 5), 11),
+      stamp(matchRecorded('rr:1:2', 'p2', 'p3', 1, 0, 2), 12),
+      stamp(matchRecorded('rr:0:1', 'p2', 'p1', 1, 0, 1), 13),
+      stamp(matchRecorded('rr:1:2', 'p3', 'p2', 1, 0, 6), 14),
+    ]);
+
+    const roundRobin = sectionOf(recapOf(doc), 'roundRobin');
+
+    // Three matches, five lines. A recap derived from the fold returns three.
+    expect(roundRobin).toHaveLength(5);
+    expect(roundRobin.map((entry) => entry.correction)).toEqual([
+      'correctedLater',
+      'none',
+      'correctedLater',
+      'corrects',
+      'corrects',
+    ]);
+  });
+
+  it('carries the games and the metric on every match entry', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 2, 1, 4), 10),
+    ]);
+
+    const match = recapOf(doc).find((entry) => entry.kind === 'match');
+
+    expect(match?.playerIds).toEqual(['p1', 'p2']);
+    expect(match?.detail).toEqual({ winnerGames: 2, loserGames: 1, metric: 4 });
+  });
+
+  it('splits round-robin from bracket entries on the matchId prefix', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 4), 10),
+      stamp(matchRecorded('br:1:1', 'p1', 'p3', 1, 0, 5), 11),
+    ]);
+
+    const entries = recapOf(doc);
+
+    expect(sectionOf(entries, 'roundRobin').map((entry) => entry.playerIds[1])).toEqual(['p2']);
+    expect(sectionOf(entries, 'bracket').map((entry) => entry.playerIds[1])).toEqual(['p3']);
+  });
+
+  it('skips a recording whose matchId belongs to neither stage', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('nonsense', 'p1', 'p2', 1, 0, 4), 10),
+    ]);
+
+    expect(recapOf(doc).filter((entry) => entry.kind === 'match')).toEqual([]);
+  });
+});
+
+describe('buildRecap voids, cuts and overrides', () => {
+  it('counts the MATCH results among a void targetSeqs, not the array length', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 4), 10),
+      stamp(cutTaken(['p1', 'p2']), 11),
+      stamp(matchRecorded('br:1:1', 'p1', 'p2', 1, 0, 4), 12),
+      stamp(matchRecorded('rr:0:1', 'p2', 'p1', 1, 0, 1), 20),
+      // Three targets: two match results and the cut. The line says `2 matches`.
+      stamp(resultsVoided([10, 11, 12], 20), 21),
+    ]);
+
+    const voids = recapOf(doc).filter((entry) => entry.kind === 'void');
+
+    expect(voids).toHaveLength(1);
+    expect(voids[0]?.detail.count).toBe(2);
+  });
+
+  it('ignores a void target that names no entry in the log', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 4), 10),
+      stamp(matchRecorded('rr:0:1', 'p2', 'p1', 1, 0, 1), 20),
+      stamp(resultsVoided([10, 9999], 20), 21),
+    ]);
+
+    expect(recapOf(doc).find((entry) => entry.kind === 'void')?.detail.count).toBe(1);
+  });
+
+  it('sits the void in the section of the correction that caused it', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('br:1:1', 'p1', 'p2', 1, 0, 4), 10),
+      stamp(matchRecorded('br:1:1', 'p2', 'p1', 1, 0, 1), 20),
+      stamp(resultsVoided([10], 20), 21),
+    ]);
+
+    expect(recapOf(doc).find((entry) => entry.kind === 'void')?.section).toBe('bracket');
+  });
+
+  it('counts the cut at seeds.length and stores the size nowhere else', () => {
+    const doc = makeDoc([...draftedLog(), stamp(cutTaken(['p1', 'p2', 'p3']), 11)]);
+
+    const cut = recapOf(doc).find((entry) => entry.kind === 'cut');
+
+    expect(cut?.detail.count).toBe(3);
+    expect(cut?.playerIds).toEqual(['p1', 'p2', 'p3']);
+    expect(cut?.section).toBe('roundRobin');
+  });
+
+  it('names an override block in the order the host recorded it', () => {
+    const doc = makeDoc([...draftedLog(), stamp(tiebreakOrdered(['p3', 'p1', 'p2']), 12)]);
+
+    const override = recapOf(doc).find((entry) => entry.kind === 'override');
+
+    expect(override?.playerIds).toEqual(['p3', 'p1', 'p2']);
+    expect(override?.section).toBe('roundRobin');
+  });
+
+  it('emits no entry for a reopen — nothing happened to the night', () => {
+    const doc = makeDoc([
+      ...draftedLog(),
+      stamp(matchRecorded('br:1:1', 'p1', 'p2', 1, 0, 4), 10),
+      stamp(reopened(), 11),
+    ]);
+
+    const entries = recapOf(doc);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.kind).toBe('match');
   });
 });
