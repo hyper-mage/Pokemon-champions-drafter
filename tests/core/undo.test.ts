@@ -1310,6 +1310,70 @@ describe('undo — the tournament actions join the one stack', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Which tournament undos ask first — D-17.
+//
+// The sibling of `which ban undos ask first` above, and it exists for the same reason
+// stated one layer down: `ALWAYS_CONFIRM_KINDS` is a list precisely because the round
+// comparison answers `false` for its members. A match reports `config.rounds` and the
+// draft stands on `config.rounds` once it is over, so a comparison-driven implementation
+// skips the dialog exactly where D-17 needs it — and `Ctrl+Z` is registered on `document`,
+// so "skipped" means one keystroke.
+//
+// `canApply`'s side of this agreement is asserted in `tests/core/reduce.test.ts`, which
+// covers the `tournamentLocked` rejection at every `tournament/*` arm. What is under test
+// here is that undo no longer answers the opposite question.
+// ---------------------------------------------------------------------------
+
+describe('which tournament undos ask first', () => {
+  const FINAL = 'br:1:1';
+
+  /** A two-seed cut and the one match it produces, which IS the final. */
+  function finishedDoc(): TournamentDoc {
+    return tournamentDoc(cutTaken(['p1', 'p2']), matchRecorded(FINAL, 'p1', 'p2', 1, 0, 3));
+  }
+
+  it('confirms the recorded final, which no other write path would let through', () => {
+    const doc = finishedDoc();
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.kind).toBe('match');
+    expect(crossing?.crosses).toBe(true);
+  });
+
+  it('sets it explicitly rather than by a round comparison', () => {
+    // The two rounds are EQUAL, so `removed.round < currentRound` is false. This is the
+    // assertion that fails first if `'match'` is ever taken back off the list and left to
+    // the arithmetic.
+    const doc = finishedDoc();
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.removedRound).toBe(crossing?.currentRound);
+    expect(crossing?.crosses).toBe(true);
+  });
+
+  it('names the winner, who is the one player the dialog can name truthfully', () => {
+    const doc = finishedDoc();
+    expect(undoCrossesRoundBoundary(doc, fold(doc))?.playerId).toBe('p1');
+  });
+
+  it('confirms a round-robin result too, not only the one that finished it', () => {
+    // The rule is about the KIND, not about whether this particular result happened to
+    // crown anybody. A host correcting a mid-tournament result gets the same question.
+    const doc = tournamentDoc(matchRecorded('rr:0:1', 'p1', 'p2', 1, 0, 3));
+    const crossing = undoCrossesRoundBoundary(doc, fold(doc));
+
+    expect(crossing?.kind).toBe('match');
+    expect(crossing?.crosses).toBe(true);
+  });
+
+  it('leaves a pick in the current round unconfirmed', () => {
+    // D-08's no-confirm posture is untouched by this. The cheap case stays cheap.
+    const doc = makeDoc(withPicks(openingLog(), 3));
+    expect(undoCrossesRoundBoundary(doc, fold(doc))?.crosses).toBe(false);
+  });
+});
+
 describe('undo — a correction comes back in one step — D-10, D-12', () => {
   const SEMI = 'br:1:1';
   const FINAL = 'br:2:1';

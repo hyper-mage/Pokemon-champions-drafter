@@ -103,6 +103,7 @@ import {
   SWAP_CONFIRM,
   UNDO_BAN_SUBMISSION_CONFIRM,
   UNDO_BOUNDARY_CONFIRM,
+  UNDO_MATCH_CONFIRM,
   UNDO_RESOLVED_ORDER_CONFIRM,
   UNDO_REVEAL_CONFIRM,
 } from './ui/confirm-copy';
@@ -3644,12 +3645,17 @@ export function App() {
       )}
 
       {/*
-        FOUR copy sets, one dialog, and no new mechanism — the variant is chosen by what the
+        FIVE copy sets, one dialog, and no new mechanism — the variant is chosen by what the
         undo would REMOVE, which core already reported in `crossing.kind`. Un-resolving a
         pick order is a different event from reaching back into an earlier round, and
         03-UI-SPEC states them as two rows of the copy table; 04-UI-SPEC §8 adds two more
         for the ban stage. The discriminant already flowed end to end, which is why the two
         new rows cost two more branches and nothing else.
+
+        The fifth is the match result, and it arrived with `'match'` joining
+        `ALWAYS_CONFIRM_KINDS`. It is a row rather than a reuse of the boundary set for that
+        set's own stated reason: its prose is about a pick and a round, and neither word is
+        true of a recorded result.
       */}
       {confirm.kind === 'undo' && confirm.crossing.kind === 'order' && (
         <ConfirmDialog
@@ -3762,16 +3768,36 @@ export function App() {
       )}
 
       {/*
-        The boundary set is now the LAST arm rather than the catch-all, and the three
+        Removing a recorded match result — D-17, and the arm that stops `Ctrl+Z` being the
+        one path around the lock. `canApply` refuses every change to a finished tournament,
+        so undo asks a question of the same weight instead of reaching that state in
+        silence. `playerName` is the WINNER here, which core states is the one player a
+        sentence about this removal can name truthfully.
+      */}
+      {confirm.kind === 'undo' && confirm.crossing.kind === 'match' && (
+        <ConfirmDialog
+          heading={UNDO_MATCH_CONFIRM.heading}
+          body={UNDO_MATCH_CONFIRM.body(confirm.playerName)}
+          confirmLabel={UNDO_MATCH_CONFIRM.confirmLabel}
+          safeLabel={UNDO_MATCH_CONFIRM.safeLabel}
+          tone={UNDO_MATCH_CONFIRM.tone}
+          onConfirm={confirmUndo}
+          onSafe={closeConfirm}
+        />
+      )}
+
+      {/*
+        The boundary set is now the LAST arm rather than the catch-all, and the four
         exclusions are written out rather than folded into a `!== 'order'`. Its copy reads
         "This undoes {name}'s pick from round {r}" — pick-specific prose that would be a
-        plain untruth over a removed blind submission, on the one surface whose whole job
-        is telling the host what is about to change.
+        plain untruth over a removed blind submission or a recorded result, on the one
+        surface whose whole job is telling the host what is about to change.
       */}
       {confirm.kind === 'undo' &&
         confirm.crossing.kind !== 'order' &&
         confirm.crossing.kind !== 'banSubmission' &&
-        confirm.crossing.kind !== 'banReveal' && (
+        confirm.crossing.kind !== 'banReveal' &&
+        confirm.crossing.kind !== 'match' && (
           <ConfirmDialog
             heading={UNDO_BOUNDARY_CONFIRM.heading}
             body={UNDO_BOUNDARY_CONFIRM.body(

@@ -540,3 +540,43 @@ export const REOPEN_CONFIRM = {
   safeLabel: 'Leave it finished',
   body: 'This makes every result editable again. Correcting a round-robin result voids the cut and the bracket; correcting a bracket result voids the matches after it.',
 };
+
+// ---------------------------------------------------------------------------
+// Phase 5's second group — the undo that reaches past the lock. D-17.
+//
+// Its own section rather than a fourth row in the one above, because that block's argument
+// is about three specific sets and "All three take the default tone" has to stay true. The
+// set below takes the default tone as well, and on a reason of its own: a recorded result
+// can be entered again from the score the room just read, so it is not the "no way back
+// without a file you may not have downloaded" category the danger tone is reserved for.
+// ---------------------------------------------------------------------------
+
+/**
+ * 17. Undoing a recorded match result — D-17, and `undo.ts`'s `ALWAYS_CONFIRM_KINDS`.
+ *
+ * A SEPARATE set from {@link UNDO_BOUNDARY_CONFIRM} on the precedent every undo set in
+ * this file follows: that one reads "This undoes {name}'s pick from round {r}", which over
+ * a match result is a plain untruth on the one surface whose whole job is telling the host
+ * what is about to change.
+ *
+ * WHY IT CONFIRMS AT ALL, when undoing a pick in the current round does not. `canApply`
+ * refuses every change to a finished tournament — `reduce.ts` answers `tournamentLocked`
+ * at four separate arms — and reopening one is deliberately gated behind `FinishedNotice`
+ * and {@link REOPEN_CONFIRM}, which spends a whole dialog on the consequence. Undo reaches
+ * that same state, so it asks a question of the same weight rather than being the one path
+ * that ignores D-17.
+ *
+ * The body's second clause is CONDITIONAL and that is deliberate. Core reports which
+ * player won and how many entries come off, not whether the match was the final, and a
+ * sentence asserting the un-crowning unconditionally would be false over a first-round
+ * result — which this module treats as worse than saying less. The first clause is true of
+ * every match and is the one that names what is going.
+ */
+export const UNDO_MATCH_CONFIRM = {
+  heading: 'Undo the recorded result?',
+  tone: 'default' as const,
+  confirmLabel: 'Undo the result',
+  safeLabel: 'Keep the result',
+  body: (playerName: string): string =>
+    `This removes the result, and ${playerName}'s win no longer stands. If it was the match that finished the tournament, the champion is un-crowned and every result becomes editable again.`,
+};

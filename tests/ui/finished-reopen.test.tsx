@@ -89,7 +89,7 @@ vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
 
 import { App } from '../../src/app';
 import { save as saveTournament } from '../../src/adapters/persistence';
-import { disposeTabLock } from '../../src/adapters/tab-lock';
+import { claimOwnership, CLAIM_WINDOW_MS, disposeTabLock } from '../../src/adapters/tab-lock';
 import {
   cutTaken,
   draftStarted,
@@ -121,7 +121,11 @@ import {
   FINISHED_CELL_REASON,
   RESULTS_FIRST_CELL_ID,
 } from '../../src/ui/components/ResultsGrid';
-import { REOPEN_CONFIRM } from '../../src/ui/confirm-copy';
+import {
+  REOPEN_CONFIRM,
+  UNDO_BOUNDARY_CONFIRM,
+  UNDO_MATCH_CONFIRM,
+} from '../../src/ui/confirm-copy';
 import { OPEN_TOURNAMENT } from '../../src/ui/screens/CompletedDraft';
 import { TournamentScreen } from '../../src/ui/screens/TournamentScreen';
 
@@ -676,5 +680,113 @@ describe('through the app', () => {
     for (const control of controls) {
       expect(control.getAttribute('aria-disabled')).toBeNull();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Undo does not walk around the lock — D-17.
+//
+// The gate above is only half of D-17. `undoLast` never consults `canApply`, deliberately
+// and for picks, so the read-only rule reaches the undo path only if `undo.ts` states it
+// there too. It did not: `'match'` was in neither `ROUND_COMPARABLE_KINDS` nor
+// `ALWAYS_CONFIRM_KINDS`, so one press of `Undo last move` — or `Ctrl+Z`, which `TopBar`
+// registers on `document` and therefore outside every `inert` region on this screen —
+// deleted the recorded final, un-crowned the champion and unlocked the tournament without
+// asking, while every dispatch path refused exactly that with `tournamentLocked`.
+//
+// Here rather than in `confirm-dialogs.test.tsx` because `openFinishedTournament` is the
+// fixture that makes it reachable, and because what is under test is the lock.
+// ---------------------------------------------------------------------------
+
+const UNDO_LABEL = 'Undo last move';
+
+/**
+ * Take the tab lock, which `undo` requires and `dispatch` does not.
+ *
+ * The reopen tests above need no lock because `dispatch` checks none; `store.ts`'s `undo`
+ * opens with `isOwner()`, so a run without this claims the dialog and then quietly removes
+ * nothing. Claimed BEFORE the app mounts, so the first render already reads an owned tab.
+ */
+function claimLock(): void {
+  vi.useFakeTimers();
+  claimOwnership();
+  vi.advanceTimersByTime(CLAIM_WINDOW_MS);
+  vi.useRealTimers();
+}
+
+describe('undoing the recorded final', () => {
+  it('asks first, in the set written for a result rather than for a pick', async () => {
+    claimLock();
+    await openFinishedTournament();
+
+    await act(async () => {
+      buttonNamed(UNDO_LABEL)?.click();
+      await Promise.resolve();
+    });
+
+    const dialog = host.querySelector('[role="alertdialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain(UNDO_MATCH_CONFIRM.heading);
+    expect(buttonNamed(UNDO_MATCH_CONFIRM.confirmLabel)).toBeDefined();
+    expect(buttonNamed(UNDO_MATCH_CONFIRM.safeLabel)).toBeDefined();
+
+    // Never the boundary prose. "This undoes {name}'s pick from round {r}" is a plain
+    // untruth over a match result, on the surface whose whole job is saying what changes.
+    expect(dialog?.textContent).not.toContain(UNDO_BOUNDARY_CONFIRM.heading);
+  });
+
+  it('changes nothing while the question is on screen', async () => {
+    claimLock();
+    await openFinishedTournament();
+    const before = getDoc()?.log.length ?? 0;
+
+    await act(async () => {
+      buttonNamed(UNDO_LABEL)?.click();
+      await Promise.resolve();
+    });
+
+    expect(getDoc()?.log.length).toBe(before);
+    // Still finished, and still saying so. The champion is not quietly un-crowned behind
+    // the dialog asking whether to un-crown them.
+    expect(selectTournamentLocked(fold(getDoc()!))).toBe(true);
+    expect(notice()).not.toBeNull();
+  });
+
+  it('keeps the result when the safe label is taken', async () => {
+    claimLock();
+    await openFinishedTournament();
+    const before = getDoc()?.log.length ?? 0;
+
+    await act(async () => {
+      buttonNamed(UNDO_LABEL)?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      buttonNamed(UNDO_MATCH_CONFIRM.safeLabel)?.click();
+      await Promise.resolve();
+    });
+
+    expect(getDoc()?.log.length).toBe(before);
+    expect(selectTournamentLocked(fold(getDoc()!))).toBe(true);
+  });
+
+  it('carries it out once the host has said so', async () => {
+    // The friction is the fix, not a refusal: undo still works, it just stops being the
+    // one path that reaches a locked tournament without a word.
+    claimLock();
+    await openFinishedTournament();
+    const before = getDoc()?.log.length ?? 0;
+
+    await act(async () => {
+      buttonNamed(UNDO_LABEL)?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      buttonNamed(UNDO_MATCH_CONFIRM.confirmLabel)?.click();
+      await Promise.resolve();
+    });
+
+    expect(getDoc()?.log.length).toBe(before - 1);
+    expect(selectTournamentLocked(fold(getDoc()!))).toBe(false);
   });
 });

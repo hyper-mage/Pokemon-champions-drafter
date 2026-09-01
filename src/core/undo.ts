@@ -703,8 +703,32 @@ const ROUND_COMPARABLE_KINDS: readonly UndoRemoval['kind'][] = ['pick', 'card'];
  * `'banPlaced'` is deliberately NOT here. A snake ban is on the board and reversing it is
  * visible, which puts it in the same category as a pick, where D-08's no-confirm posture
  * holds.
+ *
+ * `'match'` JOINS THEM IN PHASE 5, and it is the same trap arriving by a third route. The
+ * comparison answers `false` for it too — a match reports `config.rounds` and the draft is
+ * standing on `config.rounds` once it is over — so leaving it to the arithmetic is leaving
+ * it unconfirmed, which is precisely what "adding them to NEITHER list is the silent
+ * failure" warns about above.
+ *
+ * What makes the omission worse than a missing dialog is that `canApply` answers the
+ * OPPOSITE. D-17 makes a finished tournament read-only and `reduce.ts` returns
+ * `tournamentLocked` at every `tournament/*` arm but `tournament/reopened`; reopening is
+ * gated behind `FinishedNotice` and a confirm that spends its whole body on the
+ * consequence. Undo reached the same state with one keystroke and no question — two write
+ * paths giving opposite answers to "may this finished tournament be changed", which is the
+ * one-fact-two-mechanisms failure this module argues against by name.
+ *
+ * Here rather than in `ROUND_COMPARABLE_KINDS`, and the distinction is the one that list
+ * already draws: its members' `round` is a PICK round the draft can have moved past. A
+ * match result crosses no pick round at all. It is on this list for the reason the two ban
+ * kinds are — because the friction is the point, not because a comparison would have found
+ * it.
  */
-const ALWAYS_CONFIRM_KINDS: readonly UndoRemoval['kind'][] = ['banSubmission', 'banReveal'];
+const ALWAYS_CONFIRM_KINDS: readonly UndoRemoval['kind'][] = [
+  'banSubmission',
+  'banReveal',
+  'match',
+];
 
 /** What an undo would reach back into. Every field is a fact, never a sentence. */
 export interface RoundBoundaryCrossing {
