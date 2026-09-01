@@ -41,6 +41,7 @@ import {
   matchRecorded,
   orderResolved,
   pickMade,
+  reopened,
   resultsVoided,
   swapMade,
   swapPassed,
@@ -97,6 +98,7 @@ import {
   ABANDON_CONFIRM,
   EVICTION_CONFIRM,
   FILING_CONFIRM,
+  REOPEN_CONFIRM,
   SWAP_CONFIRM,
   UNDO_BAN_SUBMISSION_CONFIRM,
   UNDO_BOUNDARY_CONFIRM,
@@ -117,7 +119,10 @@ import {
   type SwapBudget,
 } from './ui/components/PoolGrid';
 import { ReadOnlyBanner } from './ui/components/ReadOnlyBanner';
-import { type ResultsGridProps } from './ui/components/ResultsGrid';
+import {
+  RESULTS_FIRST_CELL_ID,
+  type ResultsGridProps,
+} from './ui/components/ResultsGrid';
 import {
   CARD_PHASE_EXPAND_REASON,
   SplitPanes,
@@ -353,6 +358,19 @@ type Confirm =
    * looking them up at render time is what lets the dialog state the world it was opened
    * against: nothing here can drift while it is on screen.
    */
+  /**
+   * Reopening a finished tournament — D-17, 05-UI-SPEC §10.
+   *
+   * The one member of this union with NO FIELDS, and that is the copy set's shape rather
+   * than an omission. `REOPEN_CONFIRM.body` is a plain string, alone among the sets that
+   * say anything substantive, because there is nothing to resolve: the sentence describes
+   * what CORRECTING will cost, not what reopening costs, and that is the same sentence
+   * whatever the tournament held. Reopening itself voids nothing.
+   *
+   * So the "state the world the host was asked about" rule that puts counts on every other
+   * member is satisfied here by there being no world-dependent claim to make.
+   */
+  | { kind: 'reopen' }
   | {
       kind: 'swap';
       playerId: string;
@@ -2371,6 +2389,54 @@ export function App() {
     announce(sentence);
   });
 
+  /** The results cell owed focus once the reopen has folded. See `confirmReopen`. */
+  const pendingReopenFocus = useRef(false);
+
+  /**
+   * Reopen a finished tournament — D-17, `05-UI-SPEC` §10 and §Interaction.
+   *
+   * One action and no cascade. Reopening VOIDS NOTHING — it only moves `lastReopenSeq`
+   * past the final's result, which is what `selectTournamentLocked` compares against — so
+   * this is not the record handler's shape and deliberately does not borrow it. What the
+   * host is warned about in `REOPEN_CONFIRM.body` is the cost of the CORRECTION they are
+   * about to make, and that cost is charged by `handleRecordMatch` when they make it.
+   *
+   * ## Focus, because the control the host just pressed does not survive its own success
+   *
+   * `FinishedNotice` renders itself away the moment the fold says the tournament is open,
+   * so the button under the pointer is gone by the next render and focus would drop to
+   * `<body>`. §Interaction names the destination: the results grid's first live cell, "the
+   * surface the reopen exists to make usable". That is the same shape as the cut's handoff
+   * to the bracket heading, and for the same reason.
+   *
+   * Armed here and fired in the layout effect below rather than in this handler, because
+   * the cell is not reachable yet: the dispatch has to fold and the screen has to re-render
+   * before an inert cell becomes a live one.
+   */
+  const confirmReopen = useCallback(() => {
+    setConfirm({ kind: 'idle' });
+
+    const done = dispatch(reopened());
+    if (!done.ok) return;
+
+    pendingReopenFocus.current = true;
+  }, []);
+
+  /**
+   * Hand focus to the reopened grid's first live cell.
+   *
+   * `useLayoutEffect` with no dependency array, always clearing its own flag, exactly like
+   * the three handoffs above it — an armed handoff must never survive into a later,
+   * unrelated render. It runs after `Dialog`'s unmount cleanup has tried to restore focus
+   * to the notice's button, which by then is detached, so this is the last write and wins.
+   */
+  useLayoutEffect(() => {
+    if (!pendingReopenFocus.current) return;
+    pendingReopenFocus.current = false;
+
+    document.getElementById(RESULTS_FIRST_CELL_ID)?.focus();
+  });
+
   // -------------------------------------------------------------------------
   // PERS-04 / PERS-05 — the tournament as a file
   // -------------------------------------------------------------------------
@@ -3191,6 +3257,7 @@ export function App() {
             }}
             onBackToDraft={() => setScreen({ name: 'draft' })}
             onSelectMatch={setRecording}
+            onRequestReopen={() => setConfirm({ kind: 'reopen' })}
           />
         )}
       </div>
@@ -3472,6 +3539,34 @@ export function App() {
         describes the world the host asked about rather than the one that exists a render
         later.
       */}
+      {/*
+        Reopening a finished tournament — D-17. Same placement, same reason as the record
+        dialog directly above: this is opened from a control INSIDE the gate, and the gate
+        can go up while it is open when another tab presses `Take over drafting here`
+        mid-question. Rendered inside, it would go inert with the screen behind it and trap
+        focus in a panel refusing its own dismiss.
+
+        A read-only tab still cannot reopen anything, because the only route to
+        `kind: 'reopen'` is the notice's button and the notice is behind the gate.
+
+        `default` toned, and it is the tone reservation's other load test. Nothing is
+        destroyed: the reopen voids no result, and it is itself one undo away. What the body
+        states plainly is the D-10/D-11 friction the CORRECTION will cost — the cut and the
+        bracket, or the matches after it — because that friction is intended, and a host
+        chasing one mistyped score is exactly the person who cannot see it coming.
+      */}
+      {confirm.kind === 'reopen' && (
+        <ConfirmDialog
+          heading={REOPEN_CONFIRM.heading}
+          body={REOPEN_CONFIRM.body}
+          confirmLabel={REOPEN_CONFIRM.confirmLabel}
+          safeLabel={REOPEN_CONFIRM.safeLabel}
+          tone={REOPEN_CONFIRM.tone}
+          onConfirm={confirmReopen}
+          onSafe={closeConfirm}
+        />
+      )}
+
       {confirm.kind === 'swap' && (
         <ConfirmDialog
           heading={SWAP_CONFIRM.heading}

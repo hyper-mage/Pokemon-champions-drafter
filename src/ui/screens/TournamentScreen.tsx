@@ -6,6 +6,7 @@ import { selectTournamentStage } from '../../core/tournament';
 import { dispatch } from '../../store';
 import { BracketGrid } from '../components/BracketGrid';
 import { BRACKET_HEADING_ID, CutControl } from '../components/CutControl';
+import { FinishedNotice } from '../components/FinishedNotice';
 import { ResultsGrid, type ResultsGridProps } from '../components/ResultsGrid';
 import { StandingsTable } from '../components/StandingsTable';
 import { TiebreakOrderer } from '../components/TiebreakOrderer';
@@ -84,6 +85,20 @@ export interface TournamentScreenProps {
    * control inside the gate, so a read-only tab still cannot record anything.
    */
   onSelectMatch: ResultsGridProps['onSelectMatch'];
+  /**
+   * The host pressed `Reopen this tournament` — D-17.
+   *
+   * Up to `app.tsx` for `onSelectMatch`'s structural reason exactly, and it is the second
+   * and last of them: the confirm this raises is a MODAL, `inert` applies to a whole
+   * subtree, and a dialog rendered inside the read-only gate would trap focus in a panel
+   * that refuses its own dismiss the instant another tab took the lock. The two intents
+   * 05-11 wired locally — the tiebreak override and the cut — stay local precisely because
+   * neither opens one.
+   *
+   * A read-only tab still cannot reopen anything: the only route to this callback is the
+   * notice's button, and the notice is inside the gate.
+   */
+  onRequestReopen: () => void;
 }
 
 /** Verbatim from `05-UI-SPEC` §Copywriting → Round robin. */
@@ -99,6 +114,7 @@ export function TournamentScreen({
   topBar,
   onBackToDraft,
   onSelectMatch,
+  onRequestReopen,
 }: TournamentScreenProps) {
   const stage = selectTournamentStage(state);
 
@@ -211,6 +227,27 @@ export function TournamentScreen({
         */}
         {stage === 'bracket' && (
           <>
+            {/*
+              ABOVE EVERYTHING ELSE ON THIS STAGE, and above rather than beside because it
+              is the sentence that explains why both surfaces below it have stopped
+              responding — the crosstable's cells and the bracket's cards go inert
+              together, so a notice attached to only one of them would leave the other
+              unexplained.
+
+              It renders itself away when the tournament is not locked, so there is no
+              branch here: `selectTournamentLocked` is the one authority on whether the
+              night has finished, and asking it twice would be two answers to one question.
+              That is `TiebreakOrderer`'s rule, applied to a fold instead of a tie.
+
+              D-18 is what keeps this an ADDITION rather than a replacement. Recording the
+              final adds this bar and names the champion on the card the room is already
+              looking at; the bracket does not move, no summary screen takes its place, and
+              the top bar never goes — so undo and the JSON download stay exactly where the
+              host last saw them, which is the whole point on the one surface people reach
+              for when something has gone wrong.
+            */}
+            <FinishedNotice state={state} onRequestReopen={onRequestReopen} />
+
             <section class="tournament-screen__stage" aria-labelledby="tournament-round-robin">
               <h2 class="tournament-screen__stage-heading" id="tournament-round-robin">
                 {ROUND_ROBIN_HEADING}

@@ -8,6 +8,7 @@ import {
 } from '../../core/tournament';
 import { matches as matchCount } from '../confirm-copy';
 import { useRovingTabindex } from '../use-roving-tabindex';
+import { FINISHED_SENTENCE } from './FinishedNotice';
 
 import './ResultsGrid.css';
 
@@ -98,18 +99,39 @@ function captionLine(metric: MatchMetric): string {
 export const RESULTS_EMPTY = 'No results yet. Record a match by choosing any empty cell.';
 
 /**
- * §10's locked sentences — the visible one and the one each cell's name carries.
+ * §10's locked sentence, re-exported rather than declared — the visible one above the grid.
  *
- * `FinishedNotice` and the reopen control are 05-13's, and this is deliberately not a
- * preview of them: it is the INERT half, which has to exist the moment a cell can be
- * clicked on a finished tournament. That is reachable today by importing a document whose
- * final is recorded, and without this the reducer's `tournamentLocked` backstop refuses the
- * dispatch with nothing on screen to explain why — a control that silently does nothing.
+ * 05-10 declared it here because the INERT half had to exist the moment a cell could be
+ * clicked on a finished tournament, which is reachable by importing a document whose final
+ * is recorded: without it the reducer's `tournamentLocked` backstop refuses the dispatch
+ * with nothing on screen to explain why, a control that silently does nothing. That comment
+ * named `FinishedNotice` as the surface that would own the sentence, and 05-13 built it, so
+ * the declaration moved there and this is now the second consumer of one literal.
+ *
+ * `FINISHED_CELL_REASON` below states the rule this follows and the reason for it. The
+ * re-export is kept so nothing importing the sentence from the grid has to care which of
+ * the two files currently declares it.
  *
  * Inert rather than hidden, which is the codebase's established move: a control that
  * vanished would make a host think the app had lost a feature.
  */
-export const RESULTS_FINISHED = 'This tournament is finished. Results are read-only.';
+export { FINISHED_SENTENCE };
+
+/**
+ * Where focus lands when the host reopens a finished tournament — §Interaction's
+ * `Focus after reopening` row.
+ *
+ * The `FinishedNotice` holding the control that was just pressed is REPLACED BY NOTHING,
+ * so focus cannot stay where it was and must not drop to `<body>`. The contract names this
+ * grid's first live cell as the destination, and the reason is that the reopen exists to
+ * make exactly this surface usable again.
+ *
+ * A shared exported id, on `BRACKET_HEADING_ID`'s precedent and for its reason: the handoff
+ * lives in `app.tsx`, because that is where the confirm dialog is raised and this grid does
+ * not know it was reopened. An id retyped at the other end is one that fails silently when
+ * either end moves.
+ */
+export const RESULTS_FIRST_CELL_ID = 'results-grid-first-cell';
 
 /**
  * EXPORTED, on `metricLabel`'s precedent rather than copied into a second file.
@@ -225,7 +247,7 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
       {remaining === pairs.length && <p class="results-grid__empty">{RESULTS_EMPTY}</p>}
 
       {/* ONE visible sentence, per §4's finished row. The cells carry the rest. */}
-      {locked && <p class="results-grid__finished">{RESULTS_FINISHED}</p>}
+      {locked && <p class="results-grid__finished">{FINISHED_SENTENCE}</p>}
 
       {/*
         The shipped `overflow-x: auto` wrapper. The grid fits with no internal scroll up to
@@ -315,6 +337,13 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
                     type="button"
                     class={className}
                     key={columnPlayer.id}
+                    /*
+                      The reopen's focus destination, on the FIRST live cell in the same
+                      reading order the roving hook walks — see `RESULTS_FIRST_CELL_ID`.
+                      `undefined` everywhere else, because an id repeated across 28 cells
+                      is not an id.
+                    */
+                    id={index === 0 ? RESULTS_FIRST_CELL_ID : undefined}
                     tabIndex={rove.tabIndexAt(index)}
                     aria-disabled={inert}
                     onFocus={() => rove.onItemFocus(index)}
