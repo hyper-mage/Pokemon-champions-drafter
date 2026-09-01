@@ -1,0 +1,130 @@
+/*
+ * TiebreakOrderer — the host's order for a block the chain refused to split.
+ *
+ * Tokens only: no raw hex and no raw length. No :focus rule and no :active rule — the
+ * global accent ring in app.css owns focus, and a per-component ring is how a design
+ * system drifts. Geometry and copy both come from `05-UI-SPEC` §7.
+ *
+ * ONE accent fill, on `Confirm this order`, which is accent's second reserved use and is
+ * allowed exactly once per screen state. The move buttons are secondary and outlined, the
+ * same treatment `SchedulePreview`'s are given, because they are the same kind of control.
+ *
+ * The rows do not animate a reorder. §Interaction's motion budget names the standings
+ * surface by name, and this control sits on it: a row that slides into place is a row
+ * nobody can read while it moves. The only transition here is the colour one the budget
+ * allows, on the move buttons' hover fill.
+ */
+
+.tiebreak-orderer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 60ch;
+  min-width: 0;
+}
+
+.tiebreak-orderer__heading {
+  margin: 0;
+  font: var(--text-heading);
+  color: var(--color-text);
+}
+
+/*
+ * The body sentence, muted and at --text-label so it reads as the control's explanation
+ * rather than as a row of it — the same weight the standings caption takes directly above.
+ */
+.tiebreak-orderer__body {
+  margin: 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.tiebreak-orderer__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * list-style: none removes the browser marker deliberately, for SchedulePreview's reason
+ * applied to seeds: the order is already the whole of what the list says, and a marker
+ * would number the rows a second time beside the standings table's own position column.
+ */
+.tiebreak-orderer__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border-radius: var(--radius);
+}
+
+/* Every player name on this screen at --text-heading, per §Typography. */
+.tiebreak-orderer__player {
+  font: var(--text-heading);
+  color: var(--color-text);
+}
+
+.tiebreak-orderer__controls {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/*
+ * --target-min in BOTH axes, per §Interaction's target-size row, which is why min-width is
+ * here as well as min-height.
+ */
+.tiebreak-orderer__move {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-label);
+  cursor: pointer;
+  /* Motion budget: colour only, at most 120ms. A reorder itself is not animated. */
+  transition: background-color 120ms ease;
+}
+
+.tiebreak-orderer__move:hover {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * An inert end button is dimmed, not hidden and not natively disabled — it stays focusable
+ * so a keyboard walk down the list does not silently skip the first row's Up and the last
+ * row's Down. The hover fill is cancelled rather than left in place: a control that lights
+ * up under the pointer and then does nothing teaches the host their clicks do not matter.
+ */
+.tiebreak-orderer__move--inert {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tiebreak-orderer__move--inert:hover {
+  background: transparent;
+}
+
+/*
+ * The one accent-filled control in this screen state — accent's second reserved use.
+ * --target-min in both axes: the height is set here and the horizontal padding carries the
+ * width past it for the one label this button can hold.
+ */
+.tiebreak-orderer__confirm {
+  align-self: flex-start;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--hairline-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+}

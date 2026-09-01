@@ -1,7 +1,10 @@
+import { tiebreakOrdered } from '../../core/actions';
 import type { DraftState } from '../../core/model';
 import { selectTournamentStage } from '../../core/tournament';
+import { dispatch } from '../../store';
 import { ResultsGrid, type ResultsGridProps } from '../components/ResultsGrid';
 import { StandingsTable } from '../components/StandingsTable';
+import { TiebreakOrderer } from '../components/TiebreakOrderer';
 import { TopBar, type TopBarProps } from '../components/TopBar';
 
 import './TournamentScreen.css';
@@ -38,6 +41,20 @@ import './TournamentScreen.css';
  * tiebreak override and the cut; 05-13 mounts the bracket; 05-14 mounts the recap. Each
  * lands inside the stage block it belongs to, so a later plan adds a child rather than
  * re-deciding the shell.
+ *
+ * ## Why the two round-robin write paths are wired HERE and not in `app.tsx`
+ *
+ * `onSelectMatch` goes up to `app.tsx` for one stated structural reason and one only:
+ * `inert` applies to a whole subtree, so the record dialog has to be a SIBLING of the
+ * read-only gate rather than a descendant of it. Nothing about the tiebreak override or
+ * the cut needs to escape that gate — both are plain controls that should be unreachable
+ * in a read-only tab, which is exactly what rendering them inside it achieves.
+ *
+ * So the two intents those controls report are turned into actions here, on
+ * `ConfigScreen`'s precedent for a screen that calls into `src/store.ts` directly. The
+ * alternative — threading two more callbacks through `app.tsx` — would put this screen's
+ * internal wiring in the shell without buying anything, and `dispatch` remains the one
+ * write path either way. The components themselves still own no dispatch.
  */
 
 export interface TournamentScreenProps {
@@ -111,6 +128,23 @@ export function TournamentScreen({
               knowing what is above it.
             */}
             <StandingsTable state={state} />
+
+            {/*
+              Immediately below the standings, per §Color — the block it orders is the one
+              the table has just shown reading `Tied — order these yourself` on every row,
+              and a control that ordered players the host had to scroll away from would be
+              asking about a table they can no longer see.
+
+              It renders itself away once no block is unresolved, so there is no branch
+              here: `selectStandings` is the one authority on whether there is anything to
+              order, and asking it twice would be two answers to one question.
+            */}
+            <TiebreakOrderer
+              state={state}
+              onConfirm={(playerIds) => {
+                dispatch(tiebreakOrdered(playerIds));
+              }}
+            />
           </section>
         )}
 
