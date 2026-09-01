@@ -1,0 +1,113 @@
+/*
+ * TournamentLibrary.css — the landing-screen library, `05-UI-SPEC` §12.
+ *
+ * Tokens only: no raw hex and no raw length. `--space-3` is the row padding, `--space-2`
+ * the gap between rows, `--radius` the row corner and `--color-surface` the row fill —
+ * the same four decisions every card-shaped surface in this app already makes.
+ *
+ * THE SECTION IS SIZED AGAINST THE CAP, AND THAT IS WHY THERE IS NO VIRTUALIZATION HERE
+ * AND NONE MAY BE ADDED. §Layout Budget measures twelve rows at 1,212px against about
+ * 670px available: one deliberate scroll, which is the third of the three defences for the
+ * cap number. Twelve rows is not a feed. `CLAUDE.md` §What NOT to Use rejects virtualization
+ * libraries for a 234-cell grid; a twelve-row list is two orders of magnitude short of the
+ * question.
+ *
+ * Two sizes and both are contract. The row heading is `--text-heading` and the description
+ * is `--text-body`, which §Typography maps to the priority-card and Mega-marker sizes the
+ * host has already physically verified at 3 metres. The description is deliberately NOT
+ * `--text-label` — `.landing__description` one file over is, and the two are different
+ * lines: that one describes a single button, this one is the only thing distinguishing
+ * twelve nights from each other.
+ *
+ * No :focus rule. The global accent ring in app.css owns focus, and adding a second one
+ * here would be a second thing to keep in step with it.
+ *
+ * Not accent-coloured, anywhere. §Accent reserved for gives the landing screen exactly one
+ * accent action and `New tournament` already spends it. Twelve rows of accent buttons would
+ * empty the reservation of its meaning on the one screen it is easiest to read.
+ */
+
+/*
+ * `--space-6` above, which is the subtitle's own bottom margin used as a section break
+ * rather than a fourth number. `.landing` is a plain block, so this margin is what
+ * separates history from the three ways in — the actions list's own `--space-3` gap is
+ * the spacing WITHIN a group and would read as a fourth button here.
+ */
+.tournament-library {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+  min-width: 0;
+}
+
+.tournament-library__heading {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+.tournament-library__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tournament-library__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.tournament-library__label {
+  margin: 0;
+  font: var(--text-heading);
+  /*
+   * A format label is whatever the host typed, and `Champions Regulation MB — Thursday
+   * night` has no space the browser is obliged to break at. `anywhere` is the same
+   * declaration the results grid uses on player names and for the same reason: an
+   * overflowing label pushes the row actions off the screen edge.
+   */
+  overflow-wrap: anywhere;
+}
+
+.tournament-library__description {
+  margin: 0;
+  font: var(--text-body);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.tournament-library__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/*
+ * Both row actions clear --target-min in both axes: --target-min tall by declaration, and
+ * wider than it by the padding around `Open tournament` and `Download JSON`, neither of
+ * which is a short word. Assertion 22's rule, applied to the two controls §Interaction's
+ * Target size row names by name.
+ */
+.tournament-library__action {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: var(--hairline-w) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.tournament-library__action:hover {
+  background: var(--color-surface-raised);
+}
