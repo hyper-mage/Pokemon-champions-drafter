@@ -1,0 +1,79 @@
+/*
+ * FinishedNotice.css — D-17, `05-UI-SPEC` §10.
+ *
+ * A bar above the bracket region. It is NOT sticky and must not become sticky, on
+ * `ReadOnlyBanner.css`'s stated rule and for a sharper version of its reason: the sentence
+ * is read once and then it is furniture, while the surface underneath it is a bracket the
+ * room is reading from across it. Stealing a permanent band of viewport from the thing
+ * everyone turned to look at would be the wrong trade, and the tournament screen already
+ * spends one on the sticky top bar.
+ *
+ * Declares no raw colour and no raw length. Every value comes from tokens.css.
+ *
+ * NO ACCENT IN THIS FILE, and the contract is specific rather than general about it.
+ * §Color's second accent reservation names the primary action of each screen state one by
+ * one, and for the bracket stage it says: "none until the final is recorded, then
+ * `View the draft recap`." So the accent on a finished bracket is spoken for, by a control
+ * in a later plan. `Reopen this tournament` takes the plain bordered treatment instead —
+ * the same one `Back to the draft` takes — which is also the honest ranking: reopening is
+ * the exit from a state the host is not usually trying to leave.
+ *
+ * NO DESTRUCTIVE HUE either, and the token for it is deliberately not named in this
+ * comment. §Color: "A locked (finished) tournament is not danger-coloured either. Nothing
+ * is wrong; the night finished." That tone is reserved for the three surfaces that lose
+ * something no click can bring back, and this loses nothing at all — every result stays on
+ * screen and the reopen is itself undoable.
+ *
+ * The acceptance gate for this file is a plain text search for that token, so DESCRIBING
+ * the prohibition rather than quoting it is what keeps the gate reading declarations
+ * instead of prose. `FeasibilityBar` states the rule from the other side, and 05-11 applied
+ * it to a rejection: a gate that matches its own documentation is a gate that passes on a
+ * stylesheet which has quietly started doing the forbidden thing.
+ */
+
+.finished-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+
+  padding: var(--space-3);
+  border: var(--hairline-w) solid var(--color-hairline);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+}
+
+.finished-notice__text {
+  margin: 0;
+  font: var(--text-body);
+  /*
+   * Full text colour, not --color-text-muted, on ReadOnlyBanner.css's reasoning: muting
+   * this would say "minor aside" when it is the reason every cell and card below has
+   * stopped responding.
+   */
+  color: var(--color-text);
+}
+
+/*
+ * The plain bordered control — see the header for why it is not accent-filled.
+ *
+ * --target-min in both axes, per §Interaction's target-size row, which names
+ * `Reopen this tournament` in its list explicitly.
+ */
+.finished-notice__action {
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-w) solid var(--color-hairline);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+.finished-notice__action:hover {
+  /* Boundary carries the affordance, on ReadOnlyBanner's rule. No hue change. */
+  border-color: var(--color-text);
+}

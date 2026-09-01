@@ -438,6 +438,7 @@ describe('the stage shell', () => {
           topBar={TOP_BAR}
           onBackToDraft={() => undefined}
           onSelectMatch={() => undefined}
+          onRequestReopen={() => undefined}
         />,
         host,
       );

@@ -458,6 +458,7 @@ describe('focus after the cut', () => {
         topBar={TOP_BAR}
         onBackToDraft={() => undefined}
         onSelectMatch={() => undefined}
+        onRequestReopen={() => undefined}
       />
     );
 
