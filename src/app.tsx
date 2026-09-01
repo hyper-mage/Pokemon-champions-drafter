@@ -9,6 +9,12 @@ import {
 
 import { downloadJson, readJsonFile, tournamentFilename } from './adapters/file-io';
 import {
+  fileTournament,
+  oldestEntry,
+  openLibraryEntry,
+  type LibraryEntry,
+} from './adapters/library';
+import {
   clearSaved,
   load as loadSavedTournament,
   loadIfNewer,
@@ -89,6 +95,8 @@ import {
 import {
   ABANDON_BAN_STAGE_CONFIRM,
   ABANDON_CONFIRM,
+  EVICTION_CONFIRM,
+  FILING_CONFIRM,
   SWAP_CONFIRM,
   UNDO_BAN_SUBMISSION_CONFIRM,
   UNDO_BOUNDARY_CONFIRM,
@@ -98,6 +106,7 @@ import {
 import { BoardGrid } from './ui/components/BoardGrid';
 import { CardPanel, type PlayedCard } from './ui/components/CardPanel';
 import { ConfirmDialog } from './ui/components/ConfirmDialog';
+import { Dialog } from './ui/components/Dialog';
 import { ImportConfirmDialog } from './ui/components/ImportConfirmDialog';
 import { announce, LiveRegion } from './ui/components/LiveRegion';
 import { MatchRecordDialog, type MatchRecord } from './ui/components/MatchRecordDialog';
@@ -116,6 +125,7 @@ import {
 } from './ui/components/SplitPanes';
 import { SwapPanel } from './ui/components/SwapPanel';
 import { boardCellId } from './ui/components/TeamStrip';
+import { DOWNLOAD_JSON, libraryDate } from './ui/components/TournamentLibrary';
 import { TopBar } from './ui/components/TopBar';
 import { TurnBanner } from './ui/components/TurnBanner';
 import { BanStageScreen } from './ui/screens/BanStageScreen';
@@ -275,9 +285,53 @@ type ImportFlow =
  */
 type RecordingMatch = Parameters<ResultsGridProps['onSelectMatch']>[0] | null;
 
+/**
+ * What a filing gesture is on its way to doing — D-15, 05-UI-SPEC §12.
+ *
+ * §12 rules that opening a library entry files the current tournament first "through the
+ * same D-15 confirm — one filing path, not two". This is what makes that one path able to
+ * serve both gestures: the confirm asks the filing question, and this rides along saying
+ * where to go once it is answered. A second confirm shape for the same act would be a
+ * second thing to keep in step.
+ */
+type AfterFiling = { kind: 'newTournament' } | { kind: 'openEntry'; id: string };
+
 type Confirm =
   | { kind: 'idle' }
   | { kind: 'abandon'; picks: number; players: number }
+  /**
+   * Filing the live tournament — D-15, 05-UI-SPEC §Amendment 1.
+   *
+   * `default` toned and INFORMING rather than warning, which is the whole of the
+   * amendment: with a library in place nothing is lost, so a red dialog would be a lie
+   * about the consequence. What the host needs is where the tournament went.
+   *
+   * The document is captured here rather than re-read when the dialog is answered, on the
+   * shape every other variant in this union takes: the sentence describes the world the
+   * host was asked about and cannot drift while it is on screen.
+   */
+  | { kind: 'file'; doc: TournamentDoc; after: AfterFiling }
+  /**
+   * Filing at the cap — D-16. Raised INSTEAD OF the filing confirm, not after it.
+   *
+   * One question is asked, and it is the one with the larger consequence attached. Two
+   * dialogs in a row for one gesture would train the host to click through the first,
+   * which is the one carrying the eviction.
+   *
+   * `dropped` is read from `oldestEntry()` BEFORE anything is written, which is the whole
+   * of D-16: the host is told which night is about to go, and offered its file, while it
+   * still exists.
+   */
+  | { kind: 'evict'; doc: TournamentDoc; dropped: LibraryEntry; after: AfterFiling }
+  /**
+   * The library write did not land — D-14, and deliberately not a confirmation.
+   *
+   * It asks nothing: the answer is already decided, and both controls are ways of leaving.
+   * It is in this union rather than in a state of its own because it is raised from the
+   * same handler and dismissed by the same `closeConfirm`, and a second piece of dialog
+   * state would be a second thing that can be left open behind another one.
+   */
+  | { kind: 'fileFailed'; doc: TournamentDoc }
   /**
    * An undo, with everything its four possible copy sets between them need.
    *
@@ -339,6 +393,27 @@ const IMPORT_WRONG_SHAPE =
   'That file is not a Champions Drafter tournament. Choose a .json file this app exported.';
 const IMPORT_NEWER_SCHEMA =
   'This tournament was saved by a newer version of the app. Reload the page and try again.';
+
+/**
+ * The library write was refused — D-14. Here rather than in `confirm-copy.ts`, and the
+ * boundary is that file's own: it holds "every confirmation's words", and this asks the
+ * host nothing. Both of its controls are ways of leaving a thing that has already
+ * happened.
+ *
+ * Follows the house form for an error — the problem, then the next action — which the two
+ * import sentences above take and which is why this sits beside them. The next action is
+ * the download, and it is the dialog's primary button rather than a suggestion.
+ *
+ * The heading states the outcome rather than asking a question, because the other three
+ * headings in this flow are questions and this one has no answer to offer. It names the
+ * tournament in the body for the same reason every dialog in this app does: a host reading
+ * only part of it still learns which night is at stake.
+ */
+const FILING_FAILED_HEADING = 'That tournament was not filed';
+
+function filingFailedBody(formatLabel: string): string {
+  return `Browser storage refused the write, so ${formatLabel} is still open and nothing else has changed. Download the JSON to keep a copy this browser cannot lose.`;
+}
 
 /**
  * The adopted-document notice — the one place an imported or resumed tournament's
@@ -808,13 +883,19 @@ export function App() {
   );
 
   /**
-   * Let go of the tournament this tab is holding — the LOCAL half of abandoning.
+   * Let go of the tournament this tab is holding — the LOCAL half of emptying the live
+   * slot.
    *
-   * Two routes reach it and they must do the same thing: the host confirming the dialog in
-   * this tab, and `onAbandoned` arriving from the tab where they confirmed it. Written once
-   * rather than twice, because a secondary that performed three of these four steps would
-   * keep the abandoned draft alive in the one place nobody is looking at it — and would
-   * write it back on promotion.
+   * THREE routes reach it and they must do the same thing: the host confirming the abandon
+   * dialog in this tab, `onAbandoned` arriving from the tab where they confirmed it, and —
+   * since D-15 — a filing that has already written the document into the library. The name
+   * says "discard" because that is what it does to THIS TAB's copy; whether anything else
+   * still holds the tournament is the caller's business, and filing is the caller for which
+   * the answer is yes.
+   *
+   * Written once rather than three times, because a caller that performed three of these
+   * four steps would keep the draft alive in the one place nobody is looking at it — and
+   * would write it back on promotion.
    *
    * THE ORDER IS LOAD-BEARING AND IS NOT OBVIOUS. `startAutosave`'s teardown function ends
    * in `flush()`, which writes any pending debounced document — so tearing the autosave
@@ -2060,7 +2141,7 @@ export function App() {
   }, []);
 
   /**
-   * Abandoning, in the tab where the host confirmed it — all three halves.
+   * Empty the live slot, in the tab that decided to — all three halves.
    *
    * `discardTournament` is the local one and carries the ordering argument; `clearSaved`
    * is the storage one; `notifyAbandoned` is the one this tab owes every OTHER tab.
@@ -2071,17 +2152,37 @@ export function App() {
    * receiving tab is entitled to go and look, and a nudge sent while the record is still
    * there would hand a secondary back the very document it was being told to let go of.
    *
-   * Without the announcement a secondary keeps the abandoned tournament in memory with no
-   * banner and no visible difference, `loadIfNewer()` on takeover finds no record and so
-   * reports "nothing newer", and that tab's first autosave re-creates the key with the
-   * tournament the host destroyed — which makes `ABANDON_CONFIRM`'s "Nothing recovers it"
-   * false whenever a second tab is open.
+   * Without the announcement a secondary keeps the tournament in memory with no banner and
+   * no visible difference, `loadIfNewer()` on takeover finds no record and so reports
+   * "nothing newer", and that tab's first autosave re-creates the key with the tournament
+   * this tab let go of — which makes `ABANDON_CONFIRM`'s "Nothing recovers it" false
+   * whenever a second tab is open.
+   *
+   * ## Extracted because filing needs exactly this and must not reimplement it
+   *
+   * D-15 gives the live slot a SECOND way to empty, and the two differ only in what
+   * happened just before: abandon discards, filing writes the document into the library
+   * first. Everything after that point is identical, and the cross-tab argument above is
+   * not something a second call site should be trusted to reproduce. What this function
+   * deliberately does NOT decide is where the host goes next — `discardTournament` routes
+   * to the landing screen, and a caller that wants somewhere else says so afterwards.
    */
-  const confirmAbandon = useCallback(() => {
+  const vacateLiveSlot = useCallback(() => {
     discardTournament();
     clearSaved();
     notifyAbandoned();
   }, [discardTournament]);
+
+  /**
+   * Abandoning — now the ONLY path in the app that discards a tournament.
+   *
+   * That is what `ABANDON_CONFIRM`'s body gained a clause to say (05-UI-SPEC §Amendment 1):
+   * a host who has just learned that starting a new tournament keeps the old one will
+   * reasonably assume this one does too, and only that sentence can correct it.
+   */
+  const confirmAbandon = useCallback(() => {
+    vacateLiveSlot();
+  }, [vacateLiveSlot]);
 
   const confirmUndo = useCallback(() => {
     setConfirm({ kind: 'idle' });
@@ -2347,6 +2448,146 @@ export function App() {
     setScreen(screenForState(getState()));
   }, [saved]);
 
+  // -------------------------------------------------------------------------
+  // The library — PERS-08, D-14 / D-15 / D-16.
+  //
+  // Three gestures write to it and they share one path: `New tournament` over a live
+  // document, `Open tournament` on a library row, and the at-cap eviction that either can
+  // run into. `05-UI-SPEC` §12 rules that opening files "through the same D-15 confirm —
+  // one filing path, not two", so the gesture travels as `AfterFiling` and the filing
+  // question is asked in exactly one place.
+  // -------------------------------------------------------------------------
+
+  /**
+   * The document a filing gesture would file, or `null` when there is nothing to file.
+   *
+   * THE SAME EXPRESSION `handleResume` USES, deliberately and not by coincidence. Both
+   * gestures that reach this — `New tournament` and `Open tournament` — live on the
+   * landing screen and nowhere else, which is the screen that offers `Resume saved draft`
+   * beside them. Filing has to act on the document that button would have resumed, or the
+   * host files one tournament and is offered a different one a moment later.
+   *
+   * The RE-READ is what makes that true rather than approximately true, for the reason
+   * `handleResume` states in full: `saved` is a snapshot taken in a state initializer
+   * during the first render, and with two tabs open it goes stale the moment the owning
+   * tab makes a pick. Filing the snapshot would write a document several picks behind the
+   * one in storage — and then empty the slot holding the better copy. `saved` stays the
+   * fallback rather than the source.
+   *
+   * Deliberately NOT `getDoc()`. Nothing has been adopted while the host is on the landing
+   * screen, and reaching into the store for a document this screen is not showing would
+   * file whatever a previous tournament left behind there.
+   */
+  const liveDocument = useCallback(
+    (): TournamentDoc | null => loadSavedTournament() ?? saved,
+    [saved],
+  );
+
+  /**
+   * Where a filing gesture ends up. NAVIGATION ONLY — it empties nothing.
+   *
+   * Separate from {@link vacateLiveSlot} because the two are needed in different
+   * combinations: a gesture that filed something must empty the live slot first, and a
+   * gesture with nothing to file must not. Folding the teardown in here would make a
+   * first-visit `New tournament` broadcast an abandonment to every other tab — over a
+   * tournament this tab never had.
+   *
+   * When it IS preceded by a vacate, `vacateLiveSlot` routes to the landing screen on its
+   * way through; the `setScreen` calls here run after it in the same tick and are what
+   * decide the destination.
+   */
+  const navigateAfterFiling = useCallback(
+    (after: AfterFiling) => {
+      if (after.kind === 'newTournament') {
+        setScreen({ name: 'config' });
+        return;
+      }
+
+      // `openLibraryEntry` validates and migrates through the same read path the list
+      // does, so a `null` here means an entry that would not have rendered a row either.
+      const opened = openLibraryEntry(after.id);
+      if (opened === null) return;
+      if (!adoptTournament(opened)) return;
+
+      // The landing screen DESCRIBES `saved`, and this tab now holds the opened document —
+      // leaving the old snapshot in place would keep advertising the tournament that was
+      // just filed.
+      setSaved(opened);
+      if (storageOk) saveTournament(opened);
+
+      // A filed document can be parked anywhere from a ban stage to a finished bracket,
+      // which is `screenForState`'s call and not this line's.
+      setScreen(screenForState(getState()));
+    },
+    [storageOk],
+  );
+
+  /**
+   * Write the library, THEN touch the live slot — `library.ts`'s ordering rule, at the one
+   * place both writes happen.
+   *
+   * The two are separate keys and can partially fail. Library-then-live means a failure
+   * leaves the live document exactly where it was; the other order loses a night to a
+   * storage error. This function is that rule's only caller, which is why the adapter
+   * deliberately does not write the live slot itself.
+   *
+   * On a refusal nothing else happens at all — the live document stays, no new tournament
+   * is created, no entry is opened — and the host is told, with the download offered as the
+   * next action. That failure is NOT routed into the storage warning the draft screen
+   * raises: that one means "this browser will not save your draft" and is the one banner in
+   * this app a host genuinely must read, and spending it on a recoverable filing failure is
+   * how a real warning gets trained out of somebody's attention (`library.ts` states the
+   * same rule from the adapter's side).
+   */
+  const fileAndProceed = useCallback(
+    (doc: TournamentDoc, after: AfterFiling) => {
+      const outcome = fileTournament(doc);
+
+      if (outcome.kind === 'quotaFailed') {
+        setConfirm({ kind: 'fileFailed', doc });
+        return;
+      }
+
+      // `filed` and `evicted` are both a landed write. The live slot is emptied only now,
+      // and only because the document is somewhere else: leaving it in both places would
+      // offer `Resume saved draft` for a night that is already filed — two entry points to
+      // one tournament, disagreeing the moment either is used.
+      vacateLiveSlot();
+      navigateAfterFiling(after);
+    },
+    [vacateLiveSlot, navigateAfterFiling],
+  );
+
+  /**
+   * Ask the filing question — or, at the cap, the eviction question instead of it.
+   *
+   * `oldestEntry()` is consulted BEFORE anything is written, which is the whole of D-16.
+   * Discovering the cap by catching a quota error is the failure that decision rejects by
+   * name: it lands at the worst possible moment, while the host is trying to save a night,
+   * and by then the choice has already been made for them.
+   *
+   * With nothing live there is no question to ask and no dialog is raised — a first-visit
+   * `New tournament` goes straight to the config screen, exactly as it did before D-15.
+   */
+  const requestFiling = useCallback(
+    (after: AfterFiling) => {
+      const doc = liveDocument();
+      if (doc === null) {
+        navigateAfterFiling(after);
+        return;
+      }
+
+      const dropped = oldestEntry();
+      if (dropped !== null) {
+        setConfirm({ kind: 'evict', doc, dropped, after });
+        return;
+      }
+
+      setConfirm({ kind: 'file', doc, after });
+    },
+    [liveDocument, navigateAfterFiling],
+  );
+
   /**
    * Persist a freshly imported document, once, after the render that displayed it.
    *
@@ -2547,8 +2788,20 @@ export function App() {
             saved={saved}
             storageBlocked={storageBlockedAtBoot}
             onAcknowledgeStorage={() => setProbeAcknowledged(true)}
-            onNewTournament={() => setScreen({ name: 'config' })}
+            /*
+              D-15 changed what this button MEANS. It used to walk straight to the config
+              screen and leave the saved draft to be overwritten later; it now files the
+              current tournament and says where it went. With nothing to file it still
+              walks straight through and raises no dialog at all.
+            */
+            onNewTournament={() => requestFiling({ kind: 'newTournament' })}
             onResume={handleResume}
+            /*
+              §12: opening a library entry files the current tournament FIRST, through the
+              same D-15 confirm. One filing path, not two — a second confirm shape for the
+              same act would be a second thing to keep in step with the first.
+            */
+            onOpenTournament={(id) => requestFiling({ kind: 'openEntry', id })}
             onImportFile={handleImportFile}
             /*
               The DEFAULT roster, which is what a new tournament would be created against —
@@ -3013,6 +3266,176 @@ export function App() {
           onConfirm={confirmAbandon}
           onSafe={closeConfirm}
         />
+      )}
+
+      {/*
+        The three library dialogs — D-14, D-15, D-16. Same sibling placement as every
+        dialog above and for the same reason the import confirm's note gives.
+
+        ## Built on `Dialog` rather than on `ConfirmDialog`, and the reason is the third
+        ## button
+
+        `ConfirmDialog` renders exactly two: the confirming one and the safe one. Each of
+        these needs a download beside them, because D-14's whole position is that browser
+        storage is not the system of record — Safari discards script-written storage after
+        seven days idle, and with a library that now costs twelve nights rather than one —
+        so the file is offered at the moment the host is thinking about the tournament,
+        not left to a control on another screen. An offer the host cannot act on from
+        inside the dialog is not an offer. `MatchRecordDialog` set this precedent in 05-10
+        for the same structural reason.
+
+        BOTH OF `ConfirmDialog`'s SAFETY RULES ARE PRESERVED VERBATIM, and they are the
+        reason that component exists rather than incidental to it: the confirming button
+        is FIRST in DOM order and the safe button is LAST, so the safe one is the last
+        thing focus reaches and the last thing read; and `dismissible` maps Escape to the
+        safe outcome, so a reflexive Escape is never the click that files or drops
+        anything. The download sits between them, where it is neither.
+      */}
+
+      {/*
+        Filing — D-15, §Amendment 1. `default` toned, and the tone is the decision: the
+        tournament goes into the library and stays openable from the landing screen, so a
+        red dialog would be warning about a loss that does not happen.
+
+        ONE SET FOR BOTH GESTURES. `New tournament` and `Open tournament` raise this same
+        dialog, including its `Start a new tournament` label when the host pressed
+        `Open tournament`. That reads oddly for a moment and it is what §12 asks for in as
+        many words — "one filing path, not two" — because the question being answered is
+        the filing one either way, and two copy sets for one act is how the two drift.
+      */}
+      {confirm.kind === 'file' && (
+        <Dialog
+          heading={FILING_CONFIRM.heading}
+          dismissible
+          tone={FILING_CONFIRM.tone}
+          onDismiss={closeConfirm}
+          actions={
+            <>
+              <button
+                type="button"
+                class="dialog__action confirm-dialog__confirm confirm-dialog__confirm--default"
+                onClick={() => {
+                  const { doc, after } = confirm;
+                  setConfirm({ kind: 'idle' });
+                  fileAndProceed(doc, after);
+                }}
+              >
+                {FILING_CONFIRM.confirmLabel}
+              </button>
+
+              {/*
+                Deliberately does NOT close the dialog. The host is being offered the file
+                and the filing in one breath, and dismissing on the download would make
+                taking the copy cancel the thing they came here to do.
+              */}
+              <button
+                type="button"
+                class="dialog__action"
+                onClick={() => downloadJson(tournamentFilename(confirm.doc), confirm.doc)}
+              >
+                {DOWNLOAD_JSON}
+              </button>
+
+              <button type="button" class="dialog__action" onClick={closeConfirm}>
+                {FILING_CONFIRM.safeLabel}
+              </button>
+            </>
+          }
+        >
+          <p>{FILING_CONFIRM.body(confirm.doc.config.formatLabel)}</p>
+        </Dialog>
+      )}
+
+      {/*
+        The cap — D-16. Raised INSTEAD OF the filing confirm, so one gesture asks one
+        question.
+
+        The download here is the OLDEST tournament's, not the one being filed, and that is
+        the point of the dialog: it names the night about to go and hands over its file
+        while it still exists. `oldestEntry()` was read before anything was written, so
+        nothing has been dropped at the moment this is on screen and declining drops
+        nothing.
+      */}
+      {confirm.kind === 'evict' && (
+        <Dialog
+          heading={EVICTION_CONFIRM.heading}
+          dismissible
+          tone={EVICTION_CONFIRM.tone}
+          onDismiss={closeConfirm}
+          actions={
+            <>
+              <button
+                type="button"
+                class="dialog__action confirm-dialog__confirm confirm-dialog__confirm--default"
+                onClick={() => {
+                  const { doc, after } = confirm;
+                  setConfirm({ kind: 'idle' });
+                  fileAndProceed(doc, after);
+                }}
+              >
+                {EVICTION_CONFIRM.confirmLabel}
+              </button>
+
+              <button
+                type="button"
+                class="dialog__action"
+                onClick={() =>
+                  downloadJson(tournamentFilename(confirm.dropped.doc), confirm.dropped.doc)
+                }
+              >
+                {EVICTION_CONFIRM.downloadLabel(confirm.dropped.doc.config.formatLabel)}
+              </button>
+
+              <button type="button" class="dialog__action" onClick={closeConfirm}>
+                {EVICTION_CONFIRM.safeLabel}
+              </button>
+            </>
+          }
+        >
+          <p>
+            {EVICTION_CONFIRM.body(
+              confirm.doc.config.formatLabel,
+              confirm.dropped.doc.config.formatLabel,
+              libraryDate(confirm.dropped.doc.createdAt),
+            )}
+          </p>
+        </Dialog>
+      )}
+
+      {/*
+        The library write was refused — D-14, and NOT a confirmation: it asks nothing, and
+        both controls are ways of leaving. Its copy is a module constant here rather than
+        in `confirm-copy.ts`, which is that file's own boundary — it holds "every
+        confirmation's words", and this is a report.
+
+        The tournament is exactly where it was, which is what the ordering rule bought and
+        what the sentence says. `Keep this one open` is reused from the filing set rather
+        than given a label of its own: the outcome is identical to having declined, so the
+        two are honestly the same button.
+      */}
+      {confirm.kind === 'fileFailed' && (
+        <Dialog
+          heading={FILING_FAILED_HEADING}
+          dismissible
+          onDismiss={closeConfirm}
+          actions={
+            <>
+              <button
+                type="button"
+                class="dialog__action confirm-dialog__confirm confirm-dialog__confirm--default"
+                onClick={() => downloadJson(tournamentFilename(confirm.doc), confirm.doc)}
+              >
+                {DOWNLOAD_JSON}
+              </button>
+
+              <button type="button" class="dialog__action" onClick={closeConfirm}>
+                {FILING_CONFIRM.safeLabel}
+              </button>
+            </>
+          }
+        >
+          <p>{filingFailedBody(confirm.doc.config.formatLabel)}</p>
+        </Dialog>
       )}
 
       {/*
