@@ -329,7 +329,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 05-13-PLAN.md — the bracket, the champion, and reopening a finished tournament (TOUR-03, TOUR-04, TOUR-06)
+- [x] 05-13-PLAN.md — the bracket, the champion, and reopening a finished tournament (TOUR-03, TOUR-04, TOUR-06)
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
@@ -352,7 +352,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
-| 5. Full Tournament — Brackets, Standings, Archive | 12/15 | In Progress|  |
+| 5. Full Tournament — Brackets, Standings, Archive | 13/15 | In Progress|  |
 
 ## Requirement Coverage
 
