@@ -435,17 +435,16 @@ describe('taking it', () => {
 describe('focus after the cut', () => {
   it('lands on the bracket heading, because Take the cut no longer exists', () => {
     /*
-     * The bracket's own `<h2 tabindex="-1">` is mounted by 05-13 with the bracket it
-     * labels. `BRACKET_HEADING_ID` is the seam between the two plans, so the stand-in here
-     * carries the shared constant rather than a copy of the string — a heading that drifted
-     * from it would fail this test the same way it would fail the host, silently, with
-     * focus on `<body>`.
+     * THE STAND-IN HEADING IS GONE, and its removal is the assertion.
+     *
+     * While 05-13 was unbuilt this test appended its own `<h2>` carrying
+     * `BRACKET_HEADING_ID`, because the seam had one end and no other. `BracketGrid` now
+     * mounts the real one, so the handoff is exercised end to end: the id the cut control
+     * exports, the heading the bracket renders, and the screen effect that joins them. A
+     * stand-in left in place would in fact have made this WEAKER than before — two elements
+     * would carry the id, the lookup would return whichever came first in the document, and
+     * the test would pass on a bracket that never rendered a heading at all.
      */
-    const heading = document.createElement('h2');
-    heading.id = BRACKET_HEADING_ID;
-    heading.tabIndex = -1;
-    document.body.append(heading);
-
     const beforeCut = stateWith(LADDER);
     const afterCut = stateWith(LADDER, ['p1', 'p2', 'p3', 'p4']);
 
@@ -486,7 +485,9 @@ describe('focus after the cut', () => {
       render(screen(afterCut), host);
     });
 
+    const heading = host.querySelector(`#${BRACKET_HEADING_ID}`);
+    expect(heading).not.toBeNull();
+    expect(heading?.getAttribute('tabindex')).toBe('-1');
     expect(document.activeElement).toBe(heading);
-    heading.remove();
   });
 });
