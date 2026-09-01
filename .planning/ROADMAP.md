@@ -324,8 +324,8 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 05-11-PLAN.md — standings, the tiebreak override, and the cut (TOUR-08, TOUR-09)
-- [ ] 05-12-PLAN.md — the library on the landing screen, and filing a night (PERS-08)
+- [x] 05-11-PLAN.md — standings, the tiebreak override, and the cut (TOUR-08, TOUR-09)
+- [x] 05-12-PLAN.md — the library on the landing screen, and filing a night (PERS-08)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
@@ -352,7 +352,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Host-Configured Draft Night | 13/13 | Complete   | 2026-08-15 |
 | 3. Compiled Rules, Priority Cards, Swaps | 12/12 | Complete   | 2026-08-19 |
 | 4. Blind and Snake Bans | 11/11 | Complete   | 2026-08-25 |
-| 5. Full Tournament — Brackets, Standings, Archive | 10/15 | In Progress|  |
+| 5. Full Tournament — Brackets, Standings, Archive | 12/15 | In Progress|  |
 
 ## Requirement Coverage
 
