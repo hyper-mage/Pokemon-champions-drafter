@@ -181,15 +181,59 @@ export function listLibrary(): LibraryEntry[] {
 }
 
 /**
+ * What a filing would drop and what it would keep — ONE rule, read by both callers.
+ *
+ * `oldestEntry` NAMES the entry in the eviction dialog and {@link fileTournament} DROPS
+ * it, and the two computing that separately is how they come to disagree. Deriving both
+ * from here makes "the dialog named the tournament that went" a property of the module
+ * rather than of two expressions that happen to match today.
+ *
+ * `exemptId` is the tournament a gesture is on its way to OPENING, and it is never a
+ * candidate. Filing to make room for a tournament the host asked to open, by deleting that
+ * same tournament, destroys the night and then fails to open it — and there is no undo for
+ * a library write. The exempt entry still occupies a slot, so the kept list is still
+ * `LIBRARY_CAP - 1` long and the document being filed still fits.
+ *
+ * Trimming from the OLDEST end rather than removing `dropped` alone keeps what the old
+ * slice bought: a hand-edited key holding more than the cap comes back TO the cap instead
+ * of preserving its overflow.
+ */
+function planEviction(
+  entries: readonly LibraryEntry[],
+  exemptId: string | null,
+): { dropped: LibraryEntry | null; kept: LibraryEntry[] } {
+  const exempt =
+    exemptId === null ? null : (entries.find((entry) => entry.doc.id === exemptId) ?? null);
+  const others = exempt === null ? [...entries] : entries.filter((entry) => entry !== exempt);
+
+  // `listLibrary` is newest-first, so the survivors are the head of `others` and the
+  // oldest non-exempt entry is its tail. One slot goes to the document being filed, and a
+  // second to the exempt entry when there is one.
+  const room = Math.max(exempt === null ? LIBRARY_CAP - 1 : LIBRARY_CAP - 2, 0);
+  const keptOthers = others.slice(0, room);
+
+  // The OLDEST of the entries that did not survive, which is the one the dialog names.
+  // Below the cap nothing is cut and this is `null`.
+  const dropped = others.length > keptOthers.length ? (others[others.length - 1] ?? null) : null;
+
+  return { dropped, kept: exempt === null ? keptOthers : [...keptOthers, exempt] };
+}
+
+/**
  * The entry the next filing would evict, or `null` below the cap. D-16.
  *
  * The caller needs this BEFORE it files, because D-16's whole contract is that the host is
  * told which tournament is about to go — and offered its download — while it still exists.
+ *
+ * `exemptId` names the tournament the gesture will OPEN once the filing is answered, and
+ * passing it here is half of the guarantee: this is the value the dialog reads, so the
+ * dialog can never name — nor the host ever agree to drop — the entry they asked to open.
+ * The other half is passing the same id to {@link fileTournament}.
  */
-export function oldestEntry(): LibraryEntry | null {
+export function oldestEntry(exemptId: string | null = null): LibraryEntry | null {
   const entries = listLibrary();
   if (entries.length < LIBRARY_CAP) return null;
-  return entries[entries.length - 1] ?? null;
+  return planEviction(entries, exemptId).dropped;
 }
 
 /**
@@ -212,15 +256,19 @@ export function oldestEntry(): LibraryEntry | null {
  * library write that could not fit is a different event with a different next action —
  * name the file and offer the download — and spending the banner on it is how a real
  * warning gets trained out of a host's attention.
+ *
+ * **`exemptId` is the tournament this filing exists to make room for.** A gesture that
+ * files in order to open an entry passes that entry's id, and it is then not a candidate
+ * for eviction here. The caller must pass the SAME id it passed to {@link oldestEntry},
+ * which is why both take it: the dialog naming one entry while the write drops another is
+ * the failure this parameter exists to prevent.
  */
-export function fileTournament(doc: TournamentDoc): FileOutcome {
+export function fileTournament(doc: TournamentDoc, exemptId: string | null = null): FileOutcome {
   const existing = listLibrary();
 
-  // The cap check, before anything is written. Slicing to `LIBRARY_CAP - 1` also repairs a
-  // hand-edited key holding more than the cap, rather than preserving the overflow.
-  const atCap = existing.length >= LIBRARY_CAP;
-  const dropped = atCap ? (existing[existing.length - 1] ?? null) : null;
-  const kept = atCap ? existing.slice(0, LIBRARY_CAP - 1) : existing;
+  // The cap check, before anything is written, and through the same rule the caller
+  // consulted — so the entry the dialog named is the entry this drops.
+  const { dropped, kept } = planEviction(existing, exemptId);
 
   const entry: LibraryEntry = { filedAt: now(), doc };
   const next = [entry, ...kept];

@@ -262,6 +262,34 @@ describe('oldestEntry', () => {
     expect(oldestEntry()?.doc.id).toBe('tournament-0');
     expect(oldestEntry()?.filedAt).toBe(1_000);
   });
+
+  it('steps over the exempt entry and names the next one instead', () => {
+    seedValid(LIBRARY_CAP);
+
+    // `tournament-0` is the entry a filing would normally drop. Exempting it is what a
+    // gesture on its way to OPENING it passes, and the dialog must then name the entry
+    // that will actually go rather than the one the host asked for.
+    expect(oldestEntry('tournament-0')?.doc.id).toBe('tournament-1');
+    expect(oldestEntry('tournament-0')?.filedAt).toBe(1_001);
+  });
+
+  it('still names an entry at the cap when one is exempt', () => {
+    seedValid(LIBRARY_CAP);
+
+    // Answering `null` here would read as "below the cap" and skip the eviction confirm
+    // entirely, which is D-16's dialog going missing rather than the defect being fixed.
+    expect(oldestEntry('tournament-0')).not.toBeNull();
+  });
+
+  it('ignores an exemption naming nothing in the library', () => {
+    seedValid(LIBRARY_CAP);
+    expect(oldestEntry('never-filed')?.doc.id).toBe('tournament-0');
+  });
+
+  it('is still null below the cap with an exemption', () => {
+    seedValid(LIBRARY_CAP - 1);
+    expect(oldestEntry('tournament-0')).toBeNull();
+  });
 });
 
 describe('fileTournament', () => {
@@ -292,6 +320,49 @@ describe('fileTournament', () => {
     expect(listed).toHaveLength(LIBRARY_CAP);
     expect(listed.map((e) => e.doc.id)).not.toContain('tournament-0');
     expect(listed[0]?.doc.id).toBe('new-night');
+  });
+
+  it('never drops the exempt entry, and drops the next-oldest instead', () => {
+    // CR-01. `tournament-0` is what an unexempted filing at the cap would drop, and it is
+    // also the tournament the gesture exists to open. Dropping it destroys the night and
+    // there is no undo for a library write.
+    seedValid(LIBRARY_CAP);
+
+    const outcome = fileTournament(makeDoc('new-night'), 'tournament-0');
+
+    expect(outcome.kind).toBe('evicted');
+    const dropped = (outcome as { kind: 'evicted'; dropped: LibraryEntry }).dropped;
+    expect(dropped.doc.id).toBe('tournament-1');
+
+    const listed = listLibrary();
+    expect(listed).toHaveLength(LIBRARY_CAP);
+    expect(listed.map((e) => e.doc.id)).toContain('tournament-0');
+    expect(listed.map((e) => e.doc.id)).not.toContain('tournament-1');
+    expect(listed[0]?.doc.id).toBe('new-night');
+  });
+
+  it('names the entry it drops, exemption or not — the dialog reads the same rule', () => {
+    // The defect was two expressions of "the oldest" disagreeing, so the property under
+    // test is the AGREEMENT: whatever `oldestEntry` names is what the write removes.
+    seedValid(LIBRARY_CAP);
+
+    const named = oldestEntry('tournament-0');
+    const outcome = fileTournament(makeDoc('new-night'), 'tournament-0');
+    const dropped = (outcome as { kind: 'evicted'; dropped: LibraryEntry }).dropped;
+
+    expect(dropped.doc.id).toBe(named?.doc.id);
+    expect(listLibrary().map((e) => e.doc.id)).not.toContain(named?.doc.id);
+  });
+
+  it('keeps the exempt entry while repairing a hand-edited overflow', () => {
+    // The overflow repair was a `slice`, which would have taken the exempt entry with it.
+    seedValid(LIBRARY_CAP + 4);
+
+    fileTournament(makeDoc('new-night'), 'tournament-0');
+
+    const listed = listLibrary();
+    expect(listed).toHaveLength(LIBRARY_CAP);
+    expect(listed.map((e) => e.doc.id)).toContain('tournament-0');
   });
 
   it('checks the cap BEFORE the write — the payload handed to setItem is already at the cap', () => {

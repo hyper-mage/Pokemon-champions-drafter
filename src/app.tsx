@@ -302,6 +302,26 @@ type RecordingMatch = Parameters<ResultsGridProps['onSelectMatch']>[0] | null;
  */
 type AfterFiling = { kind: 'newTournament' } | { kind: 'openEntry'; id: string };
 
+/**
+ * The tournament a filing gesture may not drop — its own destination.
+ *
+ * `Open tournament` at the cap files the live document to make room, and the entry that
+ * makes room is `oldestEntry()`'s, chosen by `filedAt`. The landing screen lists by
+ * `createdAt`, so the row the host pressed and the row about to go are routinely different
+ * rows and the collision is invisible in the dialog. Without this the gesture deletes the
+ * night it was asked to open, from a store that has no undo, and then finds nothing to
+ * open.
+ *
+ * A function beside the type rather than the expression written twice, because it has to
+ * give the same answer in `requestFiling`, which NAMES the entry being dropped, and in
+ * `fileAndProceed`, which drops it. Those two disagreeing is the whole defect.
+ *
+ * `newTournament` protects nothing: it is on its way to a config screen, not to an entry.
+ */
+function protectedEntryId(after: AfterFiling): string | null {
+  return after.kind === 'openEntry' ? after.id : null;
+}
+
 type Confirm =
   | { kind: 'idle' }
   | { kind: 'abandon'; picks: number; players: number }
@@ -338,6 +358,18 @@ type Confirm =
    * state would be a second thing that can be left open behind another one.
    */
   | { kind: 'fileFailed'; doc: TournamentDoc }
+  /**
+   * The entry did not open — same shape and same reason as `fileFailed` above: a report,
+   * raised from the same handler, dismissed by the same `closeConfirm`.
+   *
+   * It carries NO document, and that is the state it describes: the read is what failed,
+   * so there is nothing to name and nothing to offer for download. `navigateAfterFiling`
+   * used to return silently here on the argument that a `null` was unreachable. It is
+   * reachable — another tab can fill the library between the confirm and the write, and a
+   * hand-edited entry drops out of `listLibrary` the same way — and by the time it runs
+   * the live slot has already been vacated.
+   */
+  | { kind: 'openFailed' }
   /**
    * An undo, with everything its four possible copy sets between them need.
    *
@@ -433,6 +465,28 @@ const FILING_FAILED_HEADING = 'That tournament was not filed';
 function filingFailedBody(formatLabel: string): string {
   return `Browser storage refused the write, so ${formatLabel} is still open and nothing else has changed. Download the JSON to keep a copy this browser cannot lose.`;
 }
+
+/**
+ * The entry could not be read — beside {@link FILING_FAILED_HEADING} and for that
+ * constant's own stated reason: `confirm-copy.ts` holds "every confirmation's words", and
+ * this asks the host nothing either. Its one control is a way of leaving.
+ *
+ * What it replaced was a bare `return`. A silent no-op after the live slot has already
+ * been vacated leaves the host on the landing screen with the tournament they pressed
+ * still listed, nothing opened and no sentence anywhere saying so — which reads as a
+ * button that does nothing rather than as a failure.
+ *
+ * The body NAMES NO TOURNAMENT, alone among this flow's sentences, and the reason is the
+ * failure itself: the document that would supply the label is the one that could not be
+ * read. It says what happened, then what the host can do from the screen they are on.
+ * Nothing was lost — the entry that could not be read was not written to.
+ */
+const OPEN_FAILED_HEADING = 'That tournament did not open';
+
+const OPEN_FAILED_BODY =
+  'The filed tournament could not be read, so nothing was opened and nothing was lost. Open another tournament from the list, or import its JSON file.';
+
+const OPEN_FAILED_DISMISS = 'Back to your tournaments';
 
 /**
  * The adopted-document notice — the one place an imported or resumed tournament's
@@ -2597,11 +2651,22 @@ export function App() {
         return;
       }
 
-      // `openLibraryEntry` validates and migrates through the same read path the list
-      // does, so a `null` here means an entry that would not have rendered a row either.
+      /*
+        `openLibraryEntry` validates and migrates through the same read path the list does,
+        so a `null` here means an entry that would not have rendered a row either.
+
+        BOTH FAILURES ARE REPORTED rather than returned on. This runs AFTER the live slot
+        has been vacated, so a bare `return` leaves the host on the landing screen with
+        nothing opened, no message, and the row they pressed still sitting in the list — a
+        control that reads as broken rather than as failed. Neither failure is
+        unreachable: another tab can rewrite the library between the confirm and this
+        call, and `adoptTournament` refuses a document `import-guard` will not have.
+      */
       const opened = openLibraryEntry(after.id);
-      if (opened === null) return;
-      if (!adoptTournament(opened)) return;
+      if (opened === null || !adoptTournament(opened)) {
+        setConfirm({ kind: 'openFailed' });
+        return;
+      }
 
       // The landing screen DESCRIBES `saved`, and this tab now holds the opened document —
       // leaving the old snapshot in place would keep advertising the tournament that was
@@ -2632,10 +2697,14 @@ export function App() {
    * this app a host genuinely must read, and spending it on a recoverable filing failure is
    * how a real warning gets trained out of somebody's attention (`library.ts` states the
    * same rule from the adapter's side).
+   *
+   * The exemption is the SAME `protectedEntryId(after)` the dialog was built from, and
+   * passing it twice from one expression is the point: the entry named as dropped and the
+   * entry actually dropped are then the same entry by construction.
    */
   const fileAndProceed = useCallback(
     (doc: TournamentDoc, after: AfterFiling) => {
-      const outcome = fileTournament(doc);
+      const outcome = fileTournament(doc, protectedEntryId(after));
 
       if (outcome.kind === 'quotaFailed') {
         setConfirm({ kind: 'fileFailed', doc });
@@ -2662,6 +2731,13 @@ export function App() {
    *
    * With nothing live there is no question to ask and no dialog is raised — a first-visit
    * `New tournament` goes straight to the config screen, exactly as it did before D-15.
+   *
+   * THE GESTURE MAY NOT DESTROY ITS OWN DESTINATION, and that is what `protectedEntryId`
+   * is doing in the call. Excluding the open-target from candidacy rather than refusing
+   * the combination keeps §12's "one filing path, not two" — the host still answers the
+   * one filing question and still arrives where they were going — and keeps D-16 intact,
+   * because what changes is only WHICH entry is offered up, decided before anything is
+   * written and named in the dialog exactly as before.
    */
   const requestFiling = useCallback(
     (after: AfterFiling) => {
@@ -2671,7 +2747,7 @@ export function App() {
         return;
       }
 
-      const dropped = oldestEntry();
+      const dropped = oldestEntry(protectedEntryId(after));
       if (dropped !== null) {
         setConfirm({ kind: 'evict', doc, dropped, after });
         return;
@@ -3535,6 +3611,35 @@ export function App() {
           }
         >
           <p>{filingFailedBody(confirm.doc.config.formatLabel)}</p>
+        </Dialog>
+      )}
+
+      {/*
+        The entry could not be read — a report, on the same terms as the one above and
+        placed beside it. ONE control, because there is only one thing to do: the document
+        that failed to read is also the one a download would need, so there is nothing to
+        offer alongside leaving.
+
+        The label names where the button goes rather than acknowledging the sentence, which
+        is the house rule about `OK` — and the destination is honest, since the live slot
+        was vacated before this and the landing screen is where the host already is.
+      */}
+      {confirm.kind === 'openFailed' && (
+        <Dialog
+          heading={OPEN_FAILED_HEADING}
+          dismissible
+          onDismiss={closeConfirm}
+          actions={
+            <button
+              type="button"
+              class="dialog__action confirm-dialog__confirm confirm-dialog__confirm--default"
+              onClick={closeConfirm}
+            >
+              {OPEN_FAILED_DISMISS}
+            </button>
+          }
+        >
+          <p>{OPEN_FAILED_BODY}</p>
         </Dialog>
       )}
 

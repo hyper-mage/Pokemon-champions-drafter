@@ -81,6 +81,11 @@ vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
  * The one lever the filing-failure tests pull. Everything else in the library adapter is
  * the real thing — `listLibrary`, `oldestEntry` and `LIBRARY_CAP` all pass straight
  * through, so the rows these tests read are produced by the shipped read path.
+ *
+ * EVERY ARGUMENT IS FORWARDED, spread rather than named. The second one is CR-01's
+ * eviction exemption, and a wrapper that takes only the document reinstates the defect
+ * inside this file alone: the app would pass the exemption, the mock would drop it, and
+ * the regression tests below would fail against a fixed adapter.
  */
 const libraryControl = vi.hoisted(() => ({ refuseWrites: false }));
 
@@ -88,10 +93,10 @@ vi.mock('../../src/adapters/library', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/adapters/library')>();
   return {
     ...actual,
-    fileTournament: (doc: Parameters<typeof actual.fileTournament>[0]) =>
+    fileTournament: (...args: Parameters<typeof actual.fileTournament>) =>
       libraryControl.refuseWrites
         ? ({ kind: 'quotaFailed' } as const)
-        : actual.fileTournament(doc),
+        : actual.fileTournament(...args),
   };
 });
 
@@ -951,6 +956,169 @@ describe('filing at the cap', () => {
     expect(remaining).toHaveLength(LIBRARY_CAP);
     expect(remaining.some((entry) => entry.doc.id === 'live')).toBe(true);
     expect(remaining.some((entry) => entry.doc.id === 'filed-0')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CR-01 — the gesture may not destroy its own destination.
+//
+// The seed below is the whole scenario and it is an ORDINARY one, not an edge. `filed-0`
+// is the entry `oldestEntry()` names, because it has the lowest `filedAt` — and it is
+// simultaneously the FIRST row on screen, because §12 renders the list by `createdAt`.
+// A host opening the row that reads as the most recent night is therefore pressing
+// `Open tournament` on exactly the entry a filing at the cap would drop, and nothing in
+// the eviction dialog says the two are the same tournament.
+//
+// Reached through `App` rather than through the adapter, because the defect lived in the
+// SEQUENCE — file, vacate, then open — and every step of it passes on its own.
+// ---------------------------------------------------------------------------
+
+/**
+ * A library at the cap whose oldest-by-`filedAt` entry is its newest-by-`createdAt`.
+ *
+ * `filed-0` is filed first and created last; every later index is filed later and created
+ * earlier. This is what re-filing an opened tournament produces in ordinary use, which is
+ * the path `TournamentLibrary`'s own re-sort comment names.
+ */
+function seedInvertedLibrary(): void {
+  seedLibrary(
+    Array.from({ length: LIBRARY_CAP }, (_, index) => ({
+      doc: libraryDoc({
+        id: `filed-${index}`,
+        createdAt: new Date(2026, 0, LIBRARY_CAP - index, 12).getTime(),
+        formatLabel: `Night ${index}`,
+      }),
+      filedAt: 1_000 + index,
+    })),
+  );
+}
+
+describe('opening the entry that a filing at the cap would drop', () => {
+  it('lists the eviction target first, which is what makes the collision invisible', async () => {
+    seedInvertedLibrary();
+    seedLive(libraryDoc({ id: 'live', createdAt: new Date(2026, 5, 2, 12).getTime() }));
+    claimLock();
+    await mountApp();
+
+    // Asserted so the tests below cannot quietly stop being about the defect: if the row
+    // order ever changes, `Open tournament` stops landing on the eviction target and the
+    // regression tests would pass without exercising anything.
+    const labels = Array.from(host.querySelectorAll('.tournament-library__label')).map(
+      (element) => element.textContent?.trim(),
+    );
+    expect(labels[0]).toBe('Night 0');
+  });
+
+  it('keeps the entry it was asked to open, and drops the next-oldest instead', async () => {
+    seedInvertedLibrary();
+    seedLive(libraryDoc({ id: 'live', createdAt: new Date(2026, 5, 2, 12).getTime() }));
+    claimLock();
+    await mountApp();
+
+    await click(pageButtonNamed('Open tournament'));
+    await click(dialogButtonNamed(EVICTION_CONFIRM.confirmLabel));
+
+    const remaining = listLibrary();
+    expect(remaining).toHaveLength(LIBRARY_CAP);
+    // The night the host asked for is still there. Before CR-01 was fixed this entry was
+    // deleted, and a library write has no undo.
+    expect(remaining.some((entry) => entry.doc.id === 'filed-0')).toBe(true);
+    expect(remaining.some((entry) => entry.doc.id === 'filed-1')).toBe(false);
+    expect(remaining.some((entry) => entry.doc.id === 'live')).toBe(true);
+  });
+
+  it('actually opens it, rather than stranding the host on the landing screen', async () => {
+    seedInvertedLibrary();
+    seedLive(libraryDoc({ id: 'live', createdAt: new Date(2026, 5, 2, 12).getTime() }));
+    claimLock();
+    await mountApp();
+
+    await click(pageButtonNamed('Open tournament'));
+    await click(dialogButtonNamed(EVICTION_CONFIRM.confirmLabel));
+
+    expect(getDoc()?.id).toBe('filed-0');
+    // No dialog left over: nothing failed, so nothing is being reported.
+    expect(dialog()).toBeNull();
+  });
+
+  it('names the entry that will actually go — D-16 is about a true sentence', async () => {
+    seedInvertedLibrary();
+    seedLive(
+      libraryDoc({
+        id: 'live',
+        createdAt: new Date(2026, 5, 2, 12).getTime(),
+        formatLabel: 'New night',
+      }),
+    );
+    claimLock();
+    await mountApp();
+
+    await click(pageButtonNamed('Open tournament'));
+
+    // `Night 1`, created 2026-01-11, is the oldest entry that is NOT the one being opened.
+    expect(dialogText()).toContain(EVICTION_CONFIRM.body('New night', 'Night 1', '2026-01-11'));
+    expect(dialogButtonNamed(EVICTION_CONFIRM.downloadLabel('Night 1'))).toBeDefined();
+  });
+
+  it('drops the true oldest when the gesture is not opening anything', async () => {
+    // The exemption applies to `openEntry` and to nothing else. `New tournament` is on its
+    // way to a config screen, so D-16's rule is unchanged for it.
+    seedInvertedLibrary();
+    seedLive(libraryDoc({ id: 'live', createdAt: new Date(2026, 5, 2, 12).getTime() }));
+    claimLock();
+    await mountApp();
+
+    await click(pageButtonNamed('New tournament'));
+    await click(dialogButtonNamed(EVICTION_CONFIRM.confirmLabel));
+
+    expect(listLibrary().some((entry) => entry.doc.id === 'filed-0')).toBe(false);
+  });
+});
+
+describe('when the entry cannot be read after the live slot is vacated', () => {
+  it('says so rather than returning silently', async () => {
+    seedLibrary([
+      {
+        doc: libraryDoc({ id: 'filed', createdAt: new Date(2026, 0, 9, 12).getTime() }),
+        filedAt: 50,
+      },
+    ]);
+    seedLive(libraryDoc({ id: 'live', createdAt: new Date(2026, 1, 2, 12).getTime() }));
+    claimLock();
+    await mountApp();
+
+    await click(pageButtonNamed('Open tournament'));
+
+    // Another tab rewrites the library between the question and the answer, which is the
+    // race that makes a `null` from `openLibraryEntry` reachable rather than theoretical.
+    localStorage.removeItem(LIBRARY_KEY);
+
+    await click(dialogButtonNamed(FILING_CONFIRM.confirmLabel));
+
+    expect(dialogText()).toContain('That tournament did not open');
+    expect(dialogText()).toContain('nothing was opened and nothing was lost');
+    expect(dialogButtonNamed('Back to your tournaments')).toBeDefined();
+  });
+
+  it('keeps the filed document, so the failure costs nothing', async () => {
+    seedLibrary([
+      {
+        doc: libraryDoc({ id: 'filed', createdAt: new Date(2026, 0, 9, 12).getTime() }),
+        filedAt: 50,
+      },
+    ]);
+    seedLive(libraryDoc({ id: 'live', createdAt: new Date(2026, 1, 2, 12).getTime() }));
+    claimLock();
+    await mountApp();
+
+    await click(pageButtonNamed('Open tournament'));
+    localStorage.removeItem(LIBRARY_KEY);
+    await click(dialogButtonNamed(FILING_CONFIRM.confirmLabel));
+
+    // The library write landed before the read failed, which is the ordering rule paying
+    // off: the live document is filed and openable rather than gone.
+    expect(listLibrary().some((entry) => entry.doc.id === 'live')).toBe(true);
+    expect(getDoc()).toBeNull();
   });
 });
 
