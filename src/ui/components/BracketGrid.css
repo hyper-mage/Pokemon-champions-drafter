@@ -1,0 +1,137 @@
+/*
+ * BracketGrid.css — round columns, and elbows made of borders.
+ *
+ * Tokens only. No raw colour and no raw length: the connector stubs are fractions of the
+ * round gap the layout already spends, so this file names no size of its own.
+ *
+ * --- WHY THE CONNECTORS ARE PSEUDO-ELEMENT BORDERS AND NOTHING ELSE ---
+ *
+ * The design contract rules out a drawn connector layer, and the argument is the one this
+ * project already used to reject a bracket-rendering library, applied one level down. Such
+ * a layer has to ask the browser where CSS Grid put every card, and ask again on every
+ * resize, every zoom step and every font-size change. That makes it a SECOND AUTHORITY on
+ * where a card is, free to disagree with the first — and when it does, the elbows point at
+ * nothing while the bracket itself looks fine. A pseudo-element is laid out by the very
+ * pass that laid out the card it hangs off, so the two cannot come apart.
+ *
+ * The repository gate that forbids injected markup closes the other door into the same
+ * failure.
+ *
+ * --- WHY `space-around` IS THE WHOLE CENTRING MECHANISM ---
+ *
+ * Distributing a round's cards with equal space around each one puts the midpoint of any
+ * adjacent pair exactly where the next round's single card sits. So a round centres itself
+ * against the pair feeding it WITHOUT ANY CODE KNOWING A CARD'S PIXEL POSITION. That is the
+ * property being bought, and it is why measured centring is not merely unnecessary here but
+ * strictly worse.
+ *
+ * Nothing in this file animates. The motion budget rules out animating an advance: a name
+ * that arrives by movement is a name the room reads twice.
+ */
+
+.bracket-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/*
+ * The focus target for the handoff after the cut is taken.
+ *
+ * It takes no focus ring styling of its own — the shipped `--focus-ring` applies, and a
+ * heading that suppressed it would be a focus destination nobody could see they had landed
+ * on.
+ */
+.bracket-region__heading {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+/*
+ * The bracket. One column per round, left to right, at the widest gap on the scale — the
+ * gap is what the connectors are drawn into.
+ *
+ * `overflow-x: auto` rather than a break: the eight-seed bracket fits the measured budget
+ * at three columns, and a sixteen-seed one is allowed to scroll rather than to reflow into
+ * something that is no longer a bracket.
+ */
+.bracket {
+  display: grid;
+  grid-auto-flow: column;
+  gap: var(--space-6);
+  align-items: stretch;
+  justify-content: start;
+  overflow-x: auto;
+}
+
+.bracket__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bracket__round-header {
+  margin: 0;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+/*
+ * One round's cards. The two declarations below are the contract's, verbatim.
+ *
+ * `flex: 1` so the column's spare height belongs to this box — without it there is no space
+ * for the distribution above to distribute, and every round would stack at the top.
+ */
+.bracket__round {
+  display: grid;
+  align-content: space-around;
+  gap: var(--space-4);
+  flex: 1;
+}
+
+/*
+ * The elbow leaving a card towards the round on its right.
+ *
+ * One box draws the whole elbow: its top edge is the horizontal run out of the card at the
+ * card's own vertical middle, and its right edge is the vertical drop towards the pair's
+ * midpoint. The last column has no round to its right and therefore no elbow.
+ *
+ * `.match-card` declares `position: relative` in its own stylesheet, beside the box the
+ * property belongs to.
+ */
+.bracket__column:not(:last-child) .match-card::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: calc(var(--space-6) / 2);
+  height: var(--space-4);
+  border-top: var(--hairline-w) solid var(--color-hairline);
+  border-right: var(--hairline-w) solid var(--color-hairline);
+}
+
+/*
+ * The LOWER card of a feeding pair turns upward instead of downward.
+ *
+ * Flipping the same box about its top edge rather than writing a second rule with the
+ * borders on the opposite sides: one declaration of the elbow, mirrored, so the two halves
+ * of a pair cannot be styled differently by accident. The cards are the round's only
+ * children, so the odd/even alternation is the pairing itself.
+ */
+.bracket__round > .match-card:nth-child(even)::after {
+  transform: scaleY(-1);
+  transform-origin: top;
+}
+
+/*
+ * The stub arriving at a card from the round on its left. The first column has nothing
+ * feeding it and therefore no stub.
+ */
+.bracket__column:not(:first-child) .match-card::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: calc(var(--space-6) / 2);
+  border-top: var(--hairline-w) solid var(--color-hairline);
+}

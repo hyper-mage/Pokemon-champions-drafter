@@ -4,6 +4,7 @@ import { cutTaken, tiebreakOrdered } from '../../core/actions';
 import type { DraftState } from '../../core/model';
 import { selectTournamentStage } from '../../core/tournament';
 import { dispatch } from '../../store';
+import { BracketGrid } from '../components/BracketGrid';
 import { BRACKET_HEADING_ID, CutControl } from '../components/CutControl';
 import { ResultsGrid, type ResultsGridProps } from '../components/ResultsGrid';
 import { StandingsTable } from '../components/StandingsTable';
@@ -209,13 +210,27 @@ export function TournamentScreen({
           replaces it.
         */}
         {stage === 'bracket' && (
-          <section class="tournament-screen__stage" aria-labelledby="tournament-round-robin">
-            <h2 class="tournament-screen__stage-heading" id="tournament-round-robin">
-              {ROUND_ROBIN_HEADING}
-            </h2>
+          <>
+            <section class="tournament-screen__stage" aria-labelledby="tournament-round-robin">
+              <h2 class="tournament-screen__stage-heading" id="tournament-round-robin">
+                {ROUND_ROBIN_HEADING}
+              </h2>
 
-            <ResultsGrid state={state} onSelectMatch={onSelectMatch} />
-          </section>
+              <ResultsGrid state={state} onSelectMatch={onSelectMatch} />
+            </section>
+
+            {/*
+              BELOW the crosstable rather than in place of it, and below rather than above
+              it so that taking the cut adds a region instead of moving one.
+
+              D-18's posture one stage earlier: nothing the host was looking at is swapped
+              out from under them. The round robin stays exactly where it was on the screen
+              they were reading a moment ago, the bracket appears underneath, and focus is
+              handed to its heading — which is the only reason the appearance is noticed at
+              all.
+            */}
+            <BracketGrid state={state} onSelectMatch={onSelectMatch} />
+          </>
         )}
       </div>
     </>

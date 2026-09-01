@@ -110,7 +110,15 @@ export const RESULTS_EMPTY = 'No results yet. Record a match by choosing any emp
  * vanished would make a host think the app had lost a feature.
  */
 export const RESULTS_FINISHED = 'This tournament is finished. Results are read-only.';
-const FINISHED_CELL_REASON = 'This tournament is finished. Reopen it to change a result.';
+
+/**
+ * EXPORTED, on `metricLabel`'s precedent rather than copied into a second file.
+ *
+ * `MatchCard` renders the other half of this phase's inert consumers and needs the same
+ * sentence in the same words. Two literals would be two things that can be reworded once.
+ */
+export const FINISHED_CELL_REASON =
+  'This tournament is finished. Reopen it to change a result.';
 
 /** `2–1`, with an en dash. Never a hyphen: the contract writes the dash and it is read. */
 function gamesText(winnerGames: number, loserGames: number, rowWon: boolean): string {
