@@ -1,6 +1,7 @@
 import type { DraftState } from '../../core/model';
 import { selectTournamentStage } from '../../core/tournament';
 import { ResultsGrid, type ResultsGridProps } from '../components/ResultsGrid';
+import { StandingsTable } from '../components/StandingsTable';
 import { TopBar, type TopBarProps } from '../components/TopBar';
 
 import './TournamentScreen.css';
@@ -103,7 +104,13 @@ export function TournamentScreen({
 
             <ResultsGrid state={state} onSelectMatch={onSelectMatch} />
 
-            {/* 05-11 mounts the standings, the tiebreak override and the cut beside this. */}
+            {/*
+              Below the grid, separated by the stage block's own `--space-4` gap rather
+              than by a margin either component declares. §Spacing Scale's rule, and the
+              reason the shell owns it: a block added here inherits the rhythm without
+              knowing what is above it.
+            */}
+            <StandingsTable state={state} />
           </section>
         )}
 
