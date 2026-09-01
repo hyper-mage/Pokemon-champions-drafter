@@ -1,0 +1,153 @@
+/*
+ * MatchCard.css — one bracket cell, in five states, all the same height.
+ *
+ * Tokens only. Declares no raw colour and no raw length: the two reserved line boxes below
+ * are written as unitless multiples of their own element's font, so they resolve to exactly
+ * one line of the type token they sit on and stay correct if the token ever moves. That is
+ * `BoardGrid.css`'s reserved-marker trick, and the reason is the same one stated there.
+ *
+ * NO ACCENT IN THIS FILE, in any state. The contract's first accent reservation names four
+ * things this component draws — a playable match, an advancing seed, a leading player and
+ * the champion — and forbids the accent on every one of them, because each is a state and
+ * this project marks state with lightness, boundary and words. A whole round is playable at
+ * once, so there is no next card to point at and nothing here to highlight.
+ *
+ * Nothing here animates. The motion budget rules out animating an advance: a card whose
+ * name arrives by movement is a card the room reads twice.
+ */
+
+/*
+ * The card. `position: relative` is for the connector pseudo-elements BracketGrid.css
+ * attaches; it is declared here because it belongs to this box.
+ *
+ * `--target-min` in both axes on every card, including the ones that are not buttons, so a
+ * column of cards keeps one rhythm whatever each cell turned out to be.
+ */
+.match-card {
+  position: relative;
+  display: block;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: var(--space-2);
+  border: var(--hairline-w) solid var(--color-hairline);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: var(--text-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.match-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/*
+ * A slot's reserved line box.
+ *
+ * `min-height: 1.25em` resolves against THIS element's font, which is --text-heading at
+ * 24px — so the box is 30px whether the text inside it is a player's name at that size or a
+ * pending line at --text-body. That is what keeps an unresolved card exactly as tall as a
+ * resolved one: the height belongs to the row, not to the words in it.
+ */
+.match-card__slot {
+  display: flex;
+  align-items: center;
+  min-height: 1.25em;
+  font: var(--text-heading);
+}
+
+/* `Winner of …` is not a name, and the contract sizes it as body text. */
+.match-card__slot--pending {
+  font: var(--text-body);
+  color: var(--color-text-muted);
+}
+
+/*
+ * The winner's boundary. A shape change, not a hue change — the shipped
+ * selected/pending treatment, and the reason the recorded state needs no colour of its own.
+ */
+.match-card__slot--won {
+  padding: 0 var(--space-1);
+  border: var(--border-w) solid var(--color-hairline);
+  border-radius: var(--radius);
+}
+
+/*
+ * The result row, present on every card in every state.
+ *
+ * `1.5em` is --text-body's own line-height factor, so an empty row is exactly as tall as a
+ * filled one without this file naming a pixel.
+ */
+.match-card__result {
+  display: flex;
+  align-items: center;
+  min-height: 1.5em;
+  font: var(--text-body);
+  color: var(--color-text-muted);
+}
+
+/* The not-yet-played treatment, matching the draft board's empty cell. */
+.match-card__result--empty {
+  border: var(--hairline-w) dashed var(--color-hairline);
+  border-radius: var(--radius);
+}
+
+/* A settled card lifts. Lightness, not hue. */
+.match-card--recorded {
+  background: var(--color-surface-raised);
+}
+
+/*
+ * A bye is settled too, and it is not a control.
+ *
+ * `default` rather than `pointer`: there is nothing to press. The word in the second slot
+ * is what says why, and it is a word rather than a fill so the card reads with no colour
+ * perception at all.
+ */
+.match-card--bye {
+  background: var(--color-surface-raised);
+  cursor: default;
+}
+
+/*
+ * Inert: a card waiting on its feeders, or every card once the night is finished.
+ *
+ * The same 0.45 the phase's other inert surfaces take. It is a lightness signal and never
+ * the only one — the reason is in the accessible name and, for a finished tournament, in a
+ * visible sentence above the grid as well.
+ */
+.match-card--inert {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/*
+ * The final, once recorded — D-18, and the only card that grows.
+ *
+ * Safe because it is alone in the last column, so there is nothing under it to be pushed
+ * down. The border is --color-text: a boundary and a lightness change, no hue, which is the
+ * treatment the contract reserves for the thing the room turned to look at.
+ */
+.match-card--champion {
+  border: var(--border-w) solid var(--color-text);
+}
+
+.match-card__champion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.match-card__champion-label {
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.match-card__champion-name {
+  font: var(--text-display);
+  color: var(--color-text);
+}
