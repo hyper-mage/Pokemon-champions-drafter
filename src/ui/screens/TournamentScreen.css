@@ -75,3 +75,32 @@
   margin: 0;
   font: var(--text-heading);
 }
+
+/*
+ * THE ONE ACCENT-FILLED CONTROL ON THIS SCREEN'S BRACKET STAGE — `05-UI-SPEC` §Accent
+ * reserved for, second reservation: "Bracket stage: none until the final is recorded, then
+ * `View the draft recap`."
+ *
+ * `.tournament-screen__back` above states the other half of the same reservation and must
+ * stay plain: leaving is a way out, not the primary act. `FinishedNotice.css` records that
+ * `Reopen this tournament` was left un-accented so that this slot would still be free when
+ * the recap arrived, which is what makes the reservation a rule rather than a preference.
+ *
+ * `align-self: flex-start` so the button is its own width inside the column, rather than
+ * stretching to the bracket's — an accent band the width of the screen would read as a
+ * banner rather than as a control.
+ *
+ * --target-min in both axes, per §Interaction's target-size row, which names this control.
+ */
+.tournament-screen__recap {
+  align-self: flex-start;
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-w) solid var(--color-accent);
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: var(--text-body);
+  cursor: pointer;
+}

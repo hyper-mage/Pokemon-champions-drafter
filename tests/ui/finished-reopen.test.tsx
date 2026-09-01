@@ -313,6 +313,10 @@ function drawScreen(state: DraftState): void {
         onRequestReopen={() => {
           reopenRequests += 1;
         }}
+        // No recap surface in these cases — 05-14 gives the recap its own file. It matters
+        // here specifically: `Reopen this tournament` is asserted below as the ONLY control
+        // on a finished bracket, and the recap action is the second one 05-14 adds beside it.
+        recap={null}
       />,
       host,
     );

@@ -187,6 +187,8 @@ function drawCompleted(overrides: Partial<Parameters<typeof CompletedDraft>[0]> 
         onDownload={() => undefined}
         onDismissCheckpoint={() => undefined}
         onOpenTournament={() => undefined}
+        // No recap surface in these cases — 05-14 gives the recap its own file.
+        recap={null}
         {...overrides}
       />,
       host,
@@ -472,6 +474,8 @@ describe('copying', () => {
             onDownload={() => undefined}
             onDismissCheckpoint={() => undefined}
             onOpenTournament={() => undefined}
+            // No recap surface in these cases — 05-14 gives the recap its own file.
+            recap={null}
           />
         </>,
         host,
@@ -515,6 +519,8 @@ describe('copying', () => {
             onDownload={() => undefined}
             onDismissCheckpoint={() => undefined}
             onOpenTournament={() => undefined}
+            // No recap surface in these cases — 05-14 gives the recap its own file.
+            recap={null}
           />
         </>,
         host,

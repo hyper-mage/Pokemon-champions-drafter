@@ -1,0 +1,143 @@
+/*
+ * RecapList.css — the recap's six sections and its entry rows, `05-UI-SPEC` §11.
+ *
+ * Tokens only. Declares no raw colour and no raw length: `--space-4` between sections and
+ * `--space-3` inside an entry are §Spacing Scale's two rows for this surface, and the fill
+ * is the same secondary surface the standings rows, the library rows and the bracket cards
+ * all take, so four new surfaces read as one tool rather than four.
+ *
+ * NO ACCENT IN THIS FILE. §Accent reserved for gives the bracket stage exactly one
+ * accent-filled action and it is the control that OPENS this surface, which lives on the
+ * screen that owns it. A second accent inside the recap would spend the reservation twice
+ * on one press, and there is no primary act here at all — the recap is read, not worked.
+ *
+ * NO MOTION. §Interaction's motion budget: nothing on the new tournament surfaces animates,
+ * and a list somebody is reading down while a room argues with it is the last place to
+ * start.
+ *
+ * ## The one property this file is not allowed to declare, described rather than named
+ *
+ * D-22's marks are WORDS. The treatment that draws a line through a row already means
+ * *gone or unavailable* in this project — it is what the snake ban list does to a species
+ * that can no longer be taken — and a corrected result is neither: it happened, and then it
+ * was changed. One treatment carrying two meanings is worth less than the two sentences it
+ * replaced.
+ *
+ * The acceptance gate for this file is a plain text search for that property and for the
+ * keyword that switches it on, so DESCRIBING the prohibition rather than quoting it is what
+ * keeps the gate reading declarations instead of prose. `FinishedNotice.css` states the same
+ * rule about a different token, and 05-13 recorded that a gate matching its own
+ * documentation is a gate that passes on a stylesheet which has quietly started doing the
+ * forbidden thing.
+ */
+
+.recap-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/*
+ * The heading and the way out, on one line at wide widths — `.tournament-screen__head`'s
+ * shape, which is where the host's eye already is when this surface replaces the stages.
+ */
+.recap-list__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.recap-list__heading {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+/*
+ * The plain bordered control, matching `.tournament-screen__back` — see the header for why
+ * nothing here is accent-filled. `--target-min` in both axes, per §Interaction's target-size
+ * row.
+ */
+.recap-list__back {
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-w) solid var(--color-hairline);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: var(--text-body);
+  cursor: pointer;
+}
+
+.recap-list__back:hover {
+  /* Boundary carries the affordance, on ReadOnlyBanner's rule. No hue change. */
+  border-color: var(--color-text);
+}
+
+.recap-list__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.recap-list__section-heading {
+  margin: 0;
+  font: var(--text-heading);
+}
+
+.recap-list__entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * One line of the evening. `--space-3` padding and the secondary fill, per §Spacing Scale
+ * and §Color.
+ *
+ * `align-items: center` rather than `baseline` because a ban or pick row carries a 48px
+ * sprite beside an 18px sentence, and a baseline alignment would hang the picture off the
+ * text instead of setting the two against each other.
+ */
+.recap-list__entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+/*
+ * The chip is sized by MonChip.css at --sprite-sm and is not re-sized here. This wrapper
+ * only stops it stretching to the row's height, which a flex item does by default.
+ */
+.recap-list__chip {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.recap-list__line {
+  min-width: 0;
+  font: var(--text-body);
+  color: var(--color-text);
+}
+
+/*
+ * D-22's mark, at --text-label and muted — the same treatment a standings row's tiebreak
+ * note takes, because both are the table explaining itself rather than a line of it.
+ */
+.recap-list__mark {
+  flex: none;
+  font: var(--text-label);
+  color: var(--color-text-muted);
+}

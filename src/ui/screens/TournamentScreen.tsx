@@ -1,12 +1,19 @@
-import { useLayoutEffect, useRef } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { cutTaken, tiebreakOrdered } from '../../core/actions';
 import type { DraftState } from '../../core/model';
-import { selectTournamentStage } from '../../core/tournament';
+import { selectBracket, selectTournamentStage } from '../../core/tournament';
 import { dispatch } from '../../store';
 import { BracketGrid } from '../components/BracketGrid';
 import { BRACKET_HEADING_ID, CutControl } from '../components/CutControl';
 import { FinishedNotice } from '../components/FinishedNotice';
+import {
+  BACK_TO_BRACKET,
+  RECAP_ACTION_ID,
+  RecapList,
+  VIEW_RECAP,
+  type RecapAccess,
+} from '../components/RecapList';
 import { ResultsGrid, type ResultsGridProps } from '../components/ResultsGrid';
 import { StandingsTable } from '../components/StandingsTable';
 import { TiebreakOrderer } from '../components/TiebreakOrderer';
@@ -99,6 +106,21 @@ export interface TournamentScreenProps {
    * notice's button, and the notice is inside the gate.
    */
   onRequestReopen: () => void;
+  /**
+   * What the recap needs, or `null` when this caller cannot offer one — PERS-09.
+   *
+   * ONE prop carrying all three, on `MonChip.swap`'s and `PoolGrid.roundRestriction`'s
+   * stated precedent: "a control with no data" and "data with no control" are both
+   * unrepresentable, so `View the draft recap` renders exactly when there is a recap behind
+   * it. The three travel together because none of them is optional to the surface — the
+   * record supplies the log, the roster supplies the species names, and the sprite metadata
+   * supplies the two lines that carry a picture.
+   *
+   * REQUIRED rather than optional-with-a-default, unlike `MonChip.swap`, and the difference
+   * is the caller count: this screen has exactly one production caller, and an optional prop
+   * would let that caller forget it with no compile error and PERS-09 unreachable.
+   */
+  recap: RecapAccess | null;
 }
 
 /** Verbatim from `05-UI-SPEC` §Copywriting → Round robin. */
@@ -115,8 +137,19 @@ export function TournamentScreen({
   onBackToDraft,
   onSelectMatch,
   onRequestReopen,
+  recap,
 }: TournamentScreenProps) {
   const stage = selectTournamentStage(state);
+
+  /**
+   * Whether the recap has taken the main region — §11.
+   *
+   * COMPONENT STATE, and deliberately not an action. Which surface a host is reading is not
+   * something that happened at the table: it belongs to nobody but this tab, it must not
+   * travel in an exported file, and `Undo last move` must not walk it back. `screen` in
+   * `app.tsx` holds the same kind of fact for the same reason.
+   */
+  const [showRecap, setShowRecap] = useState(false);
 
   /**
    * Hand focus to the bracket's heading once the cut has been taken.
@@ -149,6 +182,52 @@ export function TournamentScreen({
     document.getElementById(BRACKET_HEADING_ID)?.focus();
   });
 
+  /**
+   * Hand focus back to `View the draft recap` when the recap closes — §Interaction.
+   *
+   * The same armed-ref-then-layout-effect shape as the handoff above, and for the same
+   * structural reason one rung along: the control does not exist at the moment of the click
+   * that closes the recap, because the recap is what replaced it. A ref would be `null`; the
+   * id is what lets the destination be addressed after the render that puts it back.
+   *
+   * §Interaction names it as "the control that was activated, which exists again", which is
+   * exactly the case a ref cannot serve and an armed flag can.
+   */
+  const pendingRecapActionFocus = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!pendingRecapActionFocus.current) return;
+    pendingRecapActionFocus.current = false;
+
+    document.getElementById(RECAP_ACTION_ID)?.focus();
+  });
+
+  /*
+    THE RECAP REPLACES THE MAIN REGION AND NOTHING ELSE — §11, inheriting
+    `CompletedDraft`'s posture verbatim.
+
+    The top bar stays, so `Undo last move` and `Download JSON` are still one click away; and
+    the head stays, so the screen keeps its title and the way back to the draft board. What
+    goes is the stage blocks, which is the region the recap is an account of.
+
+    A host who realises here that the last result was wrong must still be able to unwind it,
+    and undo lives in the bar above. A recap that took the whole screen would make the
+    correction it describes unreachable from the surface describing it.
+  */
+  const recapShowing = showRecap && recap !== null;
+
+  /*
+    The bracket's accent action, once the final is recorded — §Color reservation 2, which
+    names this control by name and gives the bracket stage no other accent.
+
+    `championId` is the gate rather than `selectTournamentLocked`, and the difference is a
+    reopen: locked goes false the moment a host reopens the night, and the night still
+    happened. `championId` is non-null from the recording of the final onwards, which is
+    what the reservation actually says.
+  */
+  const bracket = selectBracket(state);
+  const finalRecorded = bracket !== null && bracket.championId !== null;
+
   return (
     <>
       <div class="sticky-head">
@@ -164,7 +243,21 @@ export function TournamentScreen({
           </button>
         </div>
 
-        {stage === 'roundRobin' && (
+        {recapShowing && recap !== null && (
+          <RecapList
+            doc={recap.doc}
+            state={state}
+            entryById={recap.entryById}
+            spriteMeta={recap.spriteMeta}
+            backLabel={BACK_TO_BRACKET}
+            onBack={() => {
+              setShowRecap(false);
+              pendingRecapActionFocus.current = true;
+            }}
+          />
+        )}
+
+        {!recapShowing && stage === 'roundRobin' && (
           <section class="tournament-screen__stage" aria-labelledby="tournament-round-robin">
             <h2 class="tournament-screen__stage-heading" id="tournament-round-robin">
               {ROUND_ROBIN_HEADING}
@@ -225,7 +318,7 @@ export function TournamentScreen({
           05-13 mounts the bracket beside this and 05-14 mounts the recap below it; neither
           replaces it.
         */}
-        {stage === 'bracket' && (
+        {!recapShowing && stage === 'bracket' && (
           <>
             {/*
               ABOVE EVERYTHING ELSE ON THIS STAGE, and above rather than beside because it
@@ -267,6 +360,27 @@ export function TournamentScreen({
               all.
             */}
             <BracketGrid state={state} onSelectMatch={onSelectMatch} />
+
+            {/*
+              THE STAGE'S ONE ACCENT ACTION, and only once the final is recorded — §Color
+              reservation 2 names it there in those words. 05-13 left `Reopen this
+              tournament` deliberately un-accented so this slot would still be free when it
+              was built, which is why the notice above takes the plain bordered treatment.
+
+              Below the bracket rather than above it, because it is what a host reaches for
+              AFTER the last card resolves — and putting it above would have it appear
+              between the finished sentence and the thing that sentence is about.
+            */}
+            {finalRecorded && recap !== null && (
+              <button
+                type="button"
+                id={RECAP_ACTION_ID}
+                class="tournament-screen__recap"
+                onClick={() => setShowRecap(true)}
+              >
+                {VIEW_RECAP}
+              </button>
+            )}
           </>
         )}
       </div>

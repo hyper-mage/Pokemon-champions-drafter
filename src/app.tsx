@@ -91,6 +91,7 @@ import {
   getDoc,
   getState,
   subscribe,
+  tournamentDoc,
   undo,
 } from './store';
 import {
@@ -1030,6 +1031,16 @@ export function App() {
   const state = draftState.value;
 
   /**
+   * The open record itself, beside the fold of it — PERS-09.
+   *
+   * Read at render time from the same store `state` comes from, so the two cannot describe
+   * different tournaments. It exists because the recap reads the LOG: `src/core/recap.ts`
+   * cannot take `DraftState`, since the fold keeps only the latest result per match and D-22
+   * needs the superseded ones. Nothing else on this screen wants it.
+   */
+  const openDoc = tournamentDoc.value;
+
+  /**
    * The roster the OPEN document names, or `null` when none is open — D-24.
    *
    * Read from `config.rosterVersion`, which every document carries and which `ConfigScreen`
@@ -1130,6 +1141,23 @@ export function App() {
   const entryById = useMemo(
     () => new Map(entries.map((entry) => [entry.id, entry])),
     [entries],
+  );
+
+  /**
+   * The three things the recap needs, or `null` when this tab cannot offer one — PERS-09.
+   *
+   * ONE bag rather than three props on two screens, on `MonChip.swap`'s stated precedent:
+   * a control with no data behind it and data with no control are both unrepresentable, so
+   * `View the draft recap` renders exactly when the surface behind it can be drawn.
+   *
+   * `null` while the roster is still resolving, which is a real state rather than a
+   * defensive one: `spriteMeta` falls back to the loaded bundle's, but a recap with no
+   * species names would print ids at the one moment somebody is reading the night aloud.
+   */
+  const recapAccess = useMemo(
+    () =>
+      openDoc === null || spriteMeta === null ? null : { doc: openDoc, entryById, spriteMeta },
+    [openDoc, entryById, spriteMeta],
   );
 
   // The pool the grid renders is the selector's output, so a picked species leaves the
@@ -3182,6 +3210,9 @@ export function App() {
                     // makes a `draftOnly` night skip every bracket surface — and this
                     // line is only where the host lands when they take it.
                     onOpenTournament={() => setScreen({ name: 'tournament' })}
+                    // PERS-09 at `draftOnly` depth, where there is no bracket to reach it
+                    // from. `null` while the roster is still resolving — see the memo.
+                    recap={recapAccess}
                   />
                 ) : (
                   <PoolGrid
@@ -3258,6 +3289,8 @@ export function App() {
             onBackToDraft={() => setScreen({ name: 'draft' })}
             onSelectMatch={setRecording}
             onRequestReopen={() => setConfirm({ kind: 'reopen' })}
+            // PERS-09 from the bracket, once the final is recorded — §Color reservation 2.
+            recap={recapAccess}
           />
         )}
       </div>
