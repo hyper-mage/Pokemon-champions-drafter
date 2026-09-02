@@ -2748,7 +2748,10 @@ export function App() {
         return;
       }
 
-      const dropped = oldestEntry(protectedEntryId(after));
+      // Both ids, for one reason each: the open-target may not be evicted, and a live
+      // document that is ALREADY filed replaces its own entry rather than needing room
+      // made for it (WR-08). The write below asks the same rule with the same two values.
+      const dropped = oldestEntry(protectedEntryId(after), doc.id);
       if (dropped !== null) {
         setConfirm({ kind: 'evict', doc, dropped, after });
         return;

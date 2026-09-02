@@ -205,6 +205,16 @@ export function TournamentLibrary({ onOpen }: TournamentLibraryProps) {
       <h2 class="tournament-library__heading">{SECTION_HEADING}</h2>
 
       <ul class="tournament-library__list">
+        {/*
+          Keyed on `doc.id`, which is unique BY CONSTRUCTION rather than by hope (WR-08):
+          `fileTournament` replaces the entry for a tournament it is re-filing, and
+          `listLibrary` keeps one entry per id on read for any key written before that
+          rule. Two children sharing one key is a keyed diff attaching one row's
+          `Download JSON` closure to another after a sort change — a wrong file
+          downloaded, with nothing on screen to explain it. A compound key would hide a
+          regression in that rule rather than surface it, so the rule is stated and pinned
+          in `tests/adapters/library.test.ts` instead.
+        */}
         {entries.map((entry) => (
           <li key={entry.doc.id} class="tournament-library__row">
             <h3 class="tournament-library__label">{entry.doc.config.formatLabel}</h3>

@@ -325,6 +325,109 @@ describe('oldestEntry', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// One entry per doc.id — WR-08
+// ---------------------------------------------------------------------------
+
+describe('re-filing a tournament that is already in the library', () => {
+  /*
+    Opening a filed tournament left the original entry in place and prepended a second
+    with the same `doc.id`. `openLibraryEntry` returns the newest, which is why nothing
+    appeared to break — but `TournamentLibrary` keys its rows on `doc.id`, so two entries
+    under one id put two children with the same Preact key in one `<ul>`, and the keyed
+    diff can then attach one row's `Download JSON` closure to the other after a sort
+    change. It also spent a second slot of the 12-entry cap on every reopen.
+  */
+  it('replaces the existing entry rather than adding a second under one id', () => {
+    seed([
+      { filedAt: 100, doc: makeDoc('a') },
+      { filedAt: 200, doc: makeDoc('night') },
+      { filedAt: 300, doc: makeDoc('b') },
+    ]);
+
+    expect(fileTournament(makeDoc('night'))).toEqual({ kind: 'filed' });
+
+    const ids = listLibrary().map((entry) => entry.doc.id);
+    expect(ids).toEqual(['night', 'b', 'a']);
+    expect(ids.filter((id) => id === 'night')).toHaveLength(1);
+  });
+
+  it('keys the visible list uniquely, which is the property the row depends on', () => {
+    seed([{ filedAt: 100, doc: makeDoc('night') }]);
+    fileTournament(makeDoc('night'));
+    fileTournament(makeDoc('night'));
+
+    const ids = listLibrary().map((entry) => entry.doc.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('does not consume a slot of the cap, so nothing is evicted at the cap', () => {
+    seedValid(LIBRARY_CAP);
+
+    // `tournament-0` is already filed. Re-filing it takes the slot it already holds.
+    expect(fileTournament(makeDoc('tournament-0'))).toEqual({ kind: 'filed' });
+    expect(listLibrary()).toHaveLength(LIBRARY_CAP);
+    expect(listLibrary().map((entry) => entry.doc.id)).toContain('tournament-11');
+  });
+
+  it('agrees with oldestEntry, which is told the filing id for that reason', () => {
+    seedValid(LIBRARY_CAP);
+
+    // The dialog must not name a victim the write then keeps. D-16 broken by
+    // over-warning is still D-16 broken.
+    expect(oldestEntry(null, 'tournament-0')).toBeNull();
+    expect(fileTournament(makeDoc('tournament-0'))).toEqual({ kind: 'filed' });
+
+    // A tournament NOT already filed still evicts, and still the same one.
+    seedValid(LIBRARY_CAP);
+    expect(oldestEntry(null, 'brand-new')?.doc.id).toBe('tournament-0');
+    expect(fileTournament(makeDoc('brand-new'))).toEqual({
+      kind: 'evicted',
+      dropped: { filedAt: 1_000, doc: makeDoc('tournament-0') },
+    });
+  });
+
+  it('keeps CR-01 exempt entries safe, and replaces rather than protects its own', () => {
+    seedValid(LIBRARY_CAP);
+
+    // The exemption still holds: `tournament-0` is the open target and survives, so the
+    // next-oldest goes instead. `planEviction` still drops exactly one entry.
+    const outcome = fileTournament(makeDoc('brand-new'), 'tournament-0');
+    expect(outcome).toEqual({
+      kind: 'evicted',
+      dropped: { filedAt: 1_001, doc: makeDoc('tournament-1') },
+    });
+
+    const ids = listLibrary().map((entry) => entry.doc.id);
+    expect(ids).toContain('tournament-0');
+    expect(ids).not.toContain('tournament-1');
+    expect(ids).toHaveLength(LIBRARY_CAP);
+  });
+
+  it('replaces rather than protects when the exempt entry IS the one being filed', () => {
+    seedValid(LIBRARY_CAP);
+
+    // Re-filing the very tournament the gesture is on its way to open. The fresh entry
+    // lands under the same id, so the destination still exists and nothing is evicted.
+    expect(fileTournament(makeDoc('tournament-0'), 'tournament-0')).toEqual({ kind: 'filed' });
+    expect(openLibraryEntry('tournament-0')?.id).toBe('tournament-0');
+    expect(listLibrary()).toHaveLength(LIBRARY_CAP);
+  });
+
+  it('collapses a duplicate written before this rule, keeping the newest', () => {
+    // A key written by an earlier build, or hand-edited. The read side is what stops it
+    // ever reaching the keyed list.
+    seed([
+      { filedAt: 400, doc: makeDoc('night') },
+      { filedAt: 100, doc: makeDoc('night') },
+    ]);
+
+    const listed = listLibrary();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.filedAt).toBe(400);
+  });
+});
+
 describe('fileTournament', () => {
   it('files below the cap and grows the library by one', () => {
     seedValid(3);

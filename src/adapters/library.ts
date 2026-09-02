@@ -186,7 +186,23 @@ export function listLibrary(): LibraryEntry[] {
 
   // Newest first. Sorted on read rather than trusting the stored order, because a
   // hand-edited key is exactly the input this module assumes it might be handed.
-  return readable.sort((a, b) => b.filedAt - a.filedAt);
+  readable.sort((a, b) => b.filedAt - a.filedAt);
+
+  // ONE ENTRY PER `doc.id`, newest kept — WR-08.
+  //
+  // `fileTournament` now replaces rather than prepends, so a library this build wrote
+  // cannot hold two entries for one tournament. This is the read side of the same rule,
+  // and it is not redundant: a key written before that change, or hand-edited, still can.
+  // `TournamentLibrary` keys its rows on `doc.id`, and two children sharing one key is a
+  // keyed diff attaching the wrong `Download JSON` closure to the wrong row after a sort
+  // change — a bug with no visible cause. The newest wins because that is already what
+  // `openLibraryEntry` returned when duplicates existed.
+  const seen = new Set<string>();
+  return readable.filter((entry) => {
+    if (seen.has(entry.doc.id)) return false;
+    seen.add(entry.doc.id);
+    return true;
+  });
 }
 
 /**
@@ -206,14 +222,29 @@ export function listLibrary(): LibraryEntry[] {
  * Trimming from the OLDEST end rather than removing `dropped` alone keeps what the old
  * slice bought: a hand-edited key holding more than the cap comes back TO the cap instead
  * of preserving its overflow.
+ *
+ * `filingId` is the `doc.id` about to be filed, and it is the OPPOSITE of `exemptId`: an
+ * exempt entry occupies a slot and a re-filed one frees the slot it already holds, because
+ * a filing REPLACES the entry for its own tournament rather than adding a second (WR-08).
+ * Both callers pass it for `exemptId`'s reason — a dialog that named an eviction the write
+ * then did not perform is the same disagreement in the other direction.
+ *
+ * When the two ids are equal the entry is replaced rather than protected, and there is
+ * nothing to protect: the fresh entry lands under the same `doc.id`, so what the gesture
+ * was on its way to open is still there and is now the newer copy.
  */
 function planEviction(
   entries: readonly LibraryEntry[],
   exemptId: string | null,
+  filingId: string | null,
 ): { dropped: LibraryEntry | null; kept: LibraryEntry[] } {
+  const remaining =
+    filingId === null ? entries : entries.filter((entry) => entry.doc.id !== filingId);
+
   const exempt =
-    exemptId === null ? null : (entries.find((entry) => entry.doc.id === exemptId) ?? null);
-  const others = exempt === null ? [...entries] : entries.filter((entry) => entry !== exempt);
+    exemptId === null ? null : (remaining.find((entry) => entry.doc.id === exemptId) ?? null);
+  const others =
+    exempt === null ? [...remaining] : remaining.filter((entry) => entry !== exempt);
 
   // `listLibrary` is newest-first, so the survivors are the head of `others` and the
   // oldest non-exempt entry is its tail. One slot goes to the document being filed, and a
@@ -238,11 +269,24 @@ function planEviction(
  * passing it here is half of the guarantee: this is the value the dialog reads, so the
  * dialog can never name — nor the host ever agree to drop — the entry they asked to open.
  * The other half is passing the same id to {@link fileTournament}.
+ *
+ * `filingId` is the `doc.id` of the document about to be filed, and it is here for the
+ * same agreement in the other direction (WR-08): re-filing an already-filed tournament
+ * REPLACES its entry, so it frees the slot it holds and nothing needs to be evicted.
+ * Without it this would name a victim the write then kept, which is D-16 broken by
+ * over-warning rather than by under-warning.
+ *
+ * Both are nullable strings and the order matters. They are read from different
+ * expressions at the one production call site — `protectedEntryId(after)` and `doc.id` —
+ * which is what keeps them from being swapped.
  */
-export function oldestEntry(exemptId: string | null = null): LibraryEntry | null {
+export function oldestEntry(
+  exemptId: string | null = null,
+  filingId: string | null = null,
+): LibraryEntry | null {
   const entries = listLibrary();
   if (entries.length < LIBRARY_CAP) return null;
-  return planEviction(entries, exemptId).dropped;
+  return planEviction(entries, exemptId, filingId).dropped;
 }
 
 /**
@@ -271,13 +315,22 @@ export function oldestEntry(exemptId: string | null = null): LibraryEntry | null
  * for eviction here. The caller must pass the SAME id it passed to {@link oldestEntry},
  * which is why both take it: the dialog naming one entry while the write drops another is
  * the failure this parameter exists to prevent.
+ *
+ * **A filing REPLACES its own tournament's entry** — WR-08. Opening a filed tournament and
+ * filing it again used to leave the original in place and prepend a second entry with the
+ * same `doc.id`. `openLibraryEntry` returning the newest is why nothing appeared to break,
+ * but the visible list keys its rows on `doc.id`, so two entries under one id put two
+ * children with the same key in one `<ul>` — and Preact's keyed diff can then attach one
+ * row's `Download JSON` closure to the other after a sort change. Replacing also stops a
+ * night consuming a second slot of the cap every time it is reopened.
  */
 export function fileTournament(doc: TournamentDoc, exemptId: string | null = null): FileOutcome {
   const existing = listLibrary();
 
   // The cap check, before anything is written, and through the same rule the caller
-  // consulted — so the entry the dialog named is the entry this drops.
-  const { dropped, kept } = planEviction(existing, exemptId);
+  // consulted — so the entry the dialog named is the entry this drops. `doc.id` is passed
+  // because this filing replaces that tournament's existing entry if it has one.
+  const { dropped, kept } = planEviction(existing, exemptId, doc.id);
 
   const entry: LibraryEntry = { filedAt: now(), doc };
   const next = [entry, ...kept];
