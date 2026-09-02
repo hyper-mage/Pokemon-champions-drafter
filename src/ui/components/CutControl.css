@@ -50,7 +50,7 @@
 }
 
 /*
- * The one accent-filled control in this screen state — accent's second reserved use.
+ * Accent-filled only when the cut can actually be taken — accent's second reserved use.
  * --target-min in BOTH axes: the height is set here and the horizontal padding carries the
  * width past it for the one label this button can hold.
  */
@@ -71,8 +71,18 @@
  * An inert cut is dimmed, not hidden and not natively disabled — it stays focusable so a
  * keyboard user can reach the sentence that says why, which is the whole reason the refusal
  * is stated rather than enforced by an attribute that removes the control from the tree.
+ *
+ * It also SHEDS THE ACCENT, and that is §Color reservation 2 rather than decoration. One
+ * accent-filled action per screen state, and the round-robin stage has a second candidate:
+ * `TiebreakOrderer`'s `Confirm this order` renders whenever any row is unresolved. Dimming
+ * alone left the fill and the accent border in place, so at 45% opacity the screen still
+ * showed two accent-filled primaries and the reservation still read as broken. Unfilled is
+ * also the honest rendering — the host cannot press it, so it is not the way forward yet.
  */
 .cut-control__action--inert {
+  border-color: var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text);
   opacity: 0.45;
   cursor: default;
 }

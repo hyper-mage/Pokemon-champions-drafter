@@ -27,6 +27,9 @@
  * `TournamentScreen`, because the handoff is deliberately owned there — see its doc block.
  */
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { render } from 'preact';
 import { act } from 'preact/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -508,5 +511,38 @@ describe('focus after the cut', () => {
     expect(heading).not.toBeNull();
     expect(heading?.getAttribute('tabindex')).toBe('-1');
     expect(document.activeElement).toBe(heading);
+  });
+});
+
+describe('§Color reservation 2 — the inert cut does not claim the accent fill', () => {
+  it('carries the inert modifier only while the cut is refused', () => {
+    draw(stateWith(TIED_ACROSS_FOUR));
+    type('4');
+    expect(action().classList.contains('cut-control__action--inert')).toBe(true);
+
+    draw(stateWith(LADDER));
+    type('4');
+    expect(action().classList.contains('cut-control__action--inert')).toBe(false);
+  });
+
+  it('sheds the accent fill and the accent border on the inert modifier', () => {
+    /*
+      Read from source because vitest applies no stylesheet — `finished-reopen.test.tsx`
+      records the trap and the `process.cwd()` resolution this copies.
+
+      The point is §Color reservation 2, one accent-filled action per screen state. The
+      round-robin stage renders `Confirm this order` accent-filled whenever a block is
+      unresolved, and an inert `Take the cut` that only dimmed to 45% kept its accent fill
+      and accent border — two accent-filled primaries on one screen.
+    */
+    const sheet = readFileSync(resolve(process.cwd(), 'src/ui/components/CutControl.css'), 'utf8');
+    const declarations = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    const inert = /\.cut-control__action--inert\s*\{([^}]*)\}/.exec(declarations)?.[1];
+    expect(inert).toBeDefined();
+    expect(inert).toContain('background: transparent;');
+    expect(inert).toContain('border-color: var(--color-border-strong);');
+    expect(inert).not.toContain('--color-accent');
+    expect(inert).not.toMatch(/#[0-9a-fA-F]{3,6}/);
   });
 });

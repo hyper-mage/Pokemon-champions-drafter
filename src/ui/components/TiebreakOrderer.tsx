@@ -267,9 +267,23 @@ export function TiebreakOrderer({ state, onConfirm }: TiebreakOrdererProps) {
 
       {/*
         The accent-filled primary action of this screen state — §Color reservation 2, which
-        allows exactly one per state. The round-robin stage's other candidate, `Take the
-        cut`, is inert for as long as this control is on screen (an unresolved block splits
-        the cut), so the two never claim the fill at once.
+        allows exactly one per state. The round-robin stage's other candidate is `Take the
+        cut`, and what keeps the two from claiming the fill at once is stated on both sides
+        rather than assumed on either:
+
+          - `selectCutSplitsTiedBlock` refuses a cut with ANY unresolved row inside it, not
+            only one the line splits (WR-02), so every cut that would seed the block this
+            control is ordering is inert.
+          - `.cut-control__action--inert` sheds the accent fill and the accent border
+            (WR-09). Dimming alone left both in place, so an inert cut still read as a
+            second accent-filled primary.
+
+        The residue is a block that sits wholly BELOW the host's chosen cut: this control
+        renders for the first unresolved block wherever it is, while a cut above it is
+        legitimately live. That is not the reservation failing so much as the reservation
+        being about one screen state and this being two overlapping ones — recorded here
+        rather than papered over, because the sentence this comment replaced claimed an
+        invariant the code did not have.
       */}
       <button
         type="button"

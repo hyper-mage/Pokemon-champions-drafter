@@ -293,8 +293,13 @@ export function TournamentScreen({
             {/*
               Below the standings and the override, in the order the host works through
               them: read the table, settle anything the tool could not, then decide how much
-              of it advances. The cut is inert for as long as the override is on screen, so
-              the sequence is enforced by the gate rather than only implied by the layout.
+              of it advances.
+
+              The sequence is enforced by the gate rather than only implied by the layout,
+              and the gate's actual rule is narrower than "the override is on screen": a cut
+              is inert while any unresolved row sits INSIDE it (WR-02). A block below the
+              chosen cut leaves the cut live, correctly — the bracket never seeds it. So the
+              layout order matters for the case the gate deliberately allows.
             */}
             <CutControl
               state={state}
