@@ -284,6 +284,25 @@ describe('a cell', () => {
     expect(separator?.getAttribute('aria-hidden')).toBe('true');
   });
 
+  it('shows the result that stands, not the first one recorded', () => {
+    /*
+      IN-04. The cell used to take the FIRST entry with a matching id while the standings
+      took the highest `seq`. The fixture's two entries are the same pairing with opposite
+      winners — the shape a correction takes the moment the fold stops replacing in place —
+      and the grid must read the later one, or it shows a score the table disagrees with.
+    */
+    draw(
+      stateWith({ players: 4 }, [
+        { matchId: 'rr:0:1', winnerId: 'p1', loserId: 'p2' },
+        { matchId: 'rr:0:1', winnerId: 'p2', loserId: 'p1' },
+      ]),
+    );
+
+    const first = cells()[0] as HTMLButtonElement;
+    expect(visibleText(first)).toBe('Lost');
+    expect(nameOf(first)).toBe('Ada lost to Bo');
+  });
+
   it('hands the match id back on activation', () => {
     draw(stateWith({ players: 4 }));
 

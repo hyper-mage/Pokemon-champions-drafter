@@ -29,6 +29,7 @@ import {
 import {
   byeCountForCut,
   isSameSet,
+  liveResultFor,
   selectBracket,
   selectCutSplitsTiedBlock,
   selectRemainingMatchCount,
@@ -1379,5 +1380,52 @@ describe('isSameSet', () => {
     expect(isSameSet(['a', 'a', 'b'], ['a', 'b', 'b'])).toBe(false);
     expect(isSameSet(['a', 'a', 'b'], ['a', 'a', 'b'])).toBe(false);
     expect(isSameSet(['a', 'a'], ['a', 'b'])).toBe(false);
+  });
+});
+
+describe('liveResultFor', () => {
+  /*
+    IN-04. The standings resolve a match's result as highest `seq` per match id; three UI
+    surfaces took the first array entry instead. The two answers differ the moment a
+    correction lands BESIDE the result it corrects rather than over it, which the fold's
+    own comment contemplates — so the property is pinned here on a document that holds
+    both, in the order `find` gets wrong.
+  */
+  function twice(): DraftState {
+    return completeState(configFor(4), {
+      matchResults: [
+        { matchId: 'rr:0:1', winnerId: 'p1', loserId: 'p2', winnerGames: 1, loserGames: 0, metric: 3, seq: 100 },
+        { matchId: 'rr:0:2', winnerId: 'p1', loserId: 'p3', winnerGames: 1, loserGames: 0, metric: 4, seq: 101 },
+        { matchId: 'rr:0:1', winnerId: 'p2', loserId: 'p1', winnerGames: 1, loserGames: 0, metric: 5, seq: 102 },
+      ],
+    });
+  }
+
+  it('answers the highest seq, not the first entry', () => {
+    const live = liveResultFor(twice().matchResults, 'rr:0:1');
+
+    expect(live?.seq).toBe(102);
+    expect(live?.winnerId).toBe('p2');
+  });
+
+  it('answers the highest seq whichever order the entries sit in', () => {
+    const state = twice();
+    const reversed: DraftState = { ...state, matchResults: [...state.matchResults].reverse() };
+
+    expect(liveResultFor(reversed.matchResults, 'rr:0:1')?.seq).toBe(102);
+  });
+
+  it('agrees with the standings about who won', () => {
+    // The whole point of one definition: the grid and the table cannot disagree.
+    const rows = selectStandings(twice());
+    const p2 = rows.find((row) => row.playerId === 'p2');
+
+    expect(liveResultFor(twice().matchResults, 'rr:0:1')?.winnerId).toBe('p2');
+    expect(p2?.wins).toBe(1);
+  });
+
+  it('answers null for a match nothing has been recorded against', () => {
+    expect(liveResultFor(twice().matchResults, 'rr:1:2')).toBeNull();
+    expect(liveResultFor(twice().matchResults, 'not-a-match-id')).toBeNull();
   });
 });

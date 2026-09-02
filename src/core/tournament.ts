@@ -749,8 +749,22 @@ function roundLabelFor(matchesInRound: number): string {
  * The same "later beats earlier" rule {@link standingRoundRobinResults} applies to the
  * round robin (D-09), asked one match at a time because the bracket walks by id rather
  * than by pair set. `null` when nothing has been recorded.
+ *
+ * EXPORTED, and it is the one definition of what stands (IN-04). The results grid, the
+ * bracket and the record dialog each took the FIRST entry with a matching id instead —
+ * `find`, not highest `seq`. The two answers are the same only while the fold's
+ * `TOURNAMENT_MATCH_RECORDED` arm replaces a corrected result IN PLACE, which its own
+ * comment contemplates changing; the moment a correction lands beside the result it
+ * corrects, those three surfaces would show the superseded score while the standings show
+ * the current one, and nothing in the codebase would flag the divergence.
+ *
+ * It takes `matchResults` rather than the whole state because that is what its three
+ * in-module callers hold, and it filters by NOTHING but the id: the caller has already
+ * decided which match it is asking about, from the pair set or from the bracket.
+ * {@link standingRoundRobinResults} filters because it sweeps the whole document and
+ * cannot know which results are its.
  */
-function liveResultFor(
+export function liveResultFor(
   results: readonly MatchResult[],
   matchId: string,
 ): MatchResult | null {

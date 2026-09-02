@@ -1,5 +1,6 @@
 import type { DraftState, MatchResult } from '../../core/model';
 import {
+  liveResultFor,
   selectBracket,
   selectTournamentLocked,
   type BracketMatch,
@@ -115,8 +116,9 @@ export function BracketGrid({ state, onSelectMatch }: BracketGridProps) {
     return state.config.players.find((player) => player.id === playerId)?.name ?? playerId;
   }
 
+  /** Core's answer, and `ResultsGrid.resultFor` states why it is asked there (IN-04). */
   function resultFor(matchId: string): MatchResult | null {
-    return state.matchResults.find((result) => result.matchId === matchId) ?? null;
+    return liveResultFor(state.matchResults, matchId);
   }
 
   return (

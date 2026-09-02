@@ -2,6 +2,7 @@ import { Fragment } from 'preact';
 
 import type { DraftState, MatchMetric, MatchResult, StageFormat } from '../../core/model';
 import {
+  liveResultFor,
   selectRemainingMatchCount,
   selectRoundRobinMatches,
   selectTournamentLocked,
@@ -196,8 +197,15 @@ export function ResultsGrid({ state, onSelectMatch }: ResultsGridProps) {
     return pair === undefined ? null : pair.matchId;
   }
 
+  /*
+    Core's answer, not a second one (IN-04). `find` returns the FIRST entry with this id
+    and the standings resolve the highest `seq`; the two agree only while the fold
+    replaces a corrected result in place, which is not a property this component can see
+    or protect. A cell showing a superseded score beside standings computed from the
+    current one is exactly the divergence nothing would flag.
+  */
   function resultFor(matchId: string): MatchResult | null {
-    return state.matchResults.find((result) => result.matchId === matchId) ?? null;
+    return liveResultFor(state.matchResults, matchId);
   }
 
   /** The cell's one line of text, from the ROW player's perspective. */

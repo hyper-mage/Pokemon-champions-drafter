@@ -338,6 +338,33 @@ describe('the fields', () => {
     expect(host.querySelector('input[value="p2"]')).not.toBeNull();
   });
 
+  it('seeds from the result that stands, not the first one recorded', () => {
+    /*
+      IN-04. The dialog used to take the FIRST entry with a matching id. `bracketState`
+      records `rr:0:1` at seq 100 with p1 winning; the extra below is the same pairing
+      corrected to p2 at a higher seq — the shape a correction takes the moment the fold
+      stops replacing in place. Seeded from the superseded entry, the dialog would open on
+      a score the host has already changed, and `IDENTICAL_REASON` would then be inert
+      against the wrong result.
+    */
+    const superseded = bracketState(4, [
+      {
+        matchId: 'rr:0:1',
+        winnerId: 'p2',
+        loserId: 'p1',
+        winnerGames: 1,
+        loserGames: 0,
+        metric: 0,
+        seq: 700,
+      },
+    ]);
+
+    drawDialog(superseded, 'rr:0:1', { id: 'p1', name: 'Ada' }, { id: 'p2', name: 'Bo' });
+
+    expect(host.querySelector<HTMLInputElement>('input[value="p2"]')?.checked).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('input[value="p1"]')?.checked).toBe(false);
+  });
+
   it('offers the games control only at a bo3 stage', () => {
     drawDialog(
       bracketState(4),

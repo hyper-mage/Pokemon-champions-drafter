@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 
 import { metricRange } from '../../core/import-guard';
 import type { DraftState, MatchMetric, StageFormat } from '../../core/model';
-import { selectVoidCascade, type VoidCascade } from '../../core/tournament';
+import { liveResultFor, selectVoidCascade, type VoidCascade } from '../../core/tournament';
 import { matches as matchCount } from '../confirm-copy';
 import { Dialog } from './Dialog';
 import { NumericField, parseNumericField } from './NumericField';
@@ -182,7 +182,10 @@ export function MatchRecordDialog({
   onRecord,
   onKeep,
 }: MatchRecordDialogProps) {
-  const recorded = state.matchResults.find((result) => result.matchId === matchId) ?? null;
+  // Core's answer, and `ResultsGrid.resultFor` states why it is asked there (IN-04). It
+  // matters most here: this seeds the fields, so a superseded result would open the dialog
+  // on a score the host already corrected and make `IDENTICAL_REASON` inert against it.
+  const recorded = liveResultFor(state.matchResults, matchId);
 
   const showGames = format === 'bo3';
   const showMetric = state.config.depth === 'draftBracketsAndLog';
