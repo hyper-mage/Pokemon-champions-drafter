@@ -103,6 +103,7 @@ import {
   ABANDON_CONFIRM,
   EVICTION_CONFIRM,
   FILING_CONFIRM,
+  matches as matchCount,
   REOPEN_CONFIRM,
   SWAP_CONFIRM,
   UNDO_BAN_SUBMISSION_CONFIRM,
@@ -2469,11 +2470,16 @@ export function App() {
       count is: a correction that voids the cut puts the tournament back in the round
       robin, and the sentence must describe the stage the host is now in.
 
-      The bare plural is IN-02's and is deliberately left open.
+      The count goes through `confirm-copy.matches` (IN-02). A round robin with one game
+      left is the state that ends every complete night, so `1 matches left.` was the
+      sentence the room heard at the most-attended moment of the tournament. This is a
+      LIVE-REGION sentence rather than one of the three rendered ones that keep the copy
+      table's bare plural by documented exemption — `MatchRecordDialog.cascadeSentence`'s
+      two and `RecapList.voidLine` — and none of those is touched here.
     */
     const tail =
       selectTournamentStage(settled) === 'roundRobin'
-        ? ` ${selectRemainingMatchCount(settled)} matches left.`
+        ? ` ${matchCount(selectRemainingMatchCount(settled))} left.`
         : '';
     announce(`${winnerName} beat ${loserName}${games}.${tail}`);
 
@@ -2489,16 +2495,20 @@ export function App() {
       then dropped the follow-through: anybody not watching the screen, which on a shared
       draft screen is most of the room, heard a routine correction while the bracket went.
 
-      The bare plural in the two counted sentences is IN-02's, deliberately left as it is
-      so that finding stays open and stays one change.
+      Both counted sentences take `confirm-copy.matches` (IN-02), and a one-match cascade
+      is not an edge: correcting a semi-final in a four-seed bracket voids exactly the
+      final. `1 match were voided.` keeps the copy table's VERB while fixing its numeral,
+      which is `RecapList.voidLine`'s shape and its stated reason — a surface that quietly
+      corrected the verb as well would put the two out of agreement without settling which
+      of them is right, and the copy table is the thing to amend.
     */
     if (cascade.voidsCut) {
       voidAnnouncementRef.current =
         cascade.matchCount > 0
-          ? `The cut and ${cascade.matchCount} matches were voided.`
+          ? `The cut and ${matchCount(cascade.matchCount)} were voided.`
           : 'The cut was voided. The bracket is gone.';
     } else if (cascade.matchCount > 0) {
-      voidAnnouncementRef.current = `${cascade.matchCount} matches were voided.`;
+      voidAnnouncementRef.current = `${matchCount(cascade.matchCount)} were voided.`;
     }
   }, []);
 

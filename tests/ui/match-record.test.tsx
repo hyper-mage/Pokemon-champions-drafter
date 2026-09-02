@@ -114,6 +114,7 @@ import {
   matchRecorded,
   pickMade,
   poolBuilt,
+  reopened,
   scheduleCompiled,
   TOURNAMENT_MATCH_RECORDED,
   TOURNAMENT_RESULTS_VOIDED,
@@ -636,8 +637,20 @@ function stamp(intent: Intent, seq: number): Action {
 /**
  * `cutOnly` is the cut taken with NO bracket result recorded — the cascade of one seq
  * and zero matches that `MatchRecordDialog` documents and WR-03 found unannounced.
+ *
+ * The three IN-02 stages are the counts of ONE, which is where a bare plural shows:
+ *
+ *   `oneLeft`   four of the six pairings played, so recording a fifth leaves exactly one.
+ *   `oneSemi`   the cut with ONE semi-final recorded, so a round-robin correction voids
+ *               the cut and exactly one match.
+ *   `reopened`  the whole night including the final, then `tournament/reopened` — D-17's
+ *               own path, and the only one on which a BRACKET correction is admissible at
+ *               all, since recording the final locks the tournament. Correcting a semi
+ *               then voids exactly the final.
  */
-function playedDoc(stage: 'roundRobin' | 'bracket' | 'cutOnly'): TournamentDoc {
+type PlayedStage = 'roundRobin' | 'oneLeft' | 'bracket' | 'cutOnly' | 'oneSemi' | 'reopened';
+
+function playedDoc(stage: PlayedStage): TournamentDoc {
   const players = playersOf(4);
   const log: Action[] = [
     stamp(
@@ -678,7 +691,20 @@ function playedDoc(stage: 'roundRobin' | 'bracket' | 'cutOnly'): TournamentDoc {
     }
   }
 
-  if (stage === 'bracket' || stage === 'cutOnly') {
+  // Four of the six pairings, chosen so that a fifth leaves exactly one still to play.
+  if (stage === 'oneLeft') {
+    for (const [i, j] of [
+      [0, 1],
+      [0, 2],
+      [0, 3],
+      [1, 2],
+    ] as const) {
+      log.push(stamp(matchRecorded(`rr:${i}:${j}`, `p${i + 1}`, `p${j + 1}`, 1, 0, 0), seq));
+      seq += 1;
+    }
+  }
+
+  if (stage !== 'roundRobin' && stage !== 'oneLeft') {
     for (let i = 0; i < 4; i++) {
       for (let j = i + 1; j < 4; j++) {
         log.push(stamp(matchRecorded(`rr:${i}:${j}`, `p${i + 1}`, `p${j + 1}`, 1, 0, 0), seq));
@@ -693,7 +719,8 @@ function playedDoc(stage: 'roundRobin' | 'bracket' | 'cutOnly'): TournamentDoc {
     // file works out for itself — the whole point of `selectBracket` is that nothing else
     // decides who meets whom.
     const seeded = bracketState(4);
-    const round = stage === 'cutOnly' ? [] : (selectBracket(seeded)?.rounds[0] ?? []);
+    const all = stage === 'cutOnly' ? [] : (selectBracket(seeded)?.rounds[0] ?? []);
+    const round = stage === 'oneSemi' ? all.slice(0, 1) : all;
 
     for (const match of round) {
       if (match.upperId === null || match.lowerId === null) continue;
@@ -701,6 +728,21 @@ function playedDoc(stage: 'roundRobin' | 'bracket' | 'cutOnly'): TournamentDoc {
         stamp(matchRecorded(match.matchId, match.upperId, match.lowerId, 1, 0, 0), seq),
       );
       seq += 1;
+    }
+
+    if (stage === 'reopened') {
+      // The final's pairing is derived from the state the semi-finals produced, for the
+      // reason above: nothing but `selectBracket` decides who meets whom.
+      const decided = selectBracket(bracketState(4, semiFinalResults()))?.final;
+
+      if (decided?.upperId != null && decided.lowerId != null) {
+        log.push(
+          stamp(matchRecorded(decided.matchId, decided.upperId, decided.lowerId, 1, 0, 0), seq),
+        );
+        seq += 1;
+        log.push(stamp(reopened(), seq));
+        seq += 1;
+      }
     }
   }
 
@@ -714,7 +756,7 @@ function playedDoc(stage: 'roundRobin' | 'bracket' | 'cutOnly'): TournamentDoc {
   };
 }
 
-async function openTournament(stage: 'roundRobin' | 'bracket' | 'cutOnly'): Promise<void> {
+async function openTournament(stage: PlayedStage): Promise<void> {
   expect(saveTournament(playedDoc(stage))).toBe(true);
 
   await act(async () => {
@@ -894,6 +936,93 @@ describe('through the app', () => {
       'Bo beat Ada. 0 matches left.',
       'The cut was voided. The bracket is gone.',
     ]);
+  });
+
+  it('says one match left, not 1 matches left', async () => {
+    /*
+      IN-02. `confirm-copy.matches` exists for exactly this and five surfaces already use
+      it. A round robin with one game to go is the state that ends every complete night,
+      so `1 matches left.` was the sentence the room heard at the most-attended moment of
+      the tournament — the announcement is asserted whole, because a substring assertion
+      would pass against the bare plural it is here to catch.
+    */
+    await openTournament('oneLeft');
+
+    // The fifth live cell is `rr:1:3`, Bo versus Dee — one of the two still unplayed.
+    const cells = [...host.querySelectorAll<HTMLButtonElement>('.results-grid__cell')];
+    expect(cells).toHaveLength(6);
+
+    await act(async () => {
+      cells[4]?.click();
+      await Promise.resolve();
+    });
+
+    chooseWinner('p2');
+    spoken.length = 0;
+
+    await act(async () => {
+      primary()?.click();
+      await Promise.resolve();
+    });
+
+    expect(spoken).toEqual(['Bo beat Dee. 1 match left.']);
+  });
+
+  it('says the cut and one match, not 1 matches, were voided', async () => {
+    // IN-02, the cut branch WR-03 added. One recorded semi-final is the whole of a
+    // four-seed cascade at a count of one.
+    await openTournament('oneSemi');
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('.results-grid__cell')?.click();
+      await Promise.resolve();
+    });
+
+    chooseWinner('p2');
+    spoken.length = 0;
+
+    await act(async () => {
+      primary()?.click();
+      await Promise.resolve();
+    });
+
+    expect(spoken).toEqual([
+      'Bo beat Ada. 0 matches left.',
+      'The cut and 1 match were voided.',
+    ]);
+  });
+
+  it('says one match, not 1 matches, was the whole void', async () => {
+    /*
+      IN-02's third counted sentence, and the only stage a BRACKET correction is
+      admissible on: recording the final locks the tournament, so this fixture reopens it
+      the way D-17 does. Correcting a semi-final then voids exactly the final.
+
+      `1 match were voided.` keeps the copy table's verb while fixing its numeral —
+      `RecapList.voidLine`'s shape, and its stated reason: a surface that quietly
+      corrected the verb too would put the two out of agreement.
+    */
+    await openTournament('reopened');
+
+    const cards = [...host.querySelectorAll<HTMLButtonElement>('.match-card')];
+    const semi = cards[0];
+    expect(semi).toBeDefined();
+
+    await act(async () => {
+      semi?.click();
+      await Promise.resolve();
+    });
+
+    // The other side of the semi-final, which is what makes the final's result stale.
+    chooseWinner('p4');
+    spoken.length = 0;
+
+    await act(async () => {
+      primary()?.click();
+      await Promise.resolve();
+    });
+
+    expect(spoken).toEqual(['Dee beat Ada.', '1 match were voided.']);
   });
 
   it('announces a BRACKET result with no round-robin count attached', async () => {
