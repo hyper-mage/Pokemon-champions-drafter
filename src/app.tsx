@@ -2452,7 +2452,27 @@ export function App() {
       `${winnerName} beat ${loserName}${games}. ${selectRemainingMatchCount(settled)} matches left.`,
     );
 
-    if (cascade.matchCount > 0) {
+    /*
+      KEYED ON `voidsCut`, not on `matchCount` alone — WR-03.
+
+      `MatchRecordDialog` documents the case that a `matchCount > 0` test misses: a
+      round-robin correction after the cut, with no bracket result recorded yet, yields
+      `targetSeqs = [cut.seq]` and `matchCount === 0`. The reducer voids the cut, the
+      bracket disappears and the stage reverts to `roundRobin` — and the live region used
+      to say nothing about any of it. The dialog's own sentence calls itself "the only
+      warning the host gets that the cut is about to go", and the announcement contract
+      then dropped the follow-through: anybody not watching the screen, which on a shared
+      draft screen is most of the room, heard a routine correction while the bracket went.
+
+      The bare plural in the two counted sentences is IN-02's, deliberately left as it is
+      so that finding stays open and stays one change.
+    */
+    if (cascade.voidsCut) {
+      voidAnnouncementRef.current =
+        cascade.matchCount > 0
+          ? `The cut and ${cascade.matchCount} matches were voided.`
+          : 'The cut was voided. The bracket is gone.';
+    } else if (cascade.matchCount > 0) {
       voidAnnouncementRef.current = `${cascade.matchCount} matches were voided.`;
     }
   }, []);

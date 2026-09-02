@@ -606,7 +606,11 @@ function stamp(intent: Intent, seq: number): Action {
  * but never the final, because recording it locks the tournament and `canApply` would then
  * refuse the very correction under test.
  */
-function playedDoc(stage: 'roundRobin' | 'bracket'): TournamentDoc {
+/**
+ * `cutOnly` is the cut taken with NO bracket result recorded — the cascade of one seq
+ * and zero matches that `MatchRecordDialog` documents and WR-03 found unannounced.
+ */
+function playedDoc(stage: 'roundRobin' | 'bracket' | 'cutOnly'): TournamentDoc {
   const players = playersOf(4);
   const log: Action[] = [
     stamp(
@@ -647,7 +651,7 @@ function playedDoc(stage: 'roundRobin' | 'bracket'): TournamentDoc {
     }
   }
 
-  if (stage === 'bracket') {
+  if (stage === 'bracket' || stage === 'cutOnly') {
     for (let i = 0; i < 4; i++) {
       for (let j = i + 1; j < 4; j++) {
         log.push(stamp(matchRecorded(`rr:${i}:${j}`, `p${i + 1}`, `p${j + 1}`, 1, 0, 0), seq));
@@ -662,7 +666,7 @@ function playedDoc(stage: 'roundRobin' | 'bracket'): TournamentDoc {
     // file works out for itself — the whole point of `selectBracket` is that nothing else
     // decides who meets whom.
     const seeded = bracketState(4);
-    const round = selectBracket(seeded)?.rounds[0] ?? [];
+    const round = stage === 'cutOnly' ? [] : (selectBracket(seeded)?.rounds[0] ?? []);
 
     for (const match of round) {
       if (match.upperId === null || match.lowerId === null) continue;
@@ -683,7 +687,7 @@ function playedDoc(stage: 'roundRobin' | 'bracket'): TournamentDoc {
   };
 }
 
-async function openTournament(stage: 'roundRobin' | 'bracket'): Promise<void> {
+async function openTournament(stage: 'roundRobin' | 'bracket' | 'cutOnly'): Promise<void> {
   expect(saveTournament(playedDoc(stage))).toBe(true);
 
   await act(async () => {
@@ -825,9 +829,43 @@ describe('through the app', () => {
     // surprising half and it arrives last, in a later render, so the room hears both.
     // The count is read AFTER both dispatches: a correction REPLACES a result rather than
     // appending one, so the round robin is still complete and nothing is left to play.
-    expect(spoken).toEqual(['Bo beat Ada. 0 matches left.', '2 matches were voided.']);
+    // The void sentence names THE CUT because this correction took it (WR-03): the
+    // bracket is gone and the stage has reverted, which is the surprising half.
+    expect(spoken).toEqual([
+      'Bo beat Ada. 0 matches left.',
+      'The cut and 2 matches were voided.',
+    ]);
 
     // And the region really did end on the second, rather than the pair being swallowed.
-    expect(liveRegionText()).toBe('2 matches were voided.');
+    expect(liveRegionText()).toBe('The cut and 2 matches were voided.');
+  });
+
+  it('announces the voided cut when no bracket result had been recorded yet', async () => {
+    /*
+      WR-03. `MatchRecordDialog` documents this case and the announcement used to miss it:
+      a round-robin correction after the cut, with no bracket result recorded, yields
+      `targetSeqs = [cut.seq]` and `matchCount === 0`. Armed on `matchCount > 0`, the only
+      thing the room heard was a routine result correction — while the bracket was deleted
+      and the stage reverted to the round robin.
+    */
+    await openTournament('cutOnly');
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('.results-grid__cell')?.click();
+      await Promise.resolve();
+    });
+
+    chooseWinner('p2');
+    spoken.length = 0;
+
+    await act(async () => {
+      primary()?.click();
+      await Promise.resolve();
+    });
+
+    expect(spoken).toEqual([
+      'Bo beat Ada. 0 matches left.',
+      'The cut was voided. The bracket is gone.',
+    ]);
   });
 });
