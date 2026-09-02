@@ -209,11 +209,17 @@ export const MAX_MEGA_FORME_BANS = 5000;
  * answer to "how many were left standing", and `05-UI-SPEC.md` sized `--results-col-min`
  * against the same number, so a full-width cell is a cell this guard would accept.
  *
+ * It is the magnitude for BOTH metrics, and the two derivations meet at the same number.
+ * `pokemonLeft` counts up from zero: `0 … 18`. `koDifference` is "KOs scored minus KOs
+ * conceded" (`model.ts`), so the same six-times-three ceiling applies in each direction
+ * and the range is SIGNED: `-18 … 18`. {@link metricRange} is where that choice is made
+ * once; this constant is only the magnitude.
+ *
  * The rule {@link MAX_BANS_PER_PLAYER} states applies here word for word: THE GATE'S BOUND
- * AND THE GUARD'S BOUND MUST BE ONE NUMBER. The match dialog's `NumericField` reads THIS
- * constant for its `max`, so the build cannot write a document that `isValidTournament`
- * then refuses to re-open — which is a tournament the host cannot resume, discovered at
- * the moment they try.
+ * AND THE GUARD'S BOUND MUST BE ONE NUMBER. The match dialog's `NumericField` reads
+ * {@link metricRange} for its `min` and `max`, so the build cannot write a document that
+ * `isValidTournament` then refuses to re-open — which is a tournament the host cannot
+ * resume, discovered at the moment they try.
  *
  * Unlike the other caps in this block it bounds no allocation. A metric is one number in
  * one cell, and `4000000000` renders as harmlessly as `7`. What it bounds is MEANING: the
@@ -222,6 +228,36 @@ export const MAX_MEGA_FORME_BANS = 5000;
  * have played to. That is the reason it is a refusal rather than a clamp.
  */
 export const MAX_MATCH_METRIC = 18;
+
+/**
+ * The legal range for one recorded metric, BY the metric the tournament is scored on.
+ *
+ * Before this, both metrics were bounded `0 … MAX_MATCH_METRIC` by `isNonNegativeInteger`,
+ * and that truncated `koDifference` at zero — half of a signed difference's range. A
+ * winner who took a best-of-three 2–1 while conceding more KOs than they scored had no
+ * legal value to enter, so the host was forced to type a number that is not the one the
+ * metric names, and the standings' link 2 then sorted on a systematically wrong total.
+ *
+ * ONE definition, read by three sites that would otherwise each hold a literal: this
+ * module's `tournament/matchRecorded` arm, `MatchRecordDialog`'s `NumericField` bounds,
+ * and the inert reason that sentence renders. `MAX_BANS_PER_PLAYER`'s rule, applied to a
+ * pair of numbers instead of one.
+ *
+ * SCHEMA COMPATIBILITY, recorded rather than discovered: a document carrying a negative
+ * metric is refused by any build still bounding the field with `isNonNegativeInteger`.
+ * `schemaVersion` is NOT bumped for it — nothing is deployed (origin/main is far behind
+ * this branch), so there is no older build in the field to migrate away from, and a bump
+ * would cost every existing local document a migration for a range that has never yet
+ * been used. Bump it if that stops being true before release.
+ */
+export function metricRange(metric: MatchMetric): { min: number; max: number } {
+  // `koDifference` is a difference and signs both ways; `pokemonLeft` is a count and
+  // cannot. Switched on the metric rather than always signed, so a `pokemonLeft` document
+  // claiming `-4` is still refused at the boundary rather than sorted on.
+  return metric === 'koDifference'
+    ? { min: -MAX_MATCH_METRIC, max: MAX_MATCH_METRIC }
+    : { min: 0, max: MAX_MATCH_METRIC };
+}
 
 /**
  * The shape of a match id — `rr:{i}:{j}` or `br:{round}:{slot}`, digits only.
@@ -320,6 +356,17 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function isPositiveInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+/**
+ * An integer within an INCLUSIVE range that may reach below zero.
+ *
+ * Beside {@link isNonNegativeInteger} rather than replacing it, because the sign is the
+ * whole distinction: a count cannot go negative and a difference must (WR-11). The two
+ * bounds are passed rather than defaulted so a caller cannot half-state its range.
+ */
+function isSafeIntegerInRange(value: unknown, min: number, max: number): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max;
 }
 
 /**
@@ -826,8 +873,13 @@ function buildConfig(value: unknown): TournamentConfig | null {
  * file exists to prevent. So the event is preserved as having happened, and what it said
  * is not. Re-exporting such a document loses those payloads; that is stated here rather
  * than discovered later.
+ *
+ * `matchMetric` is the tournament's own, already rebuilt by `buildConfig` — the one
+ * piece of surrounding config an entry needs, because {@link metricRange} is signed for
+ * `koDifference` and unsigned for `pokemonLeft` and the arm cannot pick between them
+ * blind. It is passed rather than reached for so this stays a function of its inputs.
  */
-function buildLogEntry(value: unknown): Action | null {
+function buildLogEntry(value: unknown, matchMetric: MatchMetric): Action | null {
   const raw = safeObject(value);
   if (raw === null) return null;
 
@@ -1067,16 +1119,28 @@ function buildLogEntry(value: unknown): Action | null {
       if (typeof winnerId !== 'string' || typeof loserId !== 'string') return null;
 
       // Games are bounded HERE and the format rule lives in `canApply`, which is
-      // `actions.ts`'s guard/canApply split rather than a duplication: this function types
-      // one entry in isolation and cannot see `config.roundRobinFormat`. `1..2` and `0..1`
+      // `actions.ts`'s guard/canApply split rather than a duplication: THE STAGE decides
+      // which of `config.roundRobinFormat` and `config.bracketFormat` applies, and an
+      // entry cannot tell which stage it belongs to without the fold. `1..2` and `0..1`
       // are the widest pair any stage this build supports can produce.
+      //
+      // The metric below is different, and that is why it takes a parameter: there is
+      // exactly ONE `config.matchMetric` for the whole tournament, so the exact bound is
+      // knowable here and there is nothing for `canApply` to add.
       if (!isPositiveInteger(winnerGames) || winnerGames > 2) return null;
       if (!isNonNegativeInteger(loserGames) || loserGames > 1) return null;
 
       // REQUIRED, never defaulted to zero. `0` is a real recorded metric at
       // `draftAndBrackets`, so a default would make "the file did not say" and "the file
       // said none" the same value in the one field the standings sort on.
-      if (!isNonNegativeInteger(metric) || metric > MAX_MATCH_METRIC) return null;
+      //
+      // Bounded BY THE METRIC, which is why this arm takes one — see {@link metricRange}.
+      // `isNonNegativeInteger` truncated `koDifference` at zero, which is half of a signed
+      // difference's range. `buildDoc` builds `config` before `log`, so the metric is
+      // always in hand here, and a v4 document that never carried the field arrives with
+      // `V4_CONFIG_DEFAULTS.matchMetric` already applied.
+      const range = metricRange(matchMetric);
+      if (!isSafeIntegerInRange(metric, range.min, range.max)) return null;
 
       return {
         type: 'tournament/matchRecorded',
@@ -1156,7 +1220,7 @@ function buildLogEntry(value: unknown): Action | null {
  * and it would guard against nothing, because the reducer reads the log in array order
  * and never treats a `seq` as an index.
  */
-function buildLog(value: unknown): Action[] | null {
+function buildLog(value: unknown, matchMetric: MatchMetric): Action[] | null {
   if (!Array.isArray(value)) return null;
   if (value.length > MAX_LOG_ENTRIES) return null;
 
@@ -1164,7 +1228,7 @@ function buildLog(value: unknown): Action[] | null {
   let previousSeq = -1;
 
   for (const raw of value) {
-    const entry = buildLogEntry(raw);
+    const entry = buildLogEntry(raw, matchMetric);
     if (entry === null) return null;
 
     if (log.length === 0 && entry.seq !== 0) return null;
@@ -1204,7 +1268,9 @@ function buildDoc(value: unknown): TournamentDoc | null {
   if (rng === null) return null;
   if (!isFiniteNumber(rng['seed']) || !isNonNegativeInteger(rng['cursor'])) return null;
 
-  const log = buildLog(raw['log']);
+  // `config` first, and the log second, so the metric the document declares is in hand
+  // when the `tournament/matchRecorded` arm bounds its `metric` field (WR-11).
+  const log = buildLog(raw['log'], config.matchMetric);
   if (log === null) return null;
 
   // Six named fields. This object literal IS the allow-list; there is no second place to

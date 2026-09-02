@@ -487,7 +487,9 @@ export interface BansRevealedPayload {
  * `metric` is scored by `config.matchMetric` and is REQUIRED rather than optional: it is
  * `0` at `draftAndBrackets`, where nothing reads it (D-01, D-02), and an optional field
  * would make "not recorded" and "recorded as zero" indistinguishable in the one place the
- * standings sort on. Its bound is `MAX_MATCH_METRIC`.
+ * standings sort on. Its bound is `metricRange(config.matchMetric)`: `0 … 18` for
+ * `pokemonLeft`, which is a count, and `-18 … 18` for `koDifference`, which is a
+ * difference and signs both ways.
  */
 export interface MatchRecordedPayload {
   type: typeof TOURNAMENT_MATCH_RECORDED;
@@ -501,7 +503,7 @@ export interface MatchRecordedPayload {
   winnerGames: number;
   /** Games the loser took: `0` at `bo1`, `0` or `1` at `bo3`. */
   loserGames: number;
-  /** Scored by `config.matchMetric`, `0 … MAX_MATCH_METRIC`. `0` where nothing reads it. */
+  /** Scored by `config.matchMetric`, bounded by `metricRange`. `0` where nothing reads it. */
   metric: number;
 }
 

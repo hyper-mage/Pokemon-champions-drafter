@@ -159,7 +159,13 @@ export type MatchMetric =
    * the one a host who has not thought about it means.
    */
   | 'pokemonLeft'
-  /** KOs scored minus KOs conceded, summed across their matches. */
+  /**
+   * KOs scored minus KOs conceded, summed across their matches.
+   *
+   * SIGNED, and `import-guard.metricRange` is where that is enforced: a winner can take a
+   * best-of-three while conceding more KOs than they scored, so a floor of zero would
+   * force the host to enter a number that is not the one this metric names.
+   */
   | 'koDifference';
 
 /**
@@ -647,7 +653,10 @@ export interface MatchResult {
   loserId: string;
   winnerGames: number;
   loserGames: number;
-  /** Scored by `config.matchMetric`. `0` where the tier does not record one. */
+  /**
+   * Scored by `config.matchMetric`, bounded by `import-guard.metricRange`. `0` where the
+   * tier does not record one, and NEGATIVE where the metric is `koDifference`.
+   */
   metric: number;
   /**
    * The sequence number of the action that recorded this result, taken off the ENVELOPE

@@ -120,7 +120,7 @@ import {
   type Action,
   type Intent,
 } from '../../src/core/actions';
-import { MAX_MATCH_METRIC } from '../../src/core/import-guard';
+import { MAX_MATCH_METRIC, metricRange } from '../../src/core/import-guard';
 import {
   initialState,
   SCHEMA_VERSION,
@@ -138,7 +138,7 @@ import {
   IDENTICAL_REASON,
   KEEP_RECORDED,
   MatchRecordDialog,
-  METRIC_RANGE_REASON,
+  metricRangeReason,
   NO_WINNER_REASON,
   RECORD_PLAIN,
   RECORD_VOID_BRACKET,
@@ -372,7 +372,28 @@ describe('the fields', () => {
 
     const field = host.querySelector<HTMLInputElement>('input[type="number"]');
     expect(field?.getAttribute('max')).toBe(String(MAX_MATCH_METRIC));
+    expect(field?.getAttribute('min')).toBe('0');
     expect(host.textContent).toContain('Pokémon left for the winner');
+  });
+
+  it('signs the field and the sentence when the metric is koDifference', () => {
+    // WR-11: `koDifference` is "KOs scored minus KOs conceded", so half its range is
+    // below zero. `min={0}` and `Enter a number from 0 to 18.` left a winner who took a
+    // best-of-three 2-1 while conceding more KOs than they scored with no legal value
+    // to enter, and the standings' link 2 then summed a systematically wrong total.
+    const base = bracketState(4);
+    const state: DraftState = {
+      ...base,
+      config: { ...base.config, depth: 'draftBracketsAndLog', matchMetric: 'koDifference' },
+    };
+    drawDialog(state, 'rr:0:1', { id: 'p1', name: 'Ada' }, { id: 'p2', name: 'Bo' });
+
+    const field = host.querySelector<HTMLInputElement>('input[type="number"]');
+    expect(field?.getAttribute('min')).toBe(String(-MAX_MATCH_METRIC));
+    expect(field?.getAttribute('max')).toBe(String(MAX_MATCH_METRIC));
+    expect(metricRangeReason('koDifference')).toBe('Enter a number from -18 to 18.');
+    expect(metricRangeReason('pokemonLeft')).toBe('Enter a number from 0 to 18.');
+    expect(metricRange('koDifference')).toEqual({ min: -18, max: 18 });
   });
 });
 
@@ -501,7 +522,7 @@ describe('the inert states', () => {
     });
 
     expect(primary()?.getAttribute('aria-disabled')).toBe('true');
-    expect(host.textContent).toContain(METRIC_RANGE_REASON);
+    expect(host.textContent).toContain(metricRangeReason('pokemonLeft'));
 
     act(() => {
       primary()?.click();

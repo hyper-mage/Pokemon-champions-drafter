@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 
-import { MAX_MATCH_METRIC } from '../../core/import-guard';
-import type { DraftState, StageFormat } from '../../core/model';
+import { metricRange } from '../../core/import-guard';
+import type { DraftState, MatchMetric, StageFormat } from '../../core/model';
 import { selectVoidCascade, type VoidCascade } from '../../core/tournament';
 import { matches as matchCount } from '../confirm-copy';
 import { Dialog } from './Dialog';
@@ -109,7 +109,18 @@ export function cascadeSentence(cascade: VoidCascade): string {
  * here. Both follow the house shape for an inert reason: the problem, then the next action.
  */
 export const NO_WINNER_REASON = 'Choose a winner.';
-export const METRIC_RANGE_REASON = `Enter a number from 0 to ${MAX_MATCH_METRIC}.`;
+/**
+ * The range sentence, BY the metric — `metricRange`'s bounds interpolated, never a
+ * literal.
+ *
+ * `Enter a number from 0 to 18.` was wrong for `koDifference` (WR-11): that metric is
+ * "KOs scored minus KOs conceded" and signs both ways, so the sentence named a floor the
+ * host could not honour and the field would not accept the number the metric asks for.
+ */
+export function metricRangeReason(metric: MatchMetric): string {
+  const range = metricRange(metric);
+  return `Enter a number from ${range.min} to ${range.max}.`;
+}
 
 /** What the caller dispatches. Every field is decided here; none is worked out again. */
 export interface MatchRecord {
@@ -193,11 +204,14 @@ export function MatchRecordDialog({
   const enteredLoserGames = showGames ? Number(loserGames) : 0;
 
   const parsedMetric = showMetric ? parseNumericField(metricText) : 0;
+  // The tournament's own range, not a hard-coded floor of zero — one `metricRange` call
+  // feeds this gate, the field's bounds and the sentence that says why (WR-11).
+  const range = metricRange(state.config.matchMetric);
   const metricInRange =
     parsedMetric !== null &&
     Number.isInteger(parsedMetric) &&
-    parsedMetric >= 0 &&
-    parsedMetric <= MAX_MATCH_METRIC;
+    parsedMetric >= range.min &&
+    parsedMetric <= range.max;
 
   const loserId = winnerId === null ? null : winnerId === aId ? bId : aId;
 
@@ -227,13 +241,16 @@ export function MatchRecordDialog({
     recorded.loserId === loserId &&
     recorded.winnerGames === winnerGames &&
     recorded.loserGames === enteredLoserGames &&
-    recorded.metric === (showMetric ? (parsedMetric ?? -1) : 0);
+    // NaN, not -1, as the "nothing parseable in the field" sentinel: -1 became a LEGAL
+    // recorded metric when `koDifference` gained its negative half (WR-11), so a
+    // recorded -1 beside an empty field would have compared equal.
+    recorded.metric === (showMetric ? (parsedMetric ?? Number.NaN) : 0);
 
   const reason =
     winnerId === null
       ? NO_WINNER_REASON
       : showMetric && !metricInRange
-        ? METRIC_RANGE_REASON
+        ? metricRangeReason(state.config.matchMetric)
         : identical
           ? IDENTICAL_REASON
           : null;
@@ -318,10 +335,13 @@ export function MatchRecordDialog({
             value={metricText}
             onInput={setMetricText}
             // Affordances, not enforcement — `NumericField` says so and the refusal above
-            // is the authority. The bound is the constant the import guard uses, never a
-            // literal: the build must not be able to write a document that cannot reopen.
-            min={0}
-            max={MAX_MATCH_METRIC}
+            // is the authority. The bounds come from the import guard's own
+            // `metricRange`, never a literal: the build must not be able to write a
+            // document that cannot reopen. `min` is `-18` for `koDifference`, which is
+            // what lets a winner who conceded more KOs than they scored enter the number
+            // the metric actually names.
+            min={range.min}
+            max={range.max}
           />
         )}
 

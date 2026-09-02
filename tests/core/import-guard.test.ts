@@ -48,6 +48,7 @@ import {
   MAX_ROUNDS,
   MAX_SWAP_BUDGET,
   MAX_SWAP_ROUNDS,
+  metricRange,
   parseTournamentFile,
 } from '../../src/core/import-guard';
 import { V3_CONFIG_DEFAULTS, V4_CONFIG_DEFAULTS } from '../../src/core/migrate';
@@ -2706,8 +2707,52 @@ describe('tournament actions — payload bounds', () => {
     expect(rejection(result)).toBe('wrongShape');
   });
 
-  it.each([-1, 1.5])('refuses the metric %p', (metric) => {
+  it.each([-1, 1.5])('refuses the metric %p under pokemonLeft', (metric) => {
     expect(rejection(parse(exported(docWith({ ...MATCH_RECORDED, metric }))))).toBe('wrongShape');
+  });
+
+  /*
+    WR-11. `koDifference` is "KOs scored minus KOs conceded", so half its range is below
+    zero, and `isNonNegativeInteger` truncated it at zero for both metrics alike. The
+    bound is now `metricRange`, chosen by `config.matchMetric` — which the arm can do
+    because `buildDoc` rebuilds `config` before `log`.
+
+    This is a schema-compatibility change: a document carrying a negative metric is
+    refused by any build still using `isNonNegativeInteger`. `schemaVersion` is
+    deliberately NOT bumped — nothing is deployed, so there is no older build to migrate
+    away from.
+  */
+  function koDoc(metric: number): TournamentDoc {
+    const doc = docWith({ ...MATCH_RECORDED, metric });
+    return { ...doc, config: { ...doc.config, matchMetric: 'koDifference' } };
+  }
+
+  it.each([-MAX_MATCH_METRIC, -7, -1, 0, MAX_MATCH_METRIC])(
+    'accepts the metric %p under koDifference',
+    (metric) => {
+      expect(parse(exported(koDoc(metric))).ok).toBe(true);
+    },
+  );
+
+  it.each([-MAX_MATCH_METRIC - 1, MAX_MATCH_METRIC + 1, -1.5])(
+    'refuses the metric %p under koDifference',
+    (metric) => {
+      expect(rejection(parse(exported(koDoc(metric))))).toBe('wrongShape');
+    },
+  );
+
+  it('keeps the negative metric on the rebuilt entry rather than clamping it', () => {
+    const result = parse(exported(koDoc(-4)));
+    expect(result.ok).toBe(true);
+    expect((lastEntry(result) as Record<string, unknown>)['metric']).toBe(-4);
+  });
+
+  it('states the two ranges once, and metricRange is where', () => {
+    expect(metricRange('pokemonLeft')).toEqual({ min: 0, max: MAX_MATCH_METRIC });
+    expect(metricRange('koDifference')).toEqual({
+      min: -MAX_MATCH_METRIC,
+      max: MAX_MATCH_METRIC,
+    });
   });
 
   it('refuses a missing metric rather than defaulting it to zero', () => {
