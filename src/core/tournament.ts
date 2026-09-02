@@ -246,19 +246,35 @@ interface Tally {
  *
  * Two rules, both stated rather than assumed:
  *
- *   - Only `rr:` ids. A bracket result must never move a standings row, and filtering it
- *     out here is what makes that true of the record, the metric and head-to-head at once
- *     rather than in three places that could each forget.
+ *   - Only ids in THE PAIR SET this player list derives — not merely `rr:`-shaped ones. A
+ *     bracket result must never move a standings row, and filtering here is what makes
+ *     that true of the record, the metric and head-to-head at once rather than in three
+ *     places that could each forget.
+ *
+ *     The pair set rather than {@link ROUND_ROBIN_MATCH_ID} because
+ *     {@link selectRemainingMatchCount} already declines "a stray `rr:` id naming a
+ *     pairing this player list does not have", and the two must not disagree about what a
+ *     round-robin result IS. They did: `import-guard.MATCH_ID_PATTERN` accepts any
+ *     `rr:\d+:\d+` without requiring `i < j` or bounding either index against
+ *     `config.players.length`, so an imported document carrying `rr:9:9` fed a phantom win
+ *     into a player's record and metric total — moving the standings, the seeding and
+ *     therefore the whole bracket — while the grid above it read `All N matches are
+ *     recorded.` and showed nothing amiss. `canApply` refuses origination
+ *     (`unknownMatch`), so it was import-only, and importing a friend's JSON is a
+ *     first-class path in this app.
  *   - Highest `seq` per match id. D-09 is "later beats earlier", and reading it here means
  *     this module gives the same answer whether a correction replaces the entry in the
  *     fold or lands beside it. With the one entry per pairing that
  *     `DraftState.matchResults` promises, this is an identity.
  */
 function standingRoundRobinResults(state: DraftState): MatchResult[] {
+  // Local to the computation and never persisted, which is what the serializability rule
+  // draws the line at — a `Set` in the document would be the violation.
+  const known = new Set(selectRoundRobinMatches(state).map((match) => match.matchId));
   const live: MatchResult[] = [];
 
   for (const result of state.matchResults) {
-    if (!ROUND_ROBIN_MATCH_ID.test(result.matchId)) continue;
+    if (!known.has(result.matchId)) continue;
 
     const at = live.findIndex((kept) => kept.matchId === result.matchId);
     if (at === -1) {

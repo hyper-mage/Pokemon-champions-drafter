@@ -342,6 +342,65 @@ describe('selectRemainingMatchCount', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The pair set is the one definition of "a round-robin result" — WR-05
+// ---------------------------------------------------------------------------
+
+describe('standings and the remaining count agree about which rr: ids exist', () => {
+  /**
+   * `import-guard.MATCH_ID_PATTERN` accepts any `rr:\d+:\d+`. It does not require
+   * `i < j` and it does not bound either index against `config.players.length`, so a
+   * shared document can carry ids that name no pairing this player list has. The count
+   * has always declined them; the standings filtered on the id SHAPE and did not.
+   */
+  function strayResult(matchId: string, winnerId: string, loserId: string): MatchResult {
+    return { matchId, winnerId, loserId, winnerGames: 2, loserGames: 0, metric: 4, seq: 9_000 };
+  }
+
+  it('gives an out-of-range rr: id no win, no metric and no position', () => {
+    const config = configFor(4);
+    const clean = completeState(config, { matchResults: distinctRecords(config) });
+    const poisoned = completeState(config, {
+      matchResults: [...distinctRecords(config), strayResult('rr:9:9', 'p4', 'p1')],
+    });
+
+    // p4 finished 0-3 and stays there. Counted, the phantom win would move p4 above p3,
+    // reseed the bracket, and read as normal on a grid saying every match is recorded.
+    expect(by(selectStandings(poisoned), (row) => `${row.wins}-${row.losses}`)).toEqual({
+      p1: '3-0',
+      p2: '2-1',
+      p3: '1-2',
+      p4: '0-3',
+    });
+    expect(selectStandings(poisoned)).toEqual(selectStandings(clean));
+    expect(selectSeeding(poisoned)).toEqual(['p1', 'p2', 'p3', 'p4']);
+  });
+
+  it('declines a reversed rr:j:i, which the pair set never emits', () => {
+    const config = configFor(4);
+    const poisoned = completeState(config, {
+      matchResults: [...distinctRecords(config), strayResult('rr:1:0', 'p2', 'p1')],
+    });
+
+    // `rr:1:0` and `rr:0:1` are the same two players. Honouring both would let one
+    // pairing be recorded twice and count twice.
+    expect(by(selectStandings(poisoned), (row) => `${row.wins}-${row.losses}`).p2).toBe('2-1');
+  });
+
+  it('leaves the two consumers saying the same thing about completeness', () => {
+    const config = configFor(4);
+    const state = completeState(config, {
+      matchResults: [...distinctRecords(config), strayResult('rr:9:9', 'p4', 'p1')],
+    });
+
+    // The grid reads `All 6 matches are recorded.` and the standings are folded from
+    // exactly those six. The disagreement WR-05 records was that the second sentence
+    // was folded from seven.
+    expect(selectRemainingMatchCount(state)).toBe(0);
+    expect(selectStandings(state).reduce((total, row) => total + row.wins, 0)).toBe(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // selectTournamentStage — a fold, not a flag
 // ---------------------------------------------------------------------------
 
