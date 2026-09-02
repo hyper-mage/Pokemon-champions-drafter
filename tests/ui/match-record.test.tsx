@@ -93,6 +93,38 @@ vi.mock('../../src/adapters/roster-source', async (importOriginal) => {
  */
 const spoken = vi.hoisted(() => [] as string[]);
 
+/**
+ * A refused `tournament/resultsVoided`, which nothing else can produce — IN-05.
+ *
+ * The reviewer could not construct a reachable refusal (`tournamentLocked` cannot become
+ * true from a record with a non-empty cascade, since the final's cascade is always empty),
+ * and that is exactly why the branch needs a test: it is defence in depth, so no fixture
+ * can drive it and a regression in it would be invisible. The refusal is injected at the
+ * ONE seam the app has for it, `dispatch`, and only for the action under test — every
+ * other dispatch in this file, including the record this correction pairs with, still runs
+ * the real store.
+ *
+ * The flag is off by default and reset in `afterEach`, so exactly one test sees it.
+ */
+const control = vi.hoisted(() => ({ refuseVoid: false }));
+
+vi.mock('../../src/store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/store')>();
+
+  return {
+    ...actual,
+    dispatch: (intent: Parameters<typeof actual.dispatch>[0]) => {
+      // The literal rather than the imported constant: a `vi.mock` factory is hoisted
+      // above this file's imports. A test below asserts the two are the same string.
+      if (control.refuseVoid && intent.type === 'tournament/resultsVoided') {
+        return { ok: false as const, reason: 'tournamentLocked' as const };
+      }
+
+      return actual.dispatch(intent);
+    },
+  };
+});
+
 vi.mock('../../src/ui/components/LiveRegion', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/ui/components/LiveRegion')>();
 
@@ -278,6 +310,7 @@ afterEach(() => {
   host.remove();
   disposeTabLock();
   localStorage.clear();
+  control.refuseVoid = false;
 });
 
 function buttonNamed(name: string): HTMLButtonElement | undefined {
@@ -1023,6 +1056,49 @@ describe('through the app', () => {
     });
 
     expect(spoken).toEqual(['Dee beat Ada.', '1 match were voided.']);
+  });
+
+  it('reports a refused void rather than leaving the correction half applied', async () => {
+    /*
+      IN-05. The handler dispatched the void and ignored its `CanApplyResult`. A refusal
+      left the corrected result standing while the cut and the bracket results it should
+      have cleared stayed in the fold — a bracket seeded from a table that no longer holds,
+      which is the exact state D-11 exists to prevent — with nothing on screen saying so.
+    */
+    await openTournament('bracket');
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('.results-grid__cell')?.click();
+      await Promise.resolve();
+    });
+
+    chooseWinner('p2');
+
+    const beforeLength = getDoc()?.log.length ?? 0;
+    spoken.length = 0;
+    control.refuseVoid = true;
+
+    await act(async () => {
+      primary()?.click();
+      await Promise.resolve();
+    });
+
+    // The record landed and the void did not — the half-applied state itself.
+    const appended = (getDoc()?.log ?? []).slice(beforeLength);
+    expect(appended).toHaveLength(1);
+    expect(appended[0]?.type).toBe(TOURNAMENT_MATCH_RECORDED);
+
+    // And it is on screen, naming the control that takes the whole correction back.
+    const report = host.querySelector('[role="alertdialog"]');
+    expect(report?.textContent).toContain('The correction is only half applied');
+    expect(report?.textContent).toContain('Undo last move');
+
+    // The room is NOT told that anything was voided, because nothing was.
+    expect(spoken).toEqual(['Bo beat Ada.']);
+    expect(spoken.join(' ')).not.toContain('voided');
+
+    // The seam the refusal was injected at is the action the handler dispatches.
+    expect(TOURNAMENT_RESULTS_VOIDED).toBe('tournament/resultsVoided');
   });
 
   it('announces a BRACKET result with no round-robin count attached', async () => {

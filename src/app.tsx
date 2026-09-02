@@ -377,6 +377,15 @@ type Confirm =
    */
   | { kind: 'openFailed' }
   /**
+   * A correction's void was refused — the third report, on `fileFailed`'s terms.
+   *
+   * NO FIELDS, like `reopen` and for a related reason: the sentence is the same whatever
+   * the cascade held, because it describes a document the host has to step back out of
+   * rather than a quantity of anything. Carrying the `RejectionReason` would put core's
+   * internal vocabulary on a member nothing renders it from.
+   */
+  | { kind: 'voidFailed' }
+  /**
    * An undo, with everything its four possible copy sets between them need.
    *
    * `playerCount` is here for the reveal set, whose body names how many players' bans stay
@@ -493,6 +502,41 @@ const OPEN_FAILED_BODY =
   'The filed tournament could not be read, so nothing was opened and nothing was lost. Open another tournament from the list, or import its JSON file.';
 
 const OPEN_FAILED_DISMISS = 'Back to your tournaments';
+
+/**
+ * The void half of a correction was refused — D-11, and the third of these reports,
+ * placed beside the other two and for their stated reason: `confirm-copy.ts` holds "every
+ * confirmation's words", and this asks the host nothing either.
+ *
+ * ## What it is defending against
+ *
+ * `handleRecordMatch` records, then voids what the record invalidated, and the two are
+ * paired by `causedBySeq` so that one undo takes both. A REFUSED void leaves the corrected
+ * result standing while the results it should have cleared stay in the fold — a bracket
+ * seeded from a table that no longer holds, which is the exact state D-11 exists to
+ * prevent. The failure is silent by construction: the dialog has already closed, the new
+ * result is on screen, and nothing about the downstream cards says they are stale.
+ *
+ * No reachable path to the refusal is known — `tournamentLocked` cannot become true from a
+ * record with a non-empty cascade, since the final's cascade is always empty — so this is
+ * defence in depth rather than a bug being reported. That is also why it is a report and
+ * not a recovery: there is nothing safe to do automatically, and the host already has the
+ * one control that undoes both halves.
+ *
+ * The body carries NO refusal code. `RejectionReason` is core's vocabulary for its own
+ * gates, and reporting it here would be reporting the guard's internals — the two import
+ * sentences above take that position first, and no reason it could name leads the host
+ * anywhere different.
+ *
+ * House form for an error: the problem, then the next action. `Undo last move` is named
+ * because it is a real control in the top bar and it takes the correction back whole.
+ */
+const VOID_FAILED_HEADING = 'The correction is only half applied';
+
+const VOID_FAILED_BODY =
+  'The result is recorded, but the cut and the matches it should have voided are still standing, so what is on screen below it no longer follows from the results. Use Undo last move to take the whole correction back, then record it again.';
+
+const VOID_FAILED_DISMISS = 'Back to the tournament';
 
 /**
  * The adopted-document notice — the one place an imported or resumed tournament's
@@ -2425,13 +2469,37 @@ export function App() {
 
     setRecording(null);
 
+    /*
+      THE SECOND DISPATCH IS ANSWERED, not assumed — IN-05.
+
+      A refused void leaves the corrected result standing while the results it should have
+      cleared stay in the fold: a bracket seeded from a table that no longer holds, which
+      is the exact state D-11 exists to prevent. Ignoring the `CanApplyResult` made that
+      state silent — the dialog has closed, the new result is on screen, and nothing about
+      the stale cards below it says so.
+
+      `causedBySeq === null` is reported through the same branch rather than skipped past.
+      Both are the same event from the host's side: the record landed and the void did not.
+
+      No reachable refusal is known (`tournamentLocked` cannot become true from a record
+      with a non-empty cascade, since the final's cascade is always empty), so this is
+      defence in depth. It is written as a report because there is nothing safe to do
+      automatically: undoing the record here would be a third dispatch reacting to a
+      refusal, and `Undo last move` already takes the correction back whole.
+    */
+    let voidRefused = false;
+
     if (cascade.targetSeqs.length > 0) {
       // Re-read: the record is in the log now, and its `seq` is a fact about the document
       // it produced rather than the one it was dispatched against.
       const after = getDoc();
       const causedBySeq = after === null ? null : (after.log[after.log.length - 1]?.seq ?? null);
 
-      if (causedBySeq !== null) dispatch(resultsVoided(cascade.targetSeqs, causedBySeq));
+      const cleared =
+        causedBySeq === null ? null : dispatch(resultsVoided(cascade.targetSeqs, causedBySeq));
+
+      voidRefused = cleared === null || !cleared.ok;
+      if (voidRefused) setConfirm({ kind: 'voidFailed' });
     }
 
     /*
@@ -2502,7 +2570,11 @@ export function App() {
       corrected the verb as well would put the two out of agreement without settling which
       of them is right, and the copy table is the thing to amend.
     */
-    if (cascade.voidsCut) {
+    if (voidRefused) {
+      // Nothing is armed. The dialog raised above is the report, and a void sentence here
+      // would tell the room that matches were voided when the refusal is precisely that
+      // they were not (IN-05).
+    } else if (cascade.voidsCut) {
       voidAnnouncementRef.current =
         cascade.matchCount > 0
           ? `The cut and ${matchCount(cascade.matchCount)} were voided.`
@@ -3699,6 +3771,31 @@ export function App() {
           }
         >
           <p>{OPEN_FAILED_BODY}</p>
+        </Dialog>
+      )}
+
+      {/*
+        The void half of a correction was refused — a report, on the same terms as the two
+        above and placed beside them. ONE control, because there is only one thing to do
+        and it is not in this dialog: `Undo last move` in the top bar takes both halves of
+        the correction back, and the body names it.
+      */}
+      {confirm.kind === 'voidFailed' && (
+        <Dialog
+          heading={VOID_FAILED_HEADING}
+          dismissible
+          onDismiss={closeConfirm}
+          actions={
+            <button
+              type="button"
+              class="dialog__action confirm-dialog__confirm confirm-dialog__confirm--default"
+              onClick={closeConfirm}
+            >
+              {VOID_FAILED_DISMISS}
+            </button>
+          }
+        >
+          <p>{VOID_FAILED_BODY}</p>
         </Dialog>
       )}
 
