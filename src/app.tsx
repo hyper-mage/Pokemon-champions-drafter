@@ -80,7 +80,11 @@ import {
   selectSwapTargets,
   selectTeams,
 } from './core/selectors';
-import { selectRemainingMatchCount, type VoidCascade } from './core/tournament';
+import {
+  selectRemainingMatchCount,
+  selectTournamentStage,
+  type VoidCascade,
+} from './core/tournament';
 import { undoCrossesRoundBoundary, type RoundBoundaryCrossing } from './core/undo';
 import {
   abandonTournament,
@@ -2448,9 +2452,30 @@ export function App() {
     if (settled === null || winnerName === null || loserName === null) return;
 
     const games = record.winnerGames > 1 ? ` ${record.winnerGames}–${record.loserGames}` : '';
-    announce(
-      `${winnerName} beat ${loserName}${games}. ${selectRemainingMatchCount(settled)} matches left.`,
-    );
+
+    /*
+      THE COUNT BELONGS TO THE ROUND ROBIN, so only a round-robin result carries it —
+      WR-04. `selectRemainingMatchCount` counts the round-robin pair set and nothing else,
+      and a bracket match can only be recorded once the cut has been taken, which itself
+      requires the count to be zero. So every bracket result in the tournament was
+      announced as `"… 0 matches left."` — a true number about the wrong stage, which
+      reads as the tournament being over after the first semi-final.
+
+      Dropping the clause rather than swapping in a bracket count: the bracket's remaining
+      matches are not a number this app derives anywhere, and inventing one here would be
+      a second definition of "what is left to play" for `BracketGrid` to disagree with.
+
+      The stage is read from `settled`, AFTER both dispatches, for the same reason the
+      count is: a correction that voids the cut puts the tournament back in the round
+      robin, and the sentence must describe the stage the host is now in.
+
+      The bare plural is IN-02's and is deliberately left open.
+    */
+    const tail =
+      selectTournamentStage(settled) === 'roundRobin'
+        ? ` ${selectRemainingMatchCount(settled)} matches left.`
+        : '';
+    announce(`${winnerName} beat ${loserName}${games}.${tail}`);
 
     /*
       KEYED ON `voidsCut`, not on `matchCount` alone — WR-03.

@@ -868,4 +868,50 @@ describe('through the app', () => {
       'The cut was voided. The bracket is gone.',
     ]);
   });
+
+  it('announces a BRACKET result with no round-robin count attached', async () => {
+    /*
+      WR-04. `selectRemainingMatchCount` counts the round-robin pair set and nothing else,
+      and a bracket match can only be recorded after the cut — which itself requires that
+      count to be zero. So every bracket result in the tournament was announced as
+      `"… 0 matches left."`, a true number about the wrong stage, which reads as the
+      tournament being over after the first semi-final.
+    */
+    await openTournament('bracket');
+
+    // The final: round one is already recorded in the fixture, so it is the live card.
+    const cards = [...host.querySelectorAll<HTMLButtonElement>('.match-card')];
+    const final = cards.filter((card) => card.getAttribute('aria-disabled') === null).at(-1);
+    expect(final).toBeDefined();
+
+    await act(async () => {
+      final?.click();
+      await Promise.resolve();
+    });
+
+    const winner = host.querySelector<HTMLInputElement>('.match-record .segmented__input');
+    expect(winner).not.toBeNull();
+    act(() => {
+      if (winner !== null) {
+        winner.checked = true;
+        winner.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+
+    spoken.length = 0;
+
+    await act(async () => {
+      primary()?.click();
+      await Promise.resolve();
+    });
+
+    // It really is a bracket match, so the assertion below is about the right stage.
+    const appended = getDoc()?.log.at(-1) as { type: string; matchId: string } | undefined;
+    expect(appended?.type).toBe('tournament/matchRecorded');
+    expect(appended?.matchId.startsWith('br:')).toBe(true);
+
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]).not.toContain('matches left');
+    expect(spoken[0]).toMatch(/^\w+ beat \w+\.$/);
+  });
 });
