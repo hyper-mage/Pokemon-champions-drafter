@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import type { DraftState } from '../../core/model';
-import { selectStandings } from '../../core/tournament';
+import { isSameSet, selectStandings } from '../../core/tournament';
 
 import './TiebreakOrderer.css';
 
@@ -113,12 +113,6 @@ function moveName(direction: TiebreakMoveDirection, playerName: string): string 
  */
 function bodyFor(count: number): string {
   return `Head-to-head cannot separate ${count} players. Put them in the order you want and the bracket seeds from it.`;
-}
-
-/** Set equality over ids, for matching a working order to the block it came from. */
-function isSameSet(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((id) => b.includes(id)) && b.every((id) => a.includes(id));
 }
 
 export interface TiebreakOrdererProps {

@@ -28,6 +28,7 @@ import {
 } from '../../src/core/model';
 import {
   byeCountForCut,
+  isSameSet,
   selectBracket,
   selectCutSplitsTiedBlock,
   selectRemainingMatchCount,
@@ -1352,5 +1353,31 @@ describe('selectVoidCascade', () => {
     expect(first).toEqual(second);
     expect(first).not.toBe(second);
     expect(JSON.stringify(state)).toBe(before);
+  });
+});
+
+describe('isSameSet', () => {
+  /*
+    IN-01. Three copies of this predicate existed and one of them — `TiebreakOrderer`'s,
+    the surface where a HOST reorders a block by hand — had dropped the duplicate check,
+    so the two arrays below compared equal there and matched a working order to a block it
+    was not a permutation of. There is now one implementation and these are its properties.
+  */
+  it('ignores order', () => {
+    expect(isSameSet(['a', 'b', 'c'], ['c', 'a', 'b'])).toBe(true);
+    expect(isSameSet([], [])).toBe(true);
+  });
+
+  it('refuses two different sets of the same size', () => {
+    expect(isSameSet(['a', 'b'], ['a', 'c'])).toBe(false);
+    expect(isSameSet(['a'], ['a', 'b'])).toBe(false);
+  });
+
+  it('refuses a duplicated id rather than counting it twice', () => {
+    // The property the third copy had lost: `every` in both directions answers `true`
+    // here, because every member of each array appears in the other.
+    expect(isSameSet(['a', 'a', 'b'], ['a', 'b', 'b'])).toBe(false);
+    expect(isSameSet(['a', 'a', 'b'], ['a', 'a', 'b'])).toBe(false);
+    expect(isSameSet(['a', 'a'], ['a', 'b'])).toBe(false);
   });
 });

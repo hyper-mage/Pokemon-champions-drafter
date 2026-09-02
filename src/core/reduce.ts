@@ -81,6 +81,7 @@ import {
   selectSwapsRemaining,
 } from './selectors';
 import {
+  isSameSet,
   selectBracket,
   selectCutSplitsTiedBlock,
   selectRemainingMatchCount,
@@ -683,14 +684,6 @@ function bracketSlot(state: DraftState, matchId: string): BracketMatch | null {
     }
   }
   return null;
-}
-
-/** Set equality over player ids — the comparison `hostOrderFor` uses, asked here too. */
-function isSameSet(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  const seen = new Set(a);
-  if (seen.size !== a.length) return false;
-  return b.every((id) => seen.has(id));
 }
 
 /**

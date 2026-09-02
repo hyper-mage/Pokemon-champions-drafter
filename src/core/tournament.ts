@@ -390,8 +390,15 @@ function headToHead(
  *
  * A duplicated id inside an entry fails the size check rather than counting twice, so a
  * hand-edited `['a', 'a', 'b']` cannot pass itself off as a three-player block.
+ *
+ * EXPORTED, and this is the one copy (IN-01). `reduce.namesTiedBlock` and
+ * `TiebreakOrderer` ask the same question of the same ids, and the third copy had dropped
+ * the size check above — so `['a', 'a', 'b']` and `['a', 'b', 'b']` compared equal on the
+ * one surface that lets a host reorder a block by hand. Set equality over player ids is
+ * core's question rather than a component's, and a predicate whose safety property holds
+ * at two of its three call sites is worse than no property at all.
  */
-function isSameSet(a: readonly string[], b: readonly string[]): boolean {
+export function isSameSet(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
 
   const members = new Set(a);
