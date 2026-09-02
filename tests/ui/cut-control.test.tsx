@@ -354,9 +354,25 @@ describe('the reasons it refuses', () => {
     );
   });
 
-  it('allows a cut that falls between two blocks', () => {
+  it('still refuses when the block sits wholly INSIDE the cut and the line splits nothing', () => {
+    // Six cut to five. The line falls below the whole p3/p4/p5 block, so nothing is
+    // split — and the bracket still has to seed those three, and `seedOrder(8)` gives
+    // seed 3 a bye. An unresolved seat inside the cut is the refusal, not the geometry
+    // of the line.
     draw(stateWith(TIED_ACROSS_FOUR));
     type('5');
+
+    expect(action().getAttribute('aria-disabled')).toBe('true');
+    expect(reason()).toBe(
+      'The cut at 5 splits a tie. Order the tied players yourself before you take it.',
+    );
+  });
+
+  it('allows a cut that leaves the whole unresolved block below it', () => {
+    // Ada and Bo are separated on record. A cut at 2 seeds only them, so nothing the
+    // chain failed to order reaches the bracket.
+    draw(stateWith(TIED_ACROSS_FOUR));
+    type('2');
 
     expect(action().getAttribute('aria-disabled')).toBe(null);
     expect(reason()).toBeNull();

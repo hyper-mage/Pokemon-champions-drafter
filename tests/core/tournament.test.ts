@@ -1090,10 +1090,19 @@ describe('selectCutSplitsTiedBlock', () => {
     expect(selectCutSplitsTiedBlock(state, 3)).toBe(true);
   });
 
-  it('is false when the two rows either side of the line hold different positions', () => {
+  it('is false when the whole unresolved block sits BELOW the cut', () => {
+    // p1 and p2 are resolved, so a cut at 2 seeds nobody the chain could not order. The
+    // p3/p4/p5 block is outside the bracket entirely and orders nothing in it.
     const state = tiedTable();
     expect(selectCutSplitsTiedBlock(state, 2)).toBe(false);
-    expect(selectCutSplitsTiedBlock(state, 5)).toBe(false);
+  });
+
+  it('is true when the whole unresolved block sits INSIDE the cut, unsplit', () => {
+    // Six cut to five: nothing is split, and that is exactly why the narrow reading of
+    // this predicate missed it. `bracketSize(5) = 8` and `seedOrder(8)` gives seed 3 a
+    // bye, so which of p3/p4/p5 skips a round would be decided by `config.players` order.
+    const state = tiedTable();
+    expect(selectCutSplitsTiedBlock(state, 5)).toBe(true);
   });
 
   it('is false once the host has ordered the same block by hand', () => {
@@ -1110,8 +1119,19 @@ describe('selectCutSplitsTiedBlock', () => {
     expect(selectCutSplitsTiedBlock(state, 3)).toBe(false);
   });
 
-  it('is false when n is the whole field — there is no row below to split against', () => {
-    expect(selectCutSplitsTiedBlock(tiedTable(), 6)).toBe(false);
+  it('is true when n is the whole field — byes still come out of the seed order', () => {
+    // There is no row below to split against, and it does not matter: all six advance,
+    // `bracketSize(6) = 8` hands out two byes, and the tied block still decides who
+    // gets one. The whole field is not an exemption from resolution.
+    expect(selectCutSplitsTiedBlock(tiedTable(), 6)).toBe(true);
+  });
+
+  it('is false at the whole field once nothing is unresolved', () => {
+    // The counterpart, so the rule above is not just "always true at n === rows.length".
+    const config = configFor(4);
+    const state = completeState(config, { matchResults: distinctRecords(config) });
+    expect(selectStandings(state).every((row) => row.decidedBy !== 'tied')).toBe(true);
+    expect(selectCutSplitsTiedBlock(state, 4)).toBe(false);
   });
 
   it('is false out of range either way', () => {

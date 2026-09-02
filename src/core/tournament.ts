@@ -915,8 +915,7 @@ export function selectTournamentLocked(state: DraftState): boolean {
 }
 
 /**
- * Whether a cut of the top `n` would slice through a block nobody has ordered —
- * Pitfall 4.
+ * Whether a cut of the top `n` would seed a block nobody has ordered — Pitfall 4.
  *
  * ## The failure this prevents
  *
@@ -933,6 +932,24 @@ export function selectTournamentLocked(state: DraftState): boolean {
  *
  * The warning sign that it has been got wrong is specific: a bracket whose seeds 3 and
  * 4 swap between two folds of the same document (T-05-26).
+ *
+ * ## Any unresolved row INSIDE the cut, not only one the line splits
+ *
+ * The narrower reading — the two rows straddling the line share a position — misses the
+ * case one step further in, and it is the same failure. At six players cut to five, a
+ * p3/p4/p5 block sits wholly inside the cut: nothing is split, so the narrow gate passes,
+ * and then `selectSeeding` hands the bracket the standings order, which inside a tied
+ * block is `config.players` order. `bracketSize(5) = 8` and `seedOrder(8) =
+ * [1,8,4,5,2,7,3,6]`, so seed 3 draws a BYE into the semi-final while seeds 4 and 5 play
+ * each other. Which of the three tied players gets a free round is then decided by their
+ * position in the config screen's player list.
+ *
+ * So the question is resolution inside the cut, not the geometry of the line. A tied row
+ * BELOW the cut is outside it and answers `false`: it orders nobody the bracket seeds.
+ *
+ * `n === rows.length` — the whole field advances — is inside this rule rather than exempt
+ * from it. There is no row below to split against, but byes are still handed out by seed
+ * order, so an unresolved block is exactly as arbitrary there as anywhere else.
  *
  * ## `'hostOrder'` is a resolution, and that is why this reads `decidedBy`
  *
@@ -962,21 +979,20 @@ export function selectCutSplitsTiedBlock(state: DraftState, n: number): boolean 
   if (selectRemainingMatchCount(state) > 0) return false;
 
   const rows = selectStandings(state);
-  // `n === rows.length` is the whole field: there is no row `n + 1` to split against.
-  if (n < 1 || n >= rows.length) return false;
+  // `n === rows.length` is in range: the whole field still gets a seed order, and byes
+  // come out of it, so an unresolved block there is as arbitrary as one at the line.
+  if (n < 1 || n > rows.length) return false;
 
-  const lastIn = rows[n - 1];
-  const firstOut = rows[n];
-  if (lastIn === undefined || firstOut === undefined) return false;
+  // Any unresolved row with a seat inside the cut, whether or not the line cuts its
+  // block. Seed order inside the cut decides the byes, so an unordered block is as
+  // arbitrary at seeds 3-4-5 as it is at the boundary. A `'hostOrder'` row is resolved
+  // and never matches, which is the same rule the narrower reading stated by exception.
+  for (let i = 0; i < n; i++) {
+    const row = rows[i];
+    if (row !== undefined && row.decidedBy === 'tied') return true;
+  }
 
-  // Different places, so the line falls between two blocks rather than inside one.
-  if (lastIn.position !== firstOut.position) return false;
-
-  // Explicit, and not merely unreachable: a host-ordered block is RESOLVED, so a cut
-  // through it is allowed however the numbering happens to read.
-  if (lastIn.decidedBy === 'hostOrder' || firstOut.decidedBy === 'hostOrder') return false;
-
-  return lastIn.decidedBy === 'tied' && firstOut.decidedBy === 'tied';
+  return false;
 }
 
 /**
