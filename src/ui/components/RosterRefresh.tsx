@@ -44,6 +44,13 @@ import './RosterRefresh.css';
  * consequence belongs to the surface that was blocked by the missing roster, which is the
  * drift notice in `app.tsx`. This region returns to idle and the caller is told instead.
  * Inventing a sentence would put a string on screen that no contract owns.
+ *
+ * A REFUSED import is a different matter, and `conflict` is the one sentence added beyond
+ * the contract's nine (WR-07). `readRosterFile` now declines a file that would replace a
+ * regulation this build already holds under a different checksum, and a refusal with no
+ * sentence is the failure this component exists to prevent — the host presses the button,
+ * nothing visible happens, and the roster they came to import is silently not there. It is
+ * NOT the rejection sentence: the file is a roster this app can read.
  */
 
 /** Verbatim from 05-UI-SPEC §Copywriting → Roster group. */
@@ -79,6 +86,19 @@ export const IMPORT_REJECTED_SENTENCE =
   'That file is not a roster snapshot this app can read. Choose a roster JSON exported by this project.';
 
 /**
+ * The one sentence this file owns beyond 05-UI-SPEC §Copywriting's nine — see the doc
+ * block, and WR-07 for why the outcome exists at all.
+ *
+ * It names the regulation because that is the whole content of the problem: the file and
+ * the app disagree about what `M-B` contains, and a sentence that did not say which
+ * regulation would leave the host guessing which of their files was refused. The next
+ * action is the one REFR-02 is actually for.
+ */
+export function importConflictSentence(regulationLabel: string): string {
+  return `That file is a different ${regulationLabel} roster from the one this app already has. Choose a roster for a regulation this app does not ship.`;
+}
+
+/**
  * What the result region is showing.
  *
  * Six variants and five sentences: `idle` renders no region at all, which is 05-UI-SPEC
@@ -92,7 +112,8 @@ type Result =
   | { kind: 'alreadyCurrent'; label: string }
   | { kind: 'updated'; label: string; validUntil: string }
   | { kind: 'failed' }
-  | { kind: 'rejected' };
+  | { kind: 'rejected' }
+  | { kind: 'conflict'; label: string };
 
 function sentenceFor(result: Result): string | null {
   switch (result.kind) {
@@ -108,6 +129,8 @@ function sentenceFor(result: Result): string | null {
       return FAILED_SENTENCE;
     case 'rejected':
       return IMPORT_REJECTED_SENTENCE;
+    case 'conflict':
+      return importConflictSentence(result.label);
   }
 }
 
@@ -204,16 +227,24 @@ export function RosterRefresh({
 
       if (file === undefined) return;
 
-      void readRosterFile(file).then((bundle) => {
-        if (bundle === null) {
+      void readRosterFile(file).then((outcome) => {
+        if (outcome.kind === 'rejected') {
           setResult({ kind: 'rejected' });
+          return;
+        }
+
+        // A refusal, and a DIFFERENT one — the file is readable, it just is not one this
+        // app may adopt under a label it already holds (WR-07). Nothing was registered,
+        // so `onImported` is not called: the caller is told about adoptions only.
+        if (outcome.kind === 'conflict') {
+          setResult({ kind: 'conflict', label: outcome.regulation });
           return;
         }
 
         // Back to idle rather than to a sentence. See the doc block: the contract has no
         // string for this, because an imported roster changes nothing on this screen.
         setResult({ kind: 'idle' });
-        onImported?.(bundle);
+        onImported?.(outcome.bundle);
       });
     },
     [onImported],

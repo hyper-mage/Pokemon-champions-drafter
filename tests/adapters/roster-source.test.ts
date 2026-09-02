@@ -681,9 +681,9 @@ describe('readRosterFile', () => {
     await mod.loadRoster();
     const before = calls.length;
 
-    const bundle = await mod.readRosterFile(rosterFile(nextSnapshot()));
+    const outcome = await mod.readRosterFile(rosterFile(nextSnapshot()));
 
-    expect(bundle?.snapshot.regulation).toBe('M-C');
+    expect(outcome.kind === 'adopted' && outcome.bundle.snapshot.regulation).toBe('M-C');
     // REFR-02's entire point: this is the path that works on a laptop with no network,
     // which is why the refresh failure copy names it.
     expect(calls.length).toBe(before);
@@ -692,9 +692,11 @@ describe('readRosterFile', () => {
   it('carries the sprite map the app already holds', async () => {
     await mod.loadRoster();
 
-    const bundle = await mod.readRosterFile(rosterFile(nextSnapshot()));
+    const outcome = await mod.readRosterFile(rosterFile(nextSnapshot()));
 
-    expect(bundle?.spriteMeta.byRosterId['abomasnow']?.file).toBe('460.png');
+    expect(
+      outcome.kind === 'adopted' && outcome.bundle.spriteMeta.byRosterId['abomasnow']?.file,
+    ).toBe('460.png');
   });
 
   it('adopts the file, so a document naming that regulation resolves', async () => {
@@ -723,14 +725,16 @@ describe('readRosterFile', () => {
 
     expect(
       await mod.readRosterFile(rosterFile({ ...nextSnapshot(), counts: makeCounts(1) })),
-    ).toBeNull();
+    ).toEqual({ kind: 'rejected' });
     expect(mod.resolveSnapshot('M-C')).toBeNull();
   });
 
   it('refuses a file that is not JSON', async () => {
     await mod.loadRoster();
 
-    expect(await mod.readRosterFile(rosterFile('not json at all'))).toBeNull();
+    expect(await mod.readRosterFile(rosterFile('not json at all'))).toEqual({
+      kind: 'rejected',
+    });
   });
 
   it('refuses an oversized file WITHOUT reading it', async () => {
@@ -744,7 +748,7 @@ describe('readRosterFile', () => {
       },
     } as unknown as File;
 
-    expect(await mod.readRosterFile(huge)).toBeNull();
+    expect(await mod.readRosterFile(huge)).toEqual({ kind: 'rejected' });
     // `File.size` is metadata available before a single byte is read, so a 2 GB file is
     // never brought into memory at all (`file-io.ts:130-136`).
     expect(read).toBe(false);
@@ -754,6 +758,43 @@ describe('readRosterFile', () => {
     // Nothing loaded. The sprite map ships with the app and is precached, so this
     // state means the page-load path itself failed — which importing a roster file
     // cannot repair.
-    expect(await mod.readRosterFile(rosterFile(nextSnapshot()))).toBeNull();
+    expect(await mod.readRosterFile(rosterFile(nextSnapshot()))).toEqual({
+      kind: 'rejected',
+    });
+  });
+
+  /*
+    WR-07. `register` overwrites both registry keys unconditionally, and `readRosterFile`
+    called it with no check that the label was already held. A file whose `regulation`
+    field read `M-B` therefore replaced the committed, checksum-pinned `M-B` snapshot for
+    the rest of the session — re-pointing `resolveSnapshot`, the recap's species names,
+    `selectSlotStone` and the export text — with nothing on screen to say so.
+
+    REFR-02's documented intent is narrower: make an UNKNOWN regulation readable.
+  */
+  it('refuses a file that would replace a held regulation under a different checksum', async () => {
+    await mod.loadRoster();
+    const before = mod.resolveSnapshot('M-B');
+
+    const impostor = { ...nextSnapshot(), regulation: 'M-B' };
+    const outcome = await mod.readRosterFile(rosterFile(impostor));
+
+    expect(outcome).toEqual({ kind: 'conflict', regulation: 'M-B' });
+    // The committed snapshot is untouched: same object, same checksum, same rows.
+    expect(mod.resolveSnapshot('M-B')).toBe(before);
+    expect(mod.resolveSnapshot('M-B')?.snapshot.checksum).toBe(before?.snapshot.checksum);
+  });
+
+  it('allows re-importing the very roster this build already holds', async () => {
+    // The label collides and the CHECKSUM does not, so it is the same roster. Refusing
+    // it would make an honest recovery attempt read as an error.
+    await mod.loadRoster();
+    const held = mod.resolveSnapshot('M-B');
+    expect(held).not.toBeNull();
+
+    const outcome = await mod.readRosterFile(rosterFile(held?.snapshot));
+
+    expect(outcome.kind).toBe('adopted');
+    expect(mod.resolveSnapshot('M-B')?.snapshot.checksum).toBe(held?.snapshot.checksum);
   });
 });

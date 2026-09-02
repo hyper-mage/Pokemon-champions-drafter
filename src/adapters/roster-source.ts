@@ -583,6 +583,12 @@ let defaultRegulationId: string | null = null;
  * Called only after a snapshot has fully resolved — a failed load must leave nothing
  * behind, because a half-registered regulation would be indistinguishable from a
  * complete one at every later read.
+ *
+ * It overwrites UNCONDITIONALLY, and that is right for the two fetch paths: adopting a
+ * newer snapshot of a regulation the manifest publishes is what a refresh IS. Whether a
+ * given adoption is allowed at all is the caller's question, and `readRosterFile` — the
+ * one caller whose input did not come from the manifest — answers it before calling
+ * here (WR-07).
  */
 function register(id: string, bundle: RosterBundle): void {
   registry.set(id, bundle);
@@ -782,6 +788,20 @@ export async function refreshRoster(): Promise<RefreshOutcome> {
 }
 
 /**
+ * What reading a host-supplied roster file produced.
+ *
+ * Three arms rather than `RosterBundle | null`, because `conflict` is not a rejection:
+ * the file IS a roster this app can read, and reporting it with the rejection sentence
+ * would send the host away to find a different export of a file that is already valid.
+ * `RosterRefresh` renders one sentence per arm.
+ */
+export type RosterFileOutcome =
+  | { kind: 'adopted'; bundle: RosterBundle }
+  | { kind: 'rejected' }
+  /** `regulation` is the SNAPSHOT's own label, which is what the sentence names. */
+  | { kind: 'conflict'; regulation: string };
+
+/**
  * REFR-02. Take a roster the host chose in a file picker. No network, at all.
  *
  * This is the path that works on a laptop with no connection, which is why the refresh
@@ -794,32 +814,53 @@ export async function refreshRoster(): Promise<RefreshOutcome> {
  * It does NOT become the default. A host importing a roster to read an old night must not
  * silently re-point new tournaments at it; 05-07 owns any deliberate switch.
  *
+ * ## A COLLISION with a regulation already held is refused — WR-07
+ *
+ * REFR-02's documented intent is narrow: make an UNKNOWN regulation readable. Registering
+ * unconditionally did more than that. A file whose `regulation` field reads `M-B` replaced
+ * the committed, checksum-pinned `M-B` snapshot for the rest of the session — for
+ * `resolveSnapshot`, for the recap's species names, for `selectSlotStone`, and therefore
+ * for the Showdown and pokebase export text. Nothing was compared against the manifest's
+ * published `checksum`, and the contract had no sentence for a successful import, so there
+ * was no notice either: the roster under a filed night changed and nothing said so.
+ *
+ * The comparison is the CHECKSUM, not the label alone. Re-importing the very file this
+ * build ships is a no-op worth allowing — it is the same roster — and refusing it would
+ * make an honest recovery attempt look like an error.
+ *
  * Validation is `parseSnapshotStrict` — the SAME validator the fetch path uses. One
  * validator with two entry points, because a second one would be free to disagree about
  * what a roster is, and this input is the least trusted of the two.
  */
-export async function readRosterFile(file: File): Promise<RosterBundle | null> {
+export async function readRosterFile(file: File): Promise<RosterFileOutcome> {
   const spriteMeta = resolvedSpriteMeta;
   // The sprite map ships with the app and is precached, so an empty one here means the
   // page-load path itself failed — which importing a roster file cannot repair.
-  if (spriteMeta === null) return null;
+  if (spriteMeta === null) return { kind: 'rejected' };
 
   // The size gate runs on metadata, before a single byte is read (`file-io.ts:130-140`).
   const read = await readJsonFile(file);
-  if (!read.ok) return null;
+  if (!read.ok) return { kind: 'rejected' };
 
   let value: unknown;
   try {
     // No reviver, exactly as on the fetch path.
     value = JSON.parse(read.text) as unknown;
   } catch {
-    return null;
+    return { kind: 'rejected' };
   }
 
   const snapshot = parseSnapshotStrict(value);
-  if (snapshot === null) return null;
+  if (snapshot === null) return { kind: 'rejected' };
+
+  // Refused BEFORE `register`, which has no opinion of its own — the fetch paths want an
+  // unconditional overwrite and this one does not.
+  const existing = registry.get(snapshot.regulation);
+  if (existing !== undefined && existing.snapshot.checksum !== snapshot.checksum) {
+    return { kind: 'conflict', regulation: snapshot.regulation };
+  }
 
   const bundle: RosterBundle = { snapshot, spriteMeta };
   register(snapshot.regulation, bundle);
-  return bundle;
+  return { kind: 'adopted', bundle };
 }

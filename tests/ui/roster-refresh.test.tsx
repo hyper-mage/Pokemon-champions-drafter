@@ -71,6 +71,7 @@ import {
   currentRosterLine,
   FAILED_SENTENCE,
   IMPORT_LABEL,
+  importConflictSentence,
   IMPORT_REJECTED_SENTENCE,
   RosterRefresh,
   updatedSentence,
@@ -279,7 +280,7 @@ describe('the five refresh states', () => {
   });
 
   it('says what a refused file is and what to choose instead', async () => {
-    adapter.readRosterFile.mockResolvedValue(null);
+    adapter.readRosterFile.mockResolvedValue({ kind: 'rejected' });
     mount();
 
     await chooseFile('not-a-roster.json');
@@ -288,6 +289,27 @@ describe('the five refresh states', () => {
       'That file is not a roster snapshot this app can read. Choose a roster JSON exported by this project.',
     );
     expect(resultRegion()?.textContent).toBe(IMPORT_REJECTED_SENTENCE);
+  });
+
+  it('says which regulation collided when a file would replace one already held', async () => {
+    // WR-07. Not the rejection sentence: the file IS a roster this app can read, and
+    // sending the host away to find a different export of a valid file would be wrong.
+    // Before this, a colliding file was adopted SILENTLY — re-pointing the recap, the
+    // stones and the export text at a snapshot the manifest never published.
+    adapter.readRosterFile.mockResolvedValue({ kind: 'conflict', regulation: 'M-B' });
+
+    const onImported = vi.fn();
+    mount({ onImported });
+
+    await chooseFile('roster.mb.json');
+
+    expect(resultRegion()?.textContent).toBe(
+      'That file is a different M-B roster from the one this app already has. Choose a roster for a regulation this app does not ship.',
+    );
+    expect(resultRegion()?.textContent).toBe(importConflictSentence('M-B'));
+
+    // Nothing was registered, so the caller is told nothing.
+    expect(onImported).not.toHaveBeenCalled();
   });
 
   it('replaces the sentence on each attempt rather than stacking them', async () => {
@@ -305,7 +327,7 @@ describe('the five refresh states', () => {
 
 describe('the file input reset', () => {
   it('clears its value so the same path fires change a second time', async () => {
-    adapter.readRosterFile.mockResolvedValue(null);
+    adapter.readRosterFile.mockResolvedValue({ kind: 'rejected' });
     mount();
 
     await chooseFile('not-a-roster.json');
@@ -314,7 +336,7 @@ describe('the file input reset', () => {
   });
 
   it('shows the rejection again when the same refused file is chosen twice', async () => {
-    adapter.readRosterFile.mockResolvedValue(null);
+    adapter.readRosterFile.mockResolvedValue({ kind: 'rejected' });
     mount();
 
     await chooseFile('not-a-roster.json');
@@ -359,7 +381,7 @@ describe('what the group reports to its caller', () => {
 
   it('hands on an imported roster and returns the region to idle', async () => {
     const imported = bundle('M-A', '2026-06-17');
-    adapter.readRosterFile.mockResolvedValue(imported);
+    adapter.readRosterFile.mockResolvedValue({ kind: 'adopted', bundle: imported });
 
     const onImported = vi.fn();
     const onRefreshed = vi.fn();
