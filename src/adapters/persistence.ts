@@ -29,7 +29,7 @@
 
 import { computed, signal, type ReadonlySignal } from '@preact/signals';
 
-import { isValidTournament } from '../core/import-guard';
+import { buildTournament } from '../core/import-guard';
 import { migrate, SUPPORTED_SCHEMA_VERSIONS } from '../core/migrate';
 import { SCHEMA_VERSION, type TournamentDoc } from '../core/model';
 import { now } from './clock';
@@ -246,7 +246,7 @@ export function load(): TournamentDoc | null {
   if (!isPlainRecord(parsed)) return null;
 
   // The WRAPPER's version, which is a step earlier than it looks: this runs before
-  // `isValidTournament` and therefore before `migrate` sees anything. Comparing it against
+  // `buildTournament` and therefore before `migrate` sees anything. Comparing it against
   // the current version dropped every Phase 1 record here regardless of what the migration
   // had to say about the document inside, and the host's symptom was `Resume saved draft`
   // silently never appearing. A wrapper version this build has never supported still
@@ -267,36 +267,38 @@ export function load(): TournamentDoc | null {
   // A stored record and a hostile file are the same kind of input arriving by different
   // routes: both can be truncated, hand-edited in devtools, or written by a build this
   // one does not know. Before plan 01-10 this file carried a provisional check whose bar
-  // was only "will `fold` survive being handed this"; `isValidTournament` raises it to
-  // "is this a tournament", and — the part the local check could not do at all — rejects
-  // an object carrying `__proto__`, `constructor` or `prototype` as own properties.
-  // `JSON.parse` above runs without a reviver, so that structural check is the only thing
-  // between a poisoned localStorage entry and the store.
-  const stored = parsed['doc'];
-  if (!isValidTournament(stored)) return null;
+  // was only "will `fold` survive being handed this"; the guard raises it to "is this a
+  // tournament", and — the part the local check could not do at all — rejects an object
+  // carrying `__proto__`, `constructor` or `prototype` as own properties. `JSON.parse`
+  // above runs without a reviver, so that structural check is the only thing between a
+  // poisoned localStorage entry and the store.
+  //
+  // `buildTournament`, not `isValidTournament` (WR-06). The predicate builds a sanitised
+  // document to decide its answer and DISCARDS it; narrowing `parsed['doc']` and then
+  // using `parsed['doc']` meant the raw parse output reached the store, unknown own
+  // properties and all, and travelled back out on the next save and the next JSON export.
+  // The builder returns what the allow-list actually rebuilt, which is what the file path
+  // has always adopted (`parseTournamentFile`) — so all three read paths are now the same
+  // pair in the same order.
+  const rebuilt = buildTournament(parsed['doc']);
+  if (rebuilt === null) return null;
 
   // Continue the sequence rather than restarting it, so a reload cannot make this tab
   // look older than the record it just read.
   const storedGeneration = parsed['generation'];
   generation = Number.isSafeInteger(storedGeneration) ? (storedGeneration as number) : 0;
 
-  // Migrated here, and not merely validated, because `isValidTournament` is a PREDICATE:
-  // it calls `migrate` to decide the answer and then throws the migrated document away
-  // (`import-guard.ts`). Returning `stored` would hand back the document at the version it
-  // was written at — and `adoptTournament` would refuse it one call later, so a Phase 1
-  // save would pass every check in this function and still fail to open.
+  // Migrated as a second step, because the builder deliberately does not ask the version
+  // question: "this is not a tournament" and "this is a tournament I cannot read" are
+  // different sentences on screen. Returning `rebuilt` alone would hand back the document
+  // at the version it was written at — and `adoptTournament` would refuse it one call
+  // later, so a Phase 1 save would pass every check in this function and still fail to
+  // open.
   //
-  // `isValidTournament` already established this cannot fail, and it is still asked rather
-  // than asserted: a `null` return is this function's whole vocabulary for "nothing usable
-  // here", and inventing a throw for the impossible case would give callers a second
-  // failure mode to handle.
-  //
-  // Note what `stored` is: the parsed object itself, narrowed rather than reconstructed. A
-  // record that passes carries its own unknown fields into the store and back out on the
-  // next save, whereas the FILE path returns a document rebuilt field by field and drops
-  // them. Both refuse the poison keys, which is the part that matters; the file path is
-  // stricter because its input arrived from outside this browser.
-  const migrated = migrate(stored);
+  // The result is asked rather than asserted: a `null` return is this function's whole
+  // vocabulary for "nothing usable here", and inventing a throw for a case that should not
+  // arise would give callers a second failure mode to handle.
+  const migrated = migrate(rebuilt);
   if (!migrated.ok) return null;
 
   return migrated.doc;

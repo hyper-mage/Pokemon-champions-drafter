@@ -1241,6 +1241,24 @@ export function isValidTournament(value: unknown): value is TournamentDoc {
 }
 
 /**
+ * The rebuilt tournament, or `null` — the BUILDER half, for a caller that keeps the result.
+ *
+ * {@link isValidTournament} narrows the value it was handed and discards the document it
+ * built to decide the answer, so a caller that then uses the original is holding the raw
+ * parsed object: every unvalidated own property on the document, on `config`, on `rng` and
+ * on every log entry survives. That is what `library.readEntry` and `persistence.load` were
+ * doing (WR-06). A caller that intends to KEEP the document asks for it here instead, and
+ * the allow-list in `buildDoc` is the only thing that leaves.
+ *
+ * The version question is still asked separately, by `migrate`, for the reason `buildDoc`
+ * records: "this is not a tournament" and "this is a tournament I cannot read" are
+ * different sentences on screen.
+ */
+export function buildTournament(value: unknown): TournamentDoc | null {
+  return buildDoc(value);
+}
+
+/**
  * Validate a file's text and hand back a tournament, or a reason and nothing.
  *
  * `byteLength` is measured by the adapter that read the file, before the text was ever

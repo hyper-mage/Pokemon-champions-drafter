@@ -241,6 +241,39 @@ describe('listLibrary', () => {
     expect(listed[0]?.doc.schemaVersion).toBe(SCHEMA_VERSION);
     expect(listed[0]?.doc.config.matchMetric).toBe('pokemonLeft');
   });
+
+  it('adopts the REBUILT document, so an unknown own property never reaches the store', () => {
+    // WR-06: `isValidTournament` is a predicate — it builds a sanitised document to decide
+    // its answer and discards it. Reading the entry with the predicate and then migrating
+    // the raw parse output handed the store the parsed object itself, because `migrate`
+    // returns a current-schema document by identity. The extra key then travelled into
+    // `docSignal`, into the autosave and into the next JSON export.
+    const doc = makeDoc('rebuilt') as unknown as Record<string, unknown>;
+    seed([
+      {
+        filedAt: 100,
+        doc: {
+          ...doc,
+          smuggled: 'nope',
+          config: { ...(doc['config'] as Record<string, unknown>), smuggledConfig: 'nope' },
+        },
+      },
+    ]);
+
+    const listed = listLibrary();
+    expect(listed).toHaveLength(1);
+
+    const restored = listed[0]?.doc as unknown as Record<string, unknown>;
+    expect(Object.keys(restored).sort()).toEqual([
+      'config',
+      'createdAt',
+      'id',
+      'log',
+      'rng',
+      'schemaVersion',
+    ]);
+    expect('smuggledConfig' in (restored['config'] as Record<string, unknown>)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

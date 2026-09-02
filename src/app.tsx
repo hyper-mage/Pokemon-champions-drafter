@@ -2584,7 +2584,7 @@ export function App() {
    * description line, and it is what remains if the record has been removed under us.
    *
    * A refused adoption leaves the host on the landing screen rather than dropping them on
-   * an empty draft. `load()` has already run `isValidTournament` and `migrate`, so this
+   * an empty draft. `load()` has already run `buildTournament` and `migrate`, so this
    * failing means the document is from a build this one cannot read — and the landing
    * screen, with `Import JSON…` on it, is the only place that offers a way out.
    */

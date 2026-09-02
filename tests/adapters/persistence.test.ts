@@ -338,6 +338,41 @@ describe('load', () => {
 
     expect(storage.backing.get(STORAGE_KEY)).toBe(raw);
   });
+
+  it('returns the REBUILT document, so an unknown own property never reaches the store', () => {
+    // WR-06: `isValidTournament` is a predicate — it builds a sanitised document to decide
+    // its answer and discards it. Narrowing `parsed['doc']` and then migrating
+    // `parsed['doc']` handed back the raw parse output, because `migrate` returns a
+    // current-schema document by identity. A hand-edited localStorage key could therefore
+    // put arbitrary own properties into `docSignal`, the autosave and the next JSON
+    // export. The FILE path has always adopted `migrate(buildDoc(parsed)).doc`.
+    const doc = makeDoc() as unknown as Record<string, unknown>;
+    storage.backing.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        schemaVersion: SCHEMA_VERSION,
+        generation: 1,
+        savedAt: 0,
+        doc: {
+          ...doc,
+          smuggled: 'nope',
+          config: { ...(doc['config'] as Record<string, unknown>), smuggledConfig: 'nope' },
+        },
+      }),
+    );
+
+    const loaded = load() as unknown as Record<string, unknown>;
+    expect(loaded).not.toBeNull();
+    expect(Object.keys(loaded).sort()).toEqual([
+      'config',
+      'createdAt',
+      'id',
+      'log',
+      'rng',
+      'schemaVersion',
+    ]);
+    expect('smuggledConfig' in (loaded['config'] as Record<string, unknown>)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

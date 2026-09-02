@@ -35,7 +35,7 @@
  * the download rather than treating a filed tournament as safe.
  */
 
-import { isValidTournament } from '../core/import-guard';
+import { buildTournament } from '../core/import-guard';
 import { migrate } from '../core/migrate';
 import { type TournamentDoc } from '../core/model';
 import { now } from './clock';
@@ -101,16 +101,24 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * One stored entry, validated and migrated, or `null`.
+ * One stored entry, rebuilt and migrated, or `null`.
  *
- * The `isValidTournament` then `migrate` pair is the SAME pair `persistence.load` runs at
- * `persistence.ts:272-300`, not a second validator standing beside it. Both are needed and
- * in that order: `isValidTournament` is a predicate that calls `migrate` to decide its
- * answer and then throws the migrated document away, so validating alone would hand back a
- * document at the version it was written at and the store would refuse it one call later.
+ * The `buildTournament` then `migrate` pair is the SAME pair `persistence.load` runs and
+ * the same pair `parseTournamentFile` runs, not a third validator standing beside them.
+ * Both calls are needed and in that order: building alone would hand back a document at
+ * the version it was written at, and the store would refuse it one call later.
+ *
+ * **The builder, not the predicate** (WR-06). This read `isValidTournament(stored)` and
+ * then `migrate(stored)` — and `isValidTournament` is a PREDICATE that builds a sanitised
+ * document to decide its answer and throws it away. So what reached the store was the raw
+ * `JSON.parse` output: for a current-schema entry `migrate` returns its argument by
+ * identity, and every unvalidated own property on the document, on `config`, on `rng` and
+ * on every log entry travelled into `docSignal`, into the autosave and into the next JSON
+ * export. The function was already scrupulous about exactly this one line lower, for the
+ * WRAPPER, while handing the DOCUMENT through unrebuilt.
  *
  * `JSON.parse` above runs without a reviver, so the structural check inside
- * `isValidTournament` is the only thing between a poisoned library entry and the store —
+ * `buildTournament` is the only thing between a poisoned library entry and the store —
  * including an object carrying `__proto__`, `constructor` or `prototype` as an own
  * property.
  */
@@ -120,14 +128,15 @@ function readEntry(value: unknown): LibraryEntry | null {
   const filedAt = value['filedAt'];
   if (!Number.isSafeInteger(filedAt)) return null;
 
-  const stored = value['doc'];
-  if (!isValidTournament(stored)) return null;
+  const rebuilt = buildTournament(value['doc']);
+  if (rebuilt === null) return null;
 
-  const migrated = migrate(stored);
+  const migrated = migrate(rebuilt);
   if (!migrated.ok) return null;
 
-  // Rebuilt field by field rather than returned as parsed, so a wrapper carrying extra
-  // keys cannot travel any further than this line. `view-prefs.ts:96-98`'s posture.
+  // Rebuilt field by field rather than returned as parsed, so neither a wrapper nor a
+  // document carrying extra keys can travel any further than this line.
+  // `view-prefs.ts:96-98`'s posture.
   return { filedAt: filedAt as number, doc: migrated.doc };
 }
 
