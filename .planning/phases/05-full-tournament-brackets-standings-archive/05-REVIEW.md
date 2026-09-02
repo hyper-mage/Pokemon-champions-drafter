@@ -89,7 +89,36 @@ findings:
   warning: 11
   info: 5
   total: 17
-status: issues_found
+fixed:
+  critical: 1
+  warning: 11
+  info: 0
+  total: 12
+remaining:
+  info: 5
+fix_commits:
+  CR-01: d8597ca
+  WR-01: 01070af
+  WR-02: 0a4c9de
+  WR-09: c84b26c
+  WR-05: 5fc9c4c
+  WR-06: 064e1dd
+  WR-11: 1b33e43
+  WR-07: 2b7cdf8
+  WR-08: e246252
+  WR-03: d4c865f
+  WR-04: 7861bcc
+  WR-10: 9caa640
+carried_forward:
+  - "WR-09 residue: TiebreakOrderer renders for the first unresolved block wherever it sits, so a
+    block entirely BELOW the chosen cut leaves Take the cut correctly live and accent-filled while
+    Confirm this order is also on screen. Not transient. Needs a decision about whether the orderer
+    should render at all for a below-cut block."
+  - "WR-02 copy: `The cut at {n} splits a tie.` is now inaccurate when the tie is wholly inside the
+    cut -- nothing is split. Ruled verbatim by 05-06 and greppable by an 05-11 plan gate, so changing
+    it is a plan-copy decision. Its next action (Order the tied players yourself) is still correct."
+  - "IN-01..IN-05 deliberately unfixed -- outside --fix's default Critical+Warning scope."
+status: fixed_with_open_info
 ---
 
 # Phase 5: Code Review Report
