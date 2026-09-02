@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: milestone_complete
 stopped_at: Milestone complete (Phase 05 was final phase)
-last_updated: 2026-09-01T22:37:29.104Z
-last_activity: 2026-09-01 -- Phase 05 execution started
+last_updated: 2026-09-02T15:05:00.000Z
+last_activity: 2026-09-02 -- v1.0 milestone audit complete (status tech_debt)
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 62
   completed_plans: 62
-  percent: 80
+  percent: 100
 ---
 
 # Project State
@@ -25,16 +25,19 @@ See: .planning/PROJECT.md (updated 2026-08-03)
 
 ## Current Position
 
-Phase: 05
-Plan: Not started
-Next: `/gsd-discuss-phase 5` or `/gsd-plan-phase 5`.
-Status: Milestone complete
-        verification `passed`, and the three-metre human pass approved on a ~24" 1080p screen
-        (`04-HUMAN-UAT.md`, status complete, 4 passed / 0 issues). BAN-07 ships Partial by
-        owner decision D-19: `bothApply` is built, the `Re-ban` arm is present but disabled.
-Last activity: 2026-09-01
+Phase: 05 (final phase of v1.0) — complete
+Plan: All 15 plans complete
+Next: `/gsd-complete-milestone 1.0` — archive and tag.
+Status: Milestone complete, audited 2026-09-02 (`v1.0-MILESTONE-AUDIT.md`, status
+        `tech_debt`). 92/94 requirements satisfied, zero orphans, zero cross-phase
+        integration blockers, three E2E flows traced end to end. Two requirements
+        remain non-complete by decision rather than defect: BAN-07 ships Partial per
+        owner decision D-19 (`bothApply` built, `Re-ban` present but disabled), and
+        EXPO-04 stays Pending because its text is unsatisfiable by any species-only
+        paste and needs rewording, not code.
+Last activity: 2026-09-02
 
-Progress: [████████████████████] 47/47 plans (4 of 5 phases complete)
+Progress: [████████████████████] 62/62 plans (5 of 5 phases complete)
 
 **Sequencing note (2026-08-20).** ROADMAP's execution order is 1→5, but Phase 5 depends only on
 Phase 3 and its own entry says it is "independent of Phase 4 and buildable before it." Phase 5
@@ -42,7 +45,7 @@ carries REFR-01…03 — in-app roster refresh and the `validUntil` staleness ba
 file's own notes expect Champions regulation M-C around **2026-09-02**. If the rotation lands
 before Phase 5 ships, the committed snapshot goes stale with no in-app path off it. Phase 4 has
 no comparable clock, and its ROADMAP notes ask for a real playtest with the group — the same
-session the one outstanding UAT item needs. Not decided; recorded so the choice is deliberate.
+session the one outstanding UAT item needs. Not decided; recorded so the choice is deliberate. **Resolved 2026-09-01** — execution held the 1→5 order and Phase 5 shipped with REFR-01…03 intact, so the committed snapshot never went stale without an in-app path off it.
 
 ## Performance Metrics
 

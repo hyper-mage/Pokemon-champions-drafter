@@ -46,22 +46,22 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Draft Core
 
-- [ ] **DRFT-01**: Host configures a tournament — player count, player names, format label, tournament depth
-- [ ] **DRFT-02**: Tool auto-sizes the draft pool from player count, leaving enough surplus for swaps
-- [ ] **DRFT-03**: Host can override the computed pool size
+- [x] **DRFT-01**: Host configures a tournament — player count, player names, format label, tournament depth
+- [x] **DRFT-02**: Tool auto-sizes the draft pool from player count, leaving enough surplus for swaps
+- [x] **DRFT-03**: Host can override the computed pool size
 - [x] **DRFT-04**: Draft runs the compiled number of pick rounds until every player has a team of six
-- [ ] **DRFT-05**: Pool displays each Pokémon with sprite, typing, and base stats
-- [ ] **DRFT-06**: Host toggles display density between minimal, standard, and full
-- [ ] **DRFT-07**: Drafted Pokémon leave the pool immediately and cannot be picked again
-- [ ] **DRFT-08**: Player can search the pool by name
-- [ ] **DRFT-09**: Player can filter the pool by type and Mega-capability, composing with the round's own restriction
-- [ ] **DRFT-10**: A draft board grid of players by rounds shows the full pick history
-- [ ] **DRFT-11**: Each player's roster is visible as it fills, during the draft and not only at completion
-- [ ] **DRFT-12**: An on-the-clock indicator shows whose turn it is
-- [ ] **DRFT-13**: Destructive actions confirm before committing
-- [ ] **DRFT-14**: Pool and draft board are legible from across a room
-- [ ] **DRFT-15**: Host sets X, Y, or Either for each dual-Mega species at config time
-- [ ] **DRFT-16**: Host can randomize initial player order at config time
+- [x] **DRFT-05**: Pool displays each Pokémon with sprite, typing, and base stats
+- [x] **DRFT-06**: Host toggles display density between minimal, standard, and full
+- [x] **DRFT-07**: Drafted Pokémon leave the pool immediately and cannot be picked again
+- [x] **DRFT-08**: Player can search the pool by name
+- [x] **DRFT-09**: Player can filter the pool by type and Mega-capability, composing with the round's own restriction
+- [x] **DRFT-10**: A draft board grid of players by rounds shows the full pick history
+- [x] **DRFT-11**: Each player's roster is visible as it fills, during the draft and not only at completion
+- [x] **DRFT-12**: An on-the-clock indicator shows whose turn it is
+- [x] **DRFT-13**: Destructive actions confirm before committing
+- [x] **DRFT-14**: Pool and draft board are legible from across a room
+- [x] **DRFT-15**: Host sets X, Y, or Either for each dual-Mega species at config time
+- [x] **DRFT-16**: Host can randomize initial player order at config time
 
 ### Priority Cards
 
@@ -82,14 +82,14 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **RULE-04**: Host maintains a Mega-ban list of Mega-capable Pokémon not permitted to Mega this tournament
 - [x] **RULE-05**: Compiled rounds type the resulting team slots, so a slot's constraint survives swaps
 - [x] **RULE-06**: Host can reorder the derived round schedule
-- [ ] **RULE-07**: A feasibility check runs at config time and disables Start with a stated reason when the rules, player count, bans, and roster cannot all be satisfied
+- [x] **RULE-07**: A feasibility check runs at config time and disables Start with a stated reason when the rules, player count, bans, and roster cannot all be satisfied
 - [x] **RULE-08**: Feasibility is re-checked after the ban reveal, since bans change the arithmetic
 - [x] **RULE-09**: Mega-round feasibility enforces `players × megaRounds ≤ megaCapableSpecies − megaBans`
 
 ### Bans
 
-- [ ] **BAN-01**: Host selects the ban mode at config time — blind, snake, or host banlist
-- [ ] **BAN-02**: Host banlist mode lets the host exclude Pokémon directly, with no per-player bans
+- [x] **BAN-01**: Host selects the ban mode at config time — blind, snake, or host banlist
+- [x] **BAN-02**: Host banlist mode lets the host exclude Pokémon directly, with no per-player bans
 - [x] **BAN-03**: Snake mode runs bans in turn order with previous bans visible
 - [x] **BAN-04**: Blind mode collects each player's bans privately and reveals them together
 - [x] **BAN-05**: Blind mode uses a full-screen pass-the-device interstitial, not an input mask
@@ -99,7 +99,7 @@ Requirements for initial release. Each maps to roadmap phases.
       owner decision D-19: the option ships present-but-disabled (`Re-ban — Not yet available`) so a later
       milestone enables a control rather than adding one plus a schema bump. Do not score ROADMAP Phase 4
       success criterion 4 green on the re-ban clause.
-- [ ] **BAN-08**: Banned Pokémon never appear in the pool at all
+- [x] **BAN-08**: Banned Pokémon never appear in the pool at all
 
 ### Swaps
 
