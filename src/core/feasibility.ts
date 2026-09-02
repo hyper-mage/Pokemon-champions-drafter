@@ -97,6 +97,7 @@
 
 import { MAX_BANS_PER_PLAYER, MAX_SWAP_BUDGET, MAX_SWAP_ROUNDS } from './import-guard';
 import { choiceFor, isMegaEligible } from './mega';
+import { players } from './plural';
 import type { BanMode, DualMegaChoice, TournamentDepth } from './model';
 import type { RosterEntry } from './roster/types';
 
@@ -479,7 +480,7 @@ function swapRoundsOnExactPoolMessage(poolSize: number): string {
  * awkwardly at two players, the fix is in the copy contract, not here.
  */
 function bracketNeedsFourPlayersMessage(playerCount: number): string {
-  return `A bracket needs at least 4 players to mean much. At ${playerCount} players the round robin already decides it. Choose Draft only, or add players.`;
+  return `A bracket needs at least 4 players to mean much. At ${players(playerCount)} the round robin already decides it. Choose Draft only, or add players.`;
 }
 
 // ---------------------------------------------------------------------------

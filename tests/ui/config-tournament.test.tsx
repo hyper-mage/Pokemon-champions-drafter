@@ -397,6 +397,19 @@ describe('the round-robin size line', () => {
     expect(sizeLine()).toBe('A round robin at 2 players is 1 match.');
   });
 
+  /**
+   * IN-03, and the other half of the same helper. `tooFewPlayers` blocks below two, but
+   * blocking is not hiding: this line renders beside the block while the host is still
+   * typing names in, and it read `A round robin at 1 players is 0 matches.`
+   */
+  it('says one player, not 1 players, at a single name', () => {
+    mount();
+    setPlayerCount(1);
+    pick('tournament-depth', 'draftAndBrackets');
+
+    expect(sizeLine()).toBe('A round robin at 1 player is 0 matches.');
+  });
+
   /** It follows the player count without a second interaction. */
   it('recounts when a player is added', () => {
     mount();

@@ -1440,4 +1440,18 @@ describe('bracketNeedsFourPlayers', () => {
       'A bracket needs at least 4 players to mean much. At 2 players the round robin already decides it. Choose Draft only, or add players.',
     );
   });
+
+  it('says one player, not 1 players, at a single name', () => {
+    /*
+      IN-03. `tooFewPlayers` blocks below two, but blocking is not hiding: this warning is
+      raised beside it and read on the same screen while the host is still typing names
+      in, so `At 1 players` was reachable and on screen.
+    */
+    const result = checkFeasibility(base({ playerNames: ['Ada'], depth: 'draftAndBrackets' }));
+
+    expect(codes(result)).toContain('tooFewPlayers');
+    expect(messageFor(result, 'bracketNeedsFourPlayers')).toBe(
+      'A bracket needs at least 4 players to mean much. At 1 player the round robin already decides it. Choose Draft only, or add players.',
+    );
+  });
 });

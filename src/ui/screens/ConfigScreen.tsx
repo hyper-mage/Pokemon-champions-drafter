@@ -14,6 +14,7 @@ import {
 import { MAX_BANS_PER_PLAYER } from '../../core/import-guard';
 import { V4_CONFIG_DEFAULTS } from '../../core/migrate';
 import { bannedMegaFormes, choiceFor, isMegaEligible, megaFormeRows } from '../../core/mega';
+import { players as playerCountText } from '../../core/plural';
 import type { RoundSpec } from '../../core/actions';
 import type {
   BanMode,
@@ -185,12 +186,19 @@ function hasMatches(value: TournamentDepth): boolean {
  * round robin of any size is satisfiable — this line only says how long the night is.
  *
  * `p(p−1)/2`, the count of unordered pairs, which is exactly one match per pair of players.
- * The plural goes through `confirm-copy.ts`'s helper rather than a second one declared here:
- * at two players this reads `1 match`, and 05-UI-SPEC requires every interpolated count to
- * take a helper.
+ * BOTH counts go through a shared helper rather than a second one declared here, and
+ * 05-UI-SPEC requires every interpolated count to take one: at two players this reads
+ * `1 match`, and at one player it read `1 players` until IN-03 (`TOO_FEW_PLAYERS` blocks
+ * below two, but blocking is not hiding — this line renders beside the block while the
+ * host is still typing names in).
+ *
+ * The player count comes from `src/core/plural.ts` rather than from `confirm-copy.ts`
+ * because `feasibility.ts` needs the same rule for a sentence it composes in core, which
+ * may not import from `src/ui/`. Aliased on the way in: `players` is already the name of
+ * this screen's player array.
  */
 function roundRobinSizeLine(playerCount: number): string {
-  return `A round robin at ${playerCount} players is ${matches((playerCount * (playerCount - 1)) / 2)}.`;
+  return `A round robin at ${playerCountText(playerCount)} is ${matches((playerCount * (playerCount - 1)) / 2)}.`;
 }
 
 /**

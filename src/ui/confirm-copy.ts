@@ -17,11 +17,14 @@
  * group; the note recording it as absent was deleted in the same change that made it false,
  * because a stale contract comment is worse than none — the next reader trusts it.
  *
- * The one import is `LIBRARY_CAP`, and it is a value this file must not restate. See
- * {@link EVICTION_CONFIRM} for why the number is interpolated rather than written out.
+ * Two imports, and neither is a string. `LIBRARY_CAP` is a value this file must not
+ * restate — see {@link EVICTION_CONFIRM} for why the number is interpolated rather than
+ * written out — and `players` is the one plural rule a sentence in `src/core/` needs
+ * too, so it is read from there rather than declared twice (IN-03).
  */
 
 import { LIBRARY_CAP } from '../adapters/library';
+import { players } from '../core/plural';
 
 /**
  * Pluralisation, done here rather than in the contract.
@@ -36,9 +39,10 @@ function picks(count: number): string {
   return count === 1 ? '1 pick' : `${count} picks`;
 }
 
-function players(count: number): string {
-  return count === 1 ? '1 player' : `${count} players`;
-}
+// `players` is imported rather than declared here (IN-03). `feasibility.ts` composes a
+// sentence that needs the same rule and is in `src/core/`, which may not import from
+// `src/ui/` — so the one copy lives in `src/core/plural.ts` and this file reads it, on
+// the same argument the block above makes against a second private copy.
 
 /**
  * The third of the three, added with the seventh set and for the same reason.
