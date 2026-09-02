@@ -52,6 +52,7 @@ import {
   VIEW_RECAP,
   type RecapAccess,
 } from '../../src/ui/components/RecapList';
+import { BRACKET_HEADING_ID } from '../../src/ui/components/CutControl';
 import { CompletedDraft } from '../../src/ui/screens/CompletedDraft';
 import { TournamentScreen } from '../../src/ui/screens/TournamentScreen';
 
@@ -532,6 +533,37 @@ describe('entering and leaving the recap', () => {
 
     // The control that was activated, which exists again — not the same node object.
     expect(document.activeElement).toBe(buttonNamed(VIEW_RECAP));
+  });
+
+  it('falls back to the bracket heading when the final was undone while it was open', () => {
+    /*
+      WR-10. `View the draft recap` renders only when the final is recorded, and the top
+      bar — including `Undo last move` and the document-level Ctrl+Z handler — stays
+      mounted above the recap, deliberately, so a host who spots a wrong result there can
+      still unwind it. Undo the final while the recap is open and the arming target is
+      gone by the time `Back to the bracket` fires the handoff, at which point focus fell
+      to `<body>` — the exact failure `RECAP_ACTION_ID`'s own doc block exists to prevent.
+    */
+    const doc = fullNight('draftBracketsAndLog', ['mon-10']);
+    openRecap(doc);
+
+    // Undo removes the log entry; the final `br:2:1` is the last one this fixture adds.
+    const undone = { ...doc, log: doc.log.slice(0, -1) };
+    drawTournament(undone);
+
+    // The recap is still on screen — the top bar is what changed, not the region.
+    expect(buttonNamed(BACK_TO_BRACKET)).toBeDefined();
+
+    act(() => {
+      buttonNamed(BACK_TO_BRACKET)?.click();
+    });
+
+    expect(buttonNamed(VIEW_RECAP)).toBeUndefined();
+
+    const heading = host.querySelector(`#${BRACKET_HEADING_ID}`);
+    expect(heading).not.toBeNull();
+    expect(document.activeElement).toBe(heading);
+    expect(document.activeElement).not.toBe(document.body);
   });
 
   it('offers exactly one control inside the recap, and it is the way out', () => {

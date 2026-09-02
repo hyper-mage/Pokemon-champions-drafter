@@ -199,7 +199,23 @@ export function TournamentScreen({
     if (!pendingRecapActionFocus.current) return;
     pendingRecapActionFocus.current = false;
 
-    document.getElementById(RECAP_ACTION_ID)?.focus();
+    /*
+      WITH A FALLBACK, because the arming target can have gone while the recap was open.
+
+      `View the draft recap` renders only when `finalRecorded`, and the top bar — including
+      `Undo last move` and the document-level Ctrl+Z handler — stays mounted above the
+      recap, deliberately, so that a host who spots a wrong result there can still unwind
+      it. Undoing the final while the recap is on screen makes `finalRecorded` false, and
+      then `Back to the bracket` armed this handoff at an element that no longer exists and
+      focus fell to `<body>` — the exact failure `RECAP_ACTION_ID`'s own doc block exists to
+      prevent (WR-10).
+
+      The bracket heading is the surface the recap replaced, which is where the host now is.
+    */
+    const target =
+      document.getElementById(RECAP_ACTION_ID) ?? document.getElementById(BRACKET_HEADING_ID);
+
+    target?.focus();
   });
 
   /*
